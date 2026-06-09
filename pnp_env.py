@@ -2078,7 +2078,7 @@ class ProspectorsPiratesEnv(gym.Env):
         ship['y'] = new_y
         ship['energy'] -= self.config['energy_costs']['move']
 
-        return -0.01, True, {'from': (ship['x'] - (1 if action == ActionType.MOVE_EAST else - (1 if action == ActionType.MOVE_WEST else 0), ship['y'] - 1 if action == ActionType.MOVE_SOUTH else -1 if action == ActionType.MOVE_NORTH else 0)), 'to': (ship['x'], ship['y'])}
+        return -0.01, True, {'from': (ship['x'] - (1 if action == ActionType.MOVE_EAST else -1 if action == ActionType.MOVE_WEST else 0), ship['y'] - (1 if action == ActionType.MOVE_SOUTH else -1 if action == ActionType.MOVE_NORTH else 0)), 'to': (ship['x'], ship['y'])}
 
     def _action_recharge(self, ship: dict) -> bool:
         """Start recharging"""
@@ -2375,13 +2375,14 @@ class ProspectorsPiratesEnv(gym.Env):
 
             # Reward for destroying enemy (modest - economic actions should be primary)
             reward = 0.5 + (nutrinium_stolen * 0.2)  # Reduced base from 2.0 to 0.5
+
             combat_details['destroyed'] = True
             combat_details['nutrinium_stolen'] = nutrinium_stolen
 
             return reward, True, combat_details
         else:
             # Successful hit but target survived
-            # Reduced from 0.1 to 0.02 -- attack micro-rewards were incentivizing
+            # Reduced from 0.1 to 0.02 - attack micro-rewards were incentivizing
             # futile combat loops at low energy/HP (see episode_0003 analysis).
             # Combat should be a means to an end (steal nutrinium on kill), not a goal.
             reward = 0.02
@@ -2391,11 +2392,13 @@ class ProspectorsPiratesEnv(gym.Env):
 
             return reward, True, combat_details
 
-    def update_combat_states(self):
+    def _update_combat_states(self):
         """
         Update each ship's 'state' based on game state.
 
-        COMBAT state should only be set when a ship is actively engaged in combat AND there is an enemy in the same zone. Ships attacked from a different zone should not remain in COMBAT state once the turn ends.
+        COMBAT state should only be set when a ship is actively engaged in combat
+        AND there is an enemy in the same zone. Ships attacked from a different zone
+        should not remain in COMBAT state once the turn ends.
 
         This is called each step after all actions are executed.
         """
