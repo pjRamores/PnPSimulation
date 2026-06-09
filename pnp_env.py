@@ -3056,7 +3056,7 @@ class ProspectorsPiratesEnv(gym.Env):
             abilities.get('jump_distance', 0) / max(1, max_abilities.get('jump_distance', 10)),
         ])
 
-        # Action counter: (1 value) - normalized by max_steps (typical ~300)
+        # Action counter (1 value) - normalized by max_steps (typical ~300)
         obs.append(self.action_counter / max(1, self.max_steps))
 
         # === STRATEGIC CONTEXT (8 values) ===
