@@ -235,8 +235,8 @@ class GameSimulator:
         """Format attack payload into a readable combat summary.
 
         Example output:
-            -> E5: dmg 2 (base 2, roll 1.4, shields -0) | HP 98->96 | ATK pwr=0 nrg=50->49 | DEF shields=N evd=0 nrg=60->60
-            -> E3: dmg 1 (base 2, roll 1.8, shields -1) | HP 80->79 shields=Y | DESTROYED! stole 15 nutr
+          -> E5: dmg 2 (base 2, roll 2.4, shields -0) | HP 98->96 | ATK pwr=0 nrg=50->49 | DEF shields=N evd=0 nrg=60->60
+          -> E3: dmg 1 (base 2, roll 1.8, shields -1) | HP 80->79 shields=Y | DESTROYED! stole 15 nutr
         """
         if not payload or not isinstance(payload, dict):
             return str(payload) if payload else ''
@@ -263,7 +263,7 @@ class GameSimulator:
         def_energy = payload.get('def_energy', '?')
 
         parts = []
-        parts.append(f"-> {target}: dmg {damage} (base {base_dmg}, roll {dmg_roll}, shields-{shield_absorbed})")
+        parts.append(f"-> {target}: dmg {damage} (base {base_dmg}, roll {dmg_roll}, shields {shield_absorbed})")
         parts.append(f"HP {def_health}")
         parts.append(f"ATK[pwr={atk_power} acc={atk_accuracy} nrg={atk_energy}]")
         shield_flag = 'Y' if def_shields else 'N'
@@ -280,10 +280,10 @@ class GameSimulator:
         """Format mining payload into a readable summary.
 
         Example output (success):
-          A(3,2) nutr 20/30 density=0.6667 chance=100.0% | payout 8-> ship_nutr=15 | mass 30->22 nutr 20->12 | SKILL[acc=2 yield=1 cost=2] nrg=50->45
+          A(3,2) nutr 20/30 density=0.6667 chance=100.0% | payout 8 -> ship_nutr=15 | mass 30->22 nutr 20->12 | SKILL[acc=2 yield=1 cost=2] nrg=50->45
         Example output (failure):
           A(3,2) nutr 20/30 density=0.6667 chance=50.0% | MISS payout 0 | mass 30->29 nutr 20->20 | SKILL[acc=0 yield=1 cost=2] nrg=50->45
-      """
+        """
         if not payload or not isinstance(payload, dict):
             return str(payload) if payload else ''
 
@@ -312,7 +312,7 @@ class GameSimulator:
         else:
             parts.append(f"MISS payout 0")
 
-        parts.append(f"mass {ast_mass}->{ast_mass_after}.nutr:{ast_nutr}->{ast_nutr_after}")
+        parts.append(f"mass {ast_mass}->{ast_mass_after} nutr {ast_nutr}->{ast_nutr_after}")
         parts.append(f"SKILL[acc={mine_acc} yield={mine_yield} cost={mine_cost}] nrg={energy}")
 
         return ' | '.join(parts)
@@ -365,32 +365,32 @@ class GameSimulator:
 
         # Prepare columns and widths
         headers = ["Ship", "Credits", "Pos", "State", "Action", "Payload", "Energy", "Health", "Nutrinium", "Status"]
-        cols = list(zip(*[[str(h) for h in headers]] + [[str(v) for v in row] for row in rows]))
+        cols = list(zip(*([[str(h) for h in headers]] + [[str(v) for v in row] for row in rows])))
         widths = [max(len(cell) for cell in col) for col in cols]
 
         # Print header
-        header_line = ''.join(h.ljust(w) for h, w in zip(headers, widths))
-        sep_line = ''.join('-' * w for w in widths)
+        header_line = "  ".join(h.ljust(w) for h, w in zip(headers, widths))
+        sep_line = "  ".join('-' * w for w in widths)
         print("\n" + header_line)
         print(sep_line)
 
         # Print rows
         for row in rows:
-            line = ''.join(str(cell).ljust(w) for cell, w in zip(row, widths))
+            line = "  ".join(str(cell).ljust(w) for cell, w in zip(row, widths))
             print(line)
 
     def __init__(self,
-                  model_path: str,
-                  algorithm: str = "PPO",
-                  map_width: int = 10,
-                  map_height: int = 10,
-                  max_steps: int = 300,
-                  use_predefined_asteroids: bool = False,
-                  asteroid_config_path: str = 'asteroids.config',
-                  use_predefined_start: bool = False,
-                  start_position_config_path: str = 'start_positions.config',
-                  enable_logging: bool = True,
-                  output_base_dir: str = 'output'):
+                 model_path: str,
+                 algorithm: str = "PPO",
+                 map_width: int = 10,
+                 map_height: int = 10,
+                 max_steps: int = 300,
+                 use_predefined_asteroids: bool = False,
+                 asteroid_config_path: str = 'asteroids.config',
+                 use_predefined_start: bool = False,
+                 start_position_config_path: str = 'start_positions.config',
+                 enable_logging: bool = True,
+                 output_base_dir: str = 'output'):
         """
         Initialize the game simulator.
 
@@ -405,7 +405,7 @@ class GameSimulator:
             use_predefined_start: Use predefined starting positions from config file
             start_position_config_path: Path to starting position configuration file
             enable_logging: Whether to enable logging to files
-            output_base_dir: Base directory for output logs (default='output')
+            output_base_dir: Base directory for output logs (default: 'output')
         """
         self.model_path = model_path
         self.algorithm = algorithm.upper()
@@ -423,7 +423,6 @@ class GameSimulator:
         # Logging setup
         self.enable_logging = enable_logging
         self.logger = None
-
         if enable_logging:
             # Extract model name from path
             model_name = os.path.splitext(os.path.basename(model_path))[0]
@@ -442,7 +441,7 @@ class GameSimulator:
         # Statistics tracking
         self.episode_stats: List[Dict] = []
 
-    def _print(self, message="", to_episode=True, to_simulation=True, to_console=True):
+    def _print(self, message: str = "", to_episode: bool = True, to_simulation: bool = True, to_console: bool =True):
         """
         Print message to console and optionally to log files.
 
@@ -458,7 +457,7 @@ class GameSimulator:
             if to_console:
                 print(message)
 
-    def _log_episode_detail(self, message="", render=True):
+    def _log_episode_detail(self, message: str = "", render: bool = True):
         """
         Log episode detail message. Always logs to episode file, but only prints to console if render=True.
 
@@ -470,12 +469,12 @@ class GameSimulator:
             # Always log to episode file, but only to console if rendering
             self.logger.log(message, to_episode=True, to_simulation=False, to_console=render)
         else:
+            # No logger - only print if rendering
             if render:
                 print(message)
 
-    def wait_for_spacebar(self):
-        """
-        Wait for user to press spacebar to continue, Q to skip future pauses, or ESC to quit.
+    def _wait_for_spacebar(self):
+        """Wait for user to press spacebar to continue, Q to skip future pauses, or ESC to quit.
 
         Returns:
             'continue' -> user pressed SPACE
@@ -490,27 +489,28 @@ class GameSimulator:
                 key = msvcrt.getch()
                 # Check for spacebar (0x20)
                 if key == b' ':
-                    print("\r" + "." * 80 + "\r", end='', flush=True)  # Clear the message
+                    print("\r" + " " * 80 + "\r", end='', flush=True)  # Clear the message
                     return 'continue'
                 # Allow 'q' to skip remaining pauses
                 elif key.lower() == b'q':
-                    print("\r[Skipping remaining pauses...]" + "." * 20)
+                    print("\r[Skipping remaining pauses...]" + " " * 20)
                     return 'skip'
                 # ESC to quit (0x1b)
                 elif key == b'\x1b':
-                    print("\r[Quit requested - exiting simulation...]" + "." * 20)
+                    print("\r[Quit requested - exiting simulation...]" + " " * 20)
                     return 'quit'
                 # Some terminals may emit special prefix bytes (like 0 or 224) for arrows; ignore them
                 elif key in (b'\x00', b'\xe0'):
+                    # consume the next byte if present
                     if msvcrt.kbhit():
                         _ = msvcrt.getch()
-                        continue
+                    continue
         # fallback
         return 'continue'
 
+
     def load_model(self, env):
-        """
-        Load the trained model for the given environment.
+        """Load the trained model for the given environment.
 
         Handles compatibility with old models trained with 14 actions
         by wrapping them in a compatibility layer.
@@ -518,336 +518,338 @@ class GameSimulator:
         vs new Dict observation space (action masking).
         """
         from gymnasium import spaces
-    # Try to load the model first to check its action/observation space
-    try:
-        if self.algorithm == "PPO":
-            temp_model = PPO.load(self.model_path)
-        elif self.algorithm == "DQN":
-            temp_model = DQN.load(self.model_path)
-        elif self.algorithm == "A2C":
-            temp_model = A2C.load(self.model_path)
-        else:
-            raise ValueError(f"Unknown algorithm: {self.algorithm}")
 
-        # Check if action spaces match
-        model_action_space = temp_model.action_space.n
-        env_action_space = env.action_space.n
-
-        needs_action_compat = False
-        if model_action_space != env_action_space:
-            print(f"\nWARNING: Model action space ({model_action_space}) != Environment action space ({env_action_space})")
-            print(f"This model was trained with an older version of the environment.")
-
-            if model_action_space == 15 and env_action_space == 14:
-                print(f"Detected: Old model (15 actions with LOWER_SHIELDS) vs Current environment (14 actions)")
-                print(f"Solution: Using compatibility mode -- old LOWER_SHIELDS mapped to WAIT")
-                print(f"Note: For best results, retrain the model with the new action space\n")
-                needs_action_compat = True
-            else:
-                raise ValueError(f"Incompatible action spaces: {model_action_space} vs {env_action_space}")
-
-        # Check if model expects flat observation (Box) vs new Dict space
-        model_obs_space = temp_model.observation_space
-        needs_obs_compat = isinstance(model_obs_space, spaces.Box) and isinstance(env.observation_space, spaces.Dict)
-
-        if needs_obs_compat:
-            print(f"\nWARNING: Model expects flat observation (Box), environment provides Dict.")
-            print(f"Using compatibility wrapper to extract flat observation.\n")
-
-        # Check if model expects Dict obs with a different (smaller) observation size
-        needs_obs_size_compat = False
-        if isinstance(model_obs_space, spaces.Dict) and isinstance(env.observation_space, spaces.Dict) and 'observation' in model_obs_space.spaces and 'observation' in env.observation_space.spaces:
-            model_obs_size = model_obs_space['observation'].shape[0]
-            env_obs_size = env.observation_space['observation'].shape[0]
-            if model_obs_size != env_obs_size:
-                print(f"\nWARNING: Model observation size ({model_obs_size}) != Environment observation size ({env_obs_size})")
-                print(f"This model was trained with an older version of the environment.")
-                print(f"Using compatibility mode -- observation will be truncated to {model_obs_size} features.\n")
-                needs_obs_size_compat = True
-
-        # Use compatibility wrapper if needed for action, observation type, or obs size
-        if needs_action_compat or needs_obs_compat or needs_obs_size_compat:
-            return ActionSpaceCompatibilityWrapper(
-                temp_model,
-                model_action_space,
-                env_action_space
-            )
-
-        # Fully compatible model -- load with env binding
-        if self.algorithm == "PPO":
-            return PPO.load(self.model_path, env=env)
-        elif self.algorithm == "DQN":
-            return DQN.load(self.model_path, env=env)
-        elif self.algorithm == "A2C":
-            return A2C.load(self.model_path, env=env)
-
-    except Exception as e:
-        # If loading fails, raise the error
-        raise RuntimeError(f"Failed to load model: {e}")
-
-def run_episode(self,
-                num_opponents: int,
-                render: bool = True,
-                render_interval: int = 20,
-                deterministic: bool = True,
-                pause_each_step: bool = False,
-                print_all_actions: bool = False,
-                print_each_step: bool = False,
-                cell_width: Optional[int] = None,
-                minimap: bool = False,
-                minimap_radius: int = 3,
-                forced_opponent_types: Optional[List[str]] = None) -> Tuple[Dict, Dict]:
-    """
-    Run a single episode with the trained model.
-
-    Args:
-        num_opponents: Number of opponent ships
-        render: Whether to render the game
-        render_interval: Steps between renders
-        deterministic: Use deterministic policy (best action)
-        pause_each_step: If True, pause and wait for spacebar after each render
-        print_all_actions: If True, print action taken at every step (for debugging)
-
-    Returns:
-        episode_stats, control
-        - episode_stats: Dictionary with episode statistics
-        - control: dict with keys 'skip' (bool) and 'quit' (bool) to inform caller
-    """
-    # Create environment
-    env = ProspectorsPiratesEnv(
-        map_width=self.map_width,
-        map_height=self.map_height,
-        num_opponents=num_opponents,
-max_steps=self.max_steps,
-    render_mode='human' if render else None,
-    use_predefined_asteroids=self.use_predefined_asteroids,
-    asteroid_config_path=self.asteroid_config_path,
-    use_predefined_start=self.use_predefined_start,
-    start_position_config_path=self.start_position_config_path,
-    terminate_on_player_death=False,  # Allow game to continue after player death for full simulation
-    cell_width=cell_width,
-    minimap_mode=minimap,
-    minimap_radius=minimap_radius,
-    forced_opponent_types=forced_opponent_types
-)
-
-# Load model
-model = self.load_model(env)
-
-# Run episode
-observation, info = env.reset()
-
-    if print_each_step or pause_each_step:
-        print(f"{'='*60}")
-        print("OPPONENTS:")
-        for i, enemy in enumerate(env.opponent_ships):
-            e_name = enemy.get('name', f'E{i+1}')
-            ai_type = enemy.get('ai_type', 0)
-            ai_type_name = self.get_ai_type_name(ai_type)
-
-            if AI_TYPE == OpponentAIType.MODEL:
-                model_path = enemy.get('model_path', 'unknown')
-                model_name = os.path.basename(model_path) if model_path else 'unknown'
-                print(f"{e_name}: {ai_type_name} ({model_name})")
-            else:
-                print(f"{e_name}: {ai_type_name}")
-        print(f"{'='*60}\n")
-
-    total_reward = 0
-    done = False
-    step = 0
-    control = {'skip': False, 'quit': False}
-
-    # Track action distribution for debugging
-    action_counts = {}
-    debug_enabled = False  # Set to False to disable debug output
-
-while not done:
-    if env.player_ship.get('destroyed', False):
-        action = 13  # REPAWN action
-        original_action = 13
-        original_type = int
-    else:
-        action_raw, _ = model.predict(observation, deterministic=deterministic)
-
-        original_action = action_raw
-        original_type = type(action_raw)
-
-        if isinstance(action_raw, np.ndarray):
-            try:
-                action = int(action_raw.item())
-            except Exception:
-                action = int(action_raw[0])
-        else:
-            try:
-                action = int(action_raw)
-            except Exception:
-                action = action_raw
-
-    if step == 0 and debug_enabled:
-        print(f"[DEBUG] First action prediction:")
-        print(f"Original: {original_action}, Type: {original_type}")
-        print(f"Converted: {action}, Type: {type(action)}")
-        print(f"Is numpy array: {isinstance(original_action, np.ndarray)}")
-        if isinstance(original_action, np.ndarray):
-            print(f"Array shape: {original_action.shape}")
-            print(f"Array dtype: {original_action.dtype}")
-
-    action_counts[action] = action_counts.get(action, 0) + 1
-
-    # NOTE: env.step() is now called inside the rendering block below
-    # (moved to allow showing state BEFORE action execution)
-
-    log/render periodically -- BEFORE executing action so we see current state
-    Always log details to file when logger enabled, but only show in console when render=True
-    should_log_details = (self.logger is not None) or (render and step % render_interval == 0)
-    if should_log_details and step % render_interval == 0:
-        # 1. SHOW MAP FIRST (reflects previous step's action results) -- only if rendering to console
-        if render:
-            env.render()
-
-            # 2. SHOW CURRENT STATE AND ACTION IN TABLE FORMAT
-            self.log_episode_detail(f"\n{'='*70}", render)
-            self.log_episode_detail(f"CURRENT STATE & ACTIONS (Step {step})", render)
-            self.log_episode_detail(f"{'='*70}", render)
-
-    # Collect all ships (player + enemies) for table
-    ships_data = []
-# Player
-p = env.player_ship
-player_state = p.get('state', 'READY')
-player_flags = []
-if p.get('shields_up'):
-    player_flags.append('SHIELDS')
-if p.get('recharging'):
-    player_flags.append('RECHARGING')
-player_flags_str = f"{''.join(player_flags)}" if player_flags else ''
-predicted_action_name = self.ACTION_NAMES[action] if action < len(self.ACTION_NAMES) else f"ACTION_{action}"
-
-# Check if the predicted action is valid; if not, show what will actually execute
-is_valid, _reason = env._is_action_valid_for_state(action, p, is_player=True)
-if not is_valid:
-    # Mirror the enforcement logic in pnp_env.step()
-    from pnp_env import ActionType as AT
-    if p.get('recharging', False):
-        if p['energy'] >= env.config['max_energy']:
-            enforced = 'RECHARGE_END'
-        elif action not in (int(AT.WAIT), int(AT.RECHARGE_END)):
-            # Model wants an active action -> end recharge
-            enforced = 'RECHARGE_END'
-    else:
-        enforced = 'WAIT'
-    elif p.get('destroyed', False):
-        enforced = 'RESPAWN'
-else:
-    # Pick best valid action from mask (mirrors pnp_env fallback)
-    mask = env._get_action_mask(p)
-    enforced = 'WAIT'
-# When energy is very low, prioritize RECHARGE
-if p['energy'] <= env.config['energy_costs'].get('move', 5):
-    fb_order = [_AT.RECHARGE, _AT.MINE, _AT.SELL, _AT.WAIT,
-                _AT.JUMP_TO_ASTEROID,
-                _AT.JUMP_TO_TRADING_POST,
-                _AT.MOVE_NORTH, _AT.MOVE_SOUTH,
-                _AT.MOVE_EAST, _AT.MOVE_WEST,
-                _AT.ATTACK, _AT.RAISE_SHIELDS]
-else:
-    fb_order = [_AT.MINE, _AT.SELL, _AT.JUMP_TO_ASTEROID,
-                _AT.JUMP_TO_TRADING_POST,
-                _AT.MOVE_NORTH, _AT.MOVE_SOUTH,
-                _AT.MOVE_EAST, _AT.MOVE_WEST,
-                _AT.RECHARGE, _AT.ATTACK, _AT.RAISE_SHIELDS,
-                _AT.WAIT]
-for fb in fb_order:
-    if mask[int(fb)] == 1:
-        enforced = _AT(fb).name
-        break
-predicted_action_name = f"(enforced) (was {predicted_action_name})"
-
-ships_data.append({
-    'name': p.get('name', 'P'),
-    'credits': p['credits'],
-    'nutrinium': p['nutrinium'],
-    'pos': f"({p['x']},{p['y']})",
-    'energy': f"{p['energy']}/{env.config['max_energy']}",
-    'health': f"{p['health']}/{env.config['max_health']}",
-    'state': player_state + ('' + player_flags_str if player_flags_str else ''),
-    'action': predicted_action_name,
-    'is_player': True
-})
-
-# Enemies -- get their predicted next action
-for i, opp in enumerate(env.opponent_ships):
-    if not opp.get('destroyed', False):
-        opp_state = opp.get('state', 'READY')
-        opp_flags = []
-        if opp.get('shields_up'):
-            opp_flags.append('SHIELDS')
-        if opp.get('recharging'):
-            opp_flags.append('RECHARGING')
-        opp_flags_str = f"{''.join(opp_flags)}" if opp_flags else ''
-        # Predict enemy action (call their AI to see what they'll do)
+        # Try to load the model first to check its action/observation space
         try:
-            enemy_action = env._get_opponent_action(opp)
-            enemy_action_name = self.ACTION_NAMES[enemy_action] if enemy_action < len(self.ACTION_NAMES) else f"ACTION_{enemy_action}"
-        except Exception:
-            enemy_action_name = '?'
-        ships_data.append({
-            'name': opp.get('name', f'E{i+1}'),
-            'credits': opp.get('credits', 0),
-            'nutrinium': opp.get('nutrinium', 0),
-            'pos': f"({opp['x']},{opp['y']})",
-            'energy': f"{opp.get('energy', 0)}/{env.config['max_energy']}",
-            'health': f"{opp.get('health',100)}/{env.config['max_health']}",
-            'state': opp_state + ('' + opp_flags_str if opp_flags_str else ''),
-            'action': enemy_action_name,
-            'is_player': False
-        })
+            if self.algorithm == "PPO":
+                temp_model = PPO.load(self.model_path)
+            elif self.algorithm == "DQN":
+                temp_model = DQN.load(self.model_path)
+            elif self.algorithm == "A2C":
+                temp_model = A2C.load(self.model_path)
+            else:
+                raise ValueError(f"Unknown algorithm: {self.algorithm}")
 
-# Sort by credits (desc), then nutrinium (desc)
-ships_data.sort(key=lambda s: (-s['credits'], -s['nutrinium']), reverse=True)
+            # Check if action spaces match
+            model_action_space = temp_model.action_space.n
+            env_action_space = env.action_space.n
 
-# Print table
-headers = ['Ship', 'Credits', 'Nutr', 'Pos', 'Energy', 'Health', 'State', 'Next Action']
+            needs_action_compat = False
+            if model_action_space != env_action_space:
+                print(f"\nWARNING: Model action space ({model_action_space}) != Environment action space ({env_action_space})")
+                print(f"This model was trained with an older version of the environment.")
 
-# Calculate column widths
-widths = [len(h) for h in headers]
-for ship in ships_data:
-widths[0] = max(widths[0], len(str(ship['name'])))
-widths[1] = max(widths[1], len(str(ship['credits'])))
-widths[2] = max(widths[2], len(str(ship['nutrinium'])))
-widths[3] = max(widths[3], len(ship['pos']))
-widths[4] = max(widths[4], len(ship['energy']))
-widths[5] = max(widths[5], len(ship['health']))
-widths[6] = max(widths[6], len(ship['state']))
-widths[7] = max(widths[7], len(ship['action']))
+                if model_action_space == 15 and env_action_space == 14:
+                    print(f"Detected: Old model (15 actions with LOWER_SHIELDS) vs Current environment (14 actions)")
+                    print(f"Solution: Using compatibility mode -- old LOWER_SHIELDS mapped to WAIT")
+                    print(f"Note: For best results, retrain the model with the new action space\n")
+                    needs_action_compat = True
+                else:
+                    raise ValueError(f"Incompatible action spaces: {model_action_space} vs {env_action_space}")
 
-# Print header
-header_line = '...'.join(h.ljust(w) for h, w in zip(headers, widths))
-sep_line = '...'.join('-' * w for w in widths)
-self._log_episode_detail('\n' + header_line, render)
-self._log_episode_detail(sep_line, render)
+            # Check if model expects flat observation (Box) vs new Dict space
+            model_obs_space = temp_model.observation_space
+            needs_obs_compat = isinstance(model_obs_space, spaces.Box) and isinstance(env.observation_space, spaces.Dict)
 
-# Print rows
-for ship in ships_data:
-    row = [
-        str(ship['name']).ljust(widths[0]),
-        str(ship['credits']).ljust(widths[1]),
-        str(ship['nutrinium']).ljust(widths[2]),
-        ship['pos'].ljust(widths[3]),
-        ship['energy'].ljust(widths[4]),
-        ship['health'].ljust(widths[5]),
-        ship['state'].ljust(widths[6]),
-        ship['action'].ljust(widths[7])
-    ]
-    line = '...'.join(row)
-    # Highlight player row
-    if ship['is_player']:
-        self._log_episode_detail(f"? {line}", render)
-    else:
-        self._log_episode_detail(f"· {line}", render)
+            if needs_obs_compat:
+                print(f"\nWARNING: Model expects flat observation (Box), environment provides Dict.")
+                print(f"Using compatibility wrapper to extract flat observation.\n")
 
-    self._log_episode_detail("", render)
+            # Check if model expects Dict obs with a different (smaller) observation size
+            needs_obs_size_compat = False
+            if isinstance(model_obs_space, spaces.Dict) and isinstance(env.observation_space, spaces.Dict) and 'observation' in model_obs_space.spaces and 'observation' in env.observation_space.spaces:
+                model_obs_size = model_obs_space['observation'].shape[0]
+                env_obs_size = env.observation_space['observation'].shape[0]
+                if model_obs_size != env_obs_size:
+                    print(f"\nWARNING: Model observation size ({model_obs_size}) != Environment observation size ({env_obs_size})")
+                    print(f"This model was trained with an older version of the environment.")
+                    print(f"Using compatibility mode -- observation will be truncated to {model_obs_size} features.\n")
+                    needs_obs_size_compat = True
+
+            # Use compatibility wrapper if needed for action, observation type, or obs size
+            if needs_action_compat or needs_obs_compat or needs_obs_size_compat:
+                return ActionSpaceCompatibilityWrapper(
+                    temp_model,
+                    model_action_space,
+                    env_action_space
+                )
+
+            # Fully compatible model -- load with env binding
+            if self.algorithm == "PPO":
+                return PPO.load(self.model_path, env=env)
+            elif self.algorithm == "DQN":
+                return DQN.load(self.model_path, env=env)
+            elif self.algorithm == "A2C":
+                return A2C.load(self.model_path, env=env)
+
+        except Exception as e:
+            # If loading fails, raise the error
+            raise RuntimeError(f"Failed to load model: {e}")
+
+    def run_episode(self,
+                    num_opponents: int,
+                    render: bool = True,
+                    render_interval: int = 20,
+                    deterministic: bool = True,
+                    pause_each_step: bool = False,
+                    print_all_actions: bool = False,
+                    print_each_step: bool = False,
+                    cell_width: Optional[int] = None,
+                    minimap: bool = False,
+                    minimap_radius: int = 3,
+                    forced_opponent_types: Optional[List[str]] = None) -> Tuple[Dict, Dict]:
+        """
+        Run a single episode with the trained model.
+
+        Args:
+            num_opponents: Number of opponent ships
+            render: Whether to render the game
+            render_interval: Steps between renders
+            deterministic: Use deterministic policy (best action)
+            pause_each_step: If True, pause and wait for spacebar after each render
+            print_all_actions: If True, print action taken at every step (for debugging)
+
+        Returns:
+            episode_stats, control
+            - episode_stats: Dictionary with episode statistics
+            - control: dict with keys 'skip' (bool) and 'quit' (bool) to inform caller
+        """
+        # Create environment
+        env = ProspectorsPiratesEnv(
+            map_width=self.map_width,
+            map_height=self.map_height,
+            num_opponents=num_opponents,
+            max_steps=self.max_steps,
+            render_mode='human' if render else None,
+            use_predefined_asteroids=self.use_predefined_asteroids,
+            asteroid_config_path=self.asteroid_config_path,
+            use_predefined_start=self.use_predefined_start,
+            start_position_config_path=self.start_position_config_path,
+            terminate_on_player_death=False,  # Allow game to continue after player death for full simulation
+            cell_width=cell_width,
+            minimap_mode=minimap,
+            minimap_radius=minimap_radius,
+            forced_opponent_types=forced_opponent_types
+        )
+
+        # Load model
+        model = self.load_model(env)
+
+        # Run episode
+        observation, info = env.reset()
+
+        if print_each_step or pause_each_step:
+            print(f"{'='*60}")
+            print("OPPONENTS:")
+            for i, enemy in enumerate(env.opponent_ships):
+                e_name = enemy.get('name', f'E{i+1}')
+                ai_type = enemy.get('ai_type', 0)
+                ai_type_name = self.get_ai_type_name(ai_type)
+
+                if AI_TYPE == OpponentAIType.MODEL:
+                    model_path = enemy.get('model_path', 'unknown')
+                    model_name = os.path.basename(model_path) if model_path else 'unknown'
+                    print(f"{e_name}: {ai_type_name} ({model_name})")
+                else:
+                    print(f"{e_name}: {ai_type_name}")
+            print(f"{'='*60}\n")
+
+        total_reward = 0
+        done = False
+        step = 0
+        control = {'skip': False, 'quit': False}
+
+        # Track action distribution for debugging
+        action_counts = {}
+        debug_enabled = False  # Set to False to disable debug output
+
+        while not done:
+            if env.player_ship.get('destroyed', False):
+                action = 13  # REPAWN action
+                original_action = 13
+                original_type = int
+            else:
+                action_raw, _ = model.predict(observation, deterministic=deterministic)
+
+                original_action = action_raw
+                original_type = type(action_raw)
+
+                if isinstance(action_raw, np.ndarray):
+                    try:
+                        action = int(action_raw.item())
+                    except Exception:
+                        action = int(action_raw[0])
+                else:
+                    try:
+                        action = int(action_raw)
+                    except Exception:
+                        action = action_raw
+
+            if step == 0 and debug_enabled:
+                print(f"[DEBUG] First action prediction:")
+                print(f"Original: {original_action}, Type: {original_type}")
+                print(f"Converted: {action}, Type: {type(action)}")
+                print(f"Is numpy array: {isinstance(original_action, np.ndarray)}")
+                if isinstance(original_action, np.ndarray):
+                    print(f"Array shape: {original_action.shape}")
+                    print(f"Array dtype: {original_action.dtype}")
+
+            action_counts[action] = action_counts.get(action, 0) + 1
+
+            # NOTE: env.step() is now called inside the rendering block below
+            # (moved to allow showing state BEFORE action execution)
+
+            # log/render periodically -- BEFORE executing action so we see current state
+            # Always log details to file when logger enabled, but only show in console when render=True
+            should_log_details = (self.logger is not None) or (render and step % render_interval == 0)
+            if should_log_details and step % render_interval == 0:
+                # 1. SHOW MAP FIRST (reflects previous step's action results) -- only if rendering to console
+                if render:
+                    env.render()
+
+                    # 2. SHOW CURRENT STATE AND ACTION IN TABLE FORMAT
+                    self.log_episode_detail(f"\n{'='*70}", render)
+                    self.log_episode_detail(f"CURRENT STATE & ACTIONS (Step {step})", render)
+                    self.log_episode_detail(f"{'='*70}", render)
+
+                    # Collect all ships (player + enemies) for table
+                    ships_data = []
+
+                    # Player
+                    p = env.player_ship
+                    player_state = p.get('state', 'READY')
+                    player_flags = []
+                    if p.get('shields_up'):
+                        player_flags.append('SHIELDS')
+                    if p.get('recharging'):
+                        player_flags.append('RECHARGING')
+                    player_flags_str = f"{''.join(player_flags)}" if player_flags else ''
+                    predicted_action_name = self.ACTION_NAMES[action] if action < len(self.ACTION_NAMES) else f"ACTION_{action}"
+
+                    # Check if the predicted action is valid; if not, show what will actually execute
+                    is_valid, _reason = env._is_action_valid_for_state(action, p, is_player=True)
+                    if not is_valid:
+                        # Mirror the enforcement logic in pnp_env.step()
+                        from pnp_env import ActionType as AT
+                        if p.get('recharging', False):
+                            if p['energy'] >= env.config['max_energy']:
+                                enforced = 'RECHARGE_END'
+                            elif action not in (int(AT.WAIT), int(AT.RECHARGE_END)):
+                                # Model wants an active action -> end recharge
+                                enforced = 'RECHARGE_END'
+                        else:
+                            enforced = 'WAIT'
+                        elif p.get('destroyed', False):
+                            enforced = 'RESPAWN'
+                    else:
+                        # Pick best valid action from mask (mirrors pnp_env fallback)
+                        mask = env._get_action_mask(p)
+                        enforced = 'WAIT'
+                    # When energy is very low, prioritize RECHARGE
+                    if p['energy'] <= env.config['energy_costs'].get('move', 5):
+                        fb_order = [_AT.RECHARGE, _AT.MINE, _AT.SELL, _AT.WAIT,
+                                    _AT.JUMP_TO_ASTEROID,
+                                    _AT.JUMP_TO_TRADING_POST,
+                                    _AT.MOVE_NORTH, _AT.MOVE_SOUTH,
+                                    _AT.MOVE_EAST, _AT.MOVE_WEST,
+                                    _AT.ATTACK, _AT.RAISE_SHIELDS]
+                    else:
+                        fb_order = [_AT.MINE, _AT.SELL, _AT.JUMP_TO_ASTEROID,
+                                    _AT.JUMP_TO_TRADING_POST,
+                                    _AT.MOVE_NORTH, _AT.MOVE_SOUTH,
+                                    _AT.MOVE_EAST, _AT.MOVE_WEST,
+                                    _AT.RECHARGE, _AT.ATTACK, _AT.RAISE_SHIELDS,
+                                    _AT.WAIT]
+                    for fb in fb_order:
+                        if mask[int(fb)] == 1:
+                            enforced = _AT(fb).name
+                            break
+                    predicted_action_name = f"(enforced) (was {predicted_action_name})"
+
+                ships_data.append({
+                    'name': p.get('name', 'P'),
+                    'credits': p['credits'],
+                    'nutrinium': p['nutrinium'],
+                    'pos': f"({p['x']},{p['y']})",
+                    'energy': f"{p['energy']}/{env.config['max_energy']}",
+                    'health': f"{p['health']}/{env.config['max_health']}",
+                    'state': player_state + ('' + player_flags_str if player_flags_str else ''),
+                    'action': predicted_action_name,
+                    'is_player': True
+                })
+
+                # Enemies -- get their predicted next action
+                for i, opp in enumerate(env.opponent_ships):
+                    if not opp.get('destroyed', False):
+                        opp_state = opp.get('state', 'READY')
+                        opp_flags = []
+                        if opp.get('shields_up'):
+                            opp_flags.append('SHIELDS')
+                        if opp.get('recharging'):
+                            opp_flags.append('RECHARGING')
+                        opp_flags_str = f"{''.join(opp_flags)}" if opp_flags else ''
+                        # Predict enemy action (call their AI to see what they'll do)
+                        try:
+                            enemy_action = env._get_opponent_action(opp)
+                            enemy_action_name = self.ACTION_NAMES[enemy_action] if enemy_action < len(self.ACTION_NAMES) else f"ACTION_{enemy_action}"
+                        except Exception:
+                            enemy_action_name = '?'
+                        ships_data.append({
+                            'name': opp.get('name', f'E{i+1}'),
+                            'credits': opp.get('credits', 0),
+                            'nutrinium': opp.get('nutrinium', 0),
+                            'pos': f"({opp['x']},{opp['y']})",
+                            'energy': f"{opp.get('energy', 0)}/{env.config['max_energy']}",
+                            'health': f"{opp.get('health',100)}/{env.config['max_health']}",
+                            'state': opp_state + ('' + opp_flags_str if opp_flags_str else ''),
+                            'action': enemy_action_name,
+                            'is_player': False
+                        })
+
+                # Sort by credits (desc), then nutrinium (desc)
+                ships_data.sort(key=lambda s: (-s['credits'], -s['nutrinium']), reverse=True)
+
+                # Print table
+                headers = ['Ship', 'Credits', 'Nutr', 'Pos', 'Energy', 'Health', 'State', 'Next Action']
+
+                # Calculate column widths
+                widths = [len(h) for h in headers]
+                for ship in ships_data:
+                    widths[0] = max(widths[0], len(str(ship['name'])))
+                    widths[1] = max(widths[1], len(str(ship['credits'])))
+                    widths[2] = max(widths[2], len(str(ship['nutrinium'])))
+                    widths[3] = max(widths[3], len(ship['pos']))
+                    widths[4] = max(widths[4], len(ship['energy']))
+                    widths[5] = max(widths[5], len(ship['health']))
+                    widths[6] = max(widths[6], len(ship['state']))
+                    widths[7] = max(widths[7], len(ship['action']))
+
+                # Print header
+                header_line = '...'.join(h.ljust(w) for h, w in zip(headers, widths))
+                sep_line = '...'.join('-' * w for w in widths)
+                self._log_episode_detail('\n' + header_line, render)
+                self._log_episode_detail(sep_line, render)
+
+                # Print rows
+                for ship in ships_data:
+                    row = [
+                        str(ship['name']).ljust(widths[0]),
+                        str(ship['credits']).ljust(widths[1]),
+                        str(ship['nutrinium']).ljust(widths[2]),
+                        ship['pos'].ljust(widths[3]),
+                        ship['energy'].ljust(widths[4]),
+                        ship['health'].ljust(widths[5]),
+                        ship['state'].ljust(widths[6]),
+                        ship['action'].ljust(widths[7])
+                    ]
+                    line = '...'.join(row)
+                    # Highlight player row
+                    if ship['is_player']:
+                        self._log_episode_detail(f"? {line}", render)
+                    else:
+                        self._log_episode_detail(f"· {line}", render)
+
+                    self._log_episode_detail("", render)
 
 # DEBUG: Verify action value before name lookup
 if debug_enabled and step == 0:
