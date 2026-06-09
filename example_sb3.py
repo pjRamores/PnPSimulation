@@ -380,8 +380,8 @@ def _safe_model_save(model, path):
 class CheckpointCallback(BaseCallback):
     """Callback for saving model checkpoints at regular timestep intervals"""
 
-    def __init__(self, save_freq: int, save_path: str, algorithm: str, name_prefix: str='checkpoint',
-                 verbose: int=0):
+    def __init__(self, save_freq: int, save_path: str, algorithm: str, name_prefix: str = 'checkpoint',
+                 verbose: int = 0):
         """
         Args:
            save_freq: Save checkpoint every save_freq timesteps (e.g., 10_000_000 for 10M)
@@ -398,10 +398,10 @@ class CheckpointCallback(BaseCallback):
         self.last_save_timestep = 0
 
     def _on_step(self) -> bool:
-        #Check if we've reached a checkpoint
-       if self.num_timesteps - self.last_save_timestep >= self.save_freq:
-           # Calculate checkpoint number (e.g., timestep 10M -> checkpoint 1, 20M -> checkpoint 2)
-           checkpoint_num = self.num_timesteps // self.save_freq
+        # Check if we've reached a checkpoint
+        if self.num_timesteps - self.last_save_timestep >= self.save_freq:
+            # Calculate checkpoint number (e.g., timestep 10M -> checkpoint 1, 20M -> checkpoint 2)
+            checkpoint_num = self.num_timesteps // self.save_freq
 
             # Get version number for this checkpoint
             version = _get_next_version_number(self.algorithm, self.save_path, is_transfer=False)
@@ -416,12 +416,12 @@ class CheckpointCallback(BaseCallback):
             _safe_model_save(self.model, checkpoint_path)
 
             if self.verbose > 0:
-                print(f"\n{'='*70}")
+                print(f"\n{'=' * 70}")
                 print(f"CHECKPOINT SAVED")
-                print(f"Timesteps: {self.num_timesteps},")
-                print(f"Path: {checkpoint_path}")
-                print(f"Checkpoint: {checkpoint_num * self.save_freq // 1_000_000}M timesteps")
-                print(f"{ '='*70}\n")
+                print(f"  Timesteps: {self.num_timesteps:},")
+                print(f"  Path: {checkpoint_path}")
+                print(f"  Checkpoint: {checkpoint_num * self.save_freq // 1_000_000}M timesteps")
+                print(f"{ '=' * 70}\n")
 
             self.last_save_timestep = self.num_timesteps
 
@@ -443,20 +443,21 @@ def _get_next_version_number(algorithm, save_path='models/', is_transfer=False):
     import re
 
     if not os.path.exists(save_path):
-return 1
+        return 1
 
-# Pattern: algorithm_pnp_model_v{number}.zip
-pattern = re.compile(rf'{algorithm.lower()}_pnp_model_v(\d+)\.zip', re.IGNORECASE)
+    # Pattern: algorithm_pnp_model_v{number}.zip
+    pattern = re.compile(rf'{algorithm.lower()}_pnp_model_v(\d+)\.zip', re.IGNORECASE)
 
-max_version = 0
-for filename in os.listdir(save_path):
-    match = pattern.match(filename)
-    if match:
-        version = int(match.group(1))
-        max_version = max(max_version, version)
+    max_version = 0
+    for filename in os.listdir(save_path):
+        match = pattern.match(filename)
+        if match:
+            version = int(match.group(1))
+            max_version = max(max_version, version)
 
-# Increment from max version or start at 1
-return max_version + 1 if max_version > 0 else 1
+    # Increment from max version or start at 1
+    return max_version + 1 if max_version > 0 else 1
+
 
 def _freeze_early_layers(model, algorithm):
     """
@@ -483,20 +484,21 @@ def _freeze_early_layers(model, algorithm):
                 # Also freeze part of value network
                 value_net = model.policy.mlp_extractor.value_net
                 for i, layer in enumerate(value_net.children()):
-if i < freeze_until:
-    for param in layer.parameters():
-        param.requires_grad = False
+                    if i < freeze_until:
+                        for param in layer.parameters():
+                            param.requires_grad = False
 
-elif algorithm == 'DQN':
-    # Freeze feature extractor in Q-network
-    if hasattr(model.policy, 'q_net'):
-        q_net = model.policy.q_net
-        if hasattr(q_net, 'features_extractor'):
-            for param in q_net.features_extractor.parameters():
-                param.requires_grad = False
+        elif algorithm == 'DQN':
+            # Freeze feature extractor in Q-network
+            if hasattr(model.policy, 'q_net'):
+                q_net = model.policy.q_net
+                if hasattr(q_net, 'features_extractor'):
+                    for param in q_net.features_extractor.parameters():
+                        param.requires_grad = False
 
-except Exception as e:
-    print(f"Warning: Could not freeze layers: {e}")
+    except Exception as e:
+        print(f" Warning: Could not freeze layers: {e}")
+
 
 def _print_performance_participant_stats(stats_list, opponents):
     """Print participant stats from performance testing in a compact table."""
@@ -513,6 +515,7 @@ def _print_performance_participant_stats(stats_list, opponents):
         # Rank participants by credits for this episode
         episode_rankings = []
         episode_rankings.append(('PLAYER', stats.get('player_credits', 0) or 0))
+
         for enemy in stats.get('enemy_details', []):
             e_name = enemy.get('name', 'ENEMY')
             e_credits = enemy.get('credits', 0) or 0
@@ -520,246 +523,249 @@ def _print_performance_participant_stats(stats_list, opponents):
 
         episode_rankings.sort(key=lambda x: x[1], reverse=True)
         placements = {name: rank + 1 for rank, (name, _) in enumerate(episode_rankings)}
-if 'PLAYER' not in participants:
-    participants['PLAYER'] = {
-        'name': 'PLAYER', 'role': 'PLAYER (new model)',
-        'total_credits': 0, 'max_credits': 0,
-        'survived': 0, 'episodes': 0,
-        'placements': {},
-    }
-    p = participants['PLAYER']
-    p['episodes'] += 1
-    p_credits = stats.get('player_credits', 0) or 0
-    p['total_credits'] += p_credits
-    p['max_credits'] = max(p['max_credits'], p_credits)
-    if not stats.get('player_destroyed', False):
-        p['survived'] += 1
-    placement = placements.get('PLAYER', 0)
-    p['placements'][placement] = p['placements'].get(placement, 0) + 1
 
-    # Accumulate stats for enemies
-    for i, enemy in enumerate(stats.get('enemy_details', [])):
-        e_name = enemy.get('name', 'ENEMY')
-        ai_type = enemy.get('ai_type', None)
-
-        # Determine role from opponent list
-        if i < len(opponents):
-            opp_spec = opponents[i]
-            if opp_spec.upper() == 'HEURISTIC':
-                role = 'HEURISTIC'
-            elif opp_spec.upper() == 'PIRATE':
-                role = 'PIRATE'
-            elif opp_spec.upper() == 'PROSPECTOR':
-                role = 'PROSPECTOR'
-            else:
-                # Model path
-                role = f"MODEL:{os.path.basename(opp_spec)}"
-        else:
-            role = 'UNKNOWN'
-
-        if e_name not in participants:
-            participants[e_name] = {
-                'name': e_name, 'role': role,
+        # Accumulate stats for PLAYER
+        if 'PLAYER' not in participants:
+            participants['PLAYER'] = {
+                'name': 'PLAYER', 'role': 'PLAYER (new model)',
                 'total_credits': 0, 'max_credits': 0,
-'survived': 0, 'episodes': 0,
-'placements': {},
-}
-e = participants[e_name]
-e['episodes'] += 1
-e_credits = enemy.get('credits', 0) or 0
-e['total_credits'] += e_credits
-e['max_credits'] = max(e['max_credits'], e_credits)
-if not enemy.get('destroyed', False):
-    e['survived'] += 1
-placement = placements.get(e_name, 0)
-e['placements'][placement] = e['placements'].get(placement, 0) + 1
+                'survived': 0, 'episodes': 0,
+                'placements': {},
+            }
+            p = participants['PLAYER']
+            p['episodes'] += 1
+            p_credits = stats.get('player_credits', 0) or 0
+            p['total_credits'] += p_credits
+            p['max_credits'] = max(p['max_credits'], p_credits)
+            if not stats.get('player_destroyed', False):
+                p['survived'] += 1
+            placement = placements.get('PLAYER', 0)
+            p['placements'][placement] = p['placements'].get(placement, 0) + 1
 
-# Build rows
-rows = []
-for key, p in participants.items():
-    eps = p['episodes']
-    avg_credits = p['total_credits'] / eps if eps else 0
-    survival_rate = (p['survived'] / eps * 100) if eps else 0
-    first_place = p['placements'].get(1, 0)
-    second_place = p['placements'].get(2, 0)
-    third_place = p['placements'].get(3, 0)
+        # Accumulate stats for enemies
+        for i, enemy in enumerate(stats.get('enemy_details', [])):
+            e_name = enemy.get('name', 'ENEMY')
+            ai_type = enemy.get('ai_type', None)
 
-    rows.append({
-        'name': p['name'],
-        'role': p['role'],
-        'avg_credits': avg_credits,
-        'max_credits': p['max_credits'],
-        'survival_rate': survival_rate,
-        'first_place': first_place,
-        'second_place': second_place,
-        'third_place': third_place,
-    })
+            # Determine role from opponent list
+            if i < len(opponents):
+                opp_spec = opponents[i]
+                if opp_spec.upper() == 'HEURISTIC':
+                    role = 'HEURISTIC'
+                elif opp_spec.upper() == 'PIRATE':
+                    role = 'PIRATE'
+                elif opp_spec.upper() == 'PROSPECTOR':
+                    role = 'PROSPECTOR'
+                else:
+                    # Model path
+                    role = f"MODEL:{os.path.basename(opp_spec)}"
+            else:
+                role = 'UNKNOWN'
 
-# Sort by placement priority
-rows.sort(key=lambda r: (
-    -r['first_place'],
-    -r['second_place'],
-    -r['third_place'],
-    -r['avg_credits']
-))
-# Format and print
-ranked_rows = []
-for i, row in enumerate(rows):
-    ranked_rows.append(
-        str(i + 1),
-        row['name'],
-        row['role'][:25],  # Truncate long role names
-        f"{row['avg_credits']:.1f}",
-        str(row['max_credits']),
-        f"{row['survival_rate']:.0f}%",
-        str(row['first_place']),
-        str(row['second_place']),
-        str(row['third_place'])
-    )
+            if e_name not in participants:
+                participants[e_name] = {
+                    'name': e_name, 'role': role,
+                    'total_credits': 0, 'max_credits': 0,
+                    'survived': 0, 'episodes': 0,
+                    'placements': {},
+                }
+            e = participants[e_name]
+            e['episodes'] += 1
+            e_credits = enemy.get('credits', 0) or 0
+            e['total_credits'] += e_credits
+            e['max_credits'] = max(e['max_credits'], e_credits)
+            if not enemy.get('destroyed', False):
+                e['survived'] += 1
+            placement = placements.get(e_name, 0)
+            e['placements'][placement] = e['placements'].get(placement, 0) + 1
 
-headers = ["Rank", "Ship", "Role", "Avg.Cr", "Max.Cr", "Surv%", "1st", "2nd", "3rd"]
-all_rows = [headers] + ranked_rows
-cols = list(zip(*all_rows))
-widths = [max(len(str(cell))) for cell in col] for col in cols]
+    # Build rows
+    rows = []
+    for key, p in participants.items():
+        eps = p['episodes']
+        avg_credits = p['total_credits'] / eps if eps else 0
+        survival_rate = (p['survived'] / eps * 100) if eps else 0
+        first_place = p['placements'].get(1, 0)
+        second_place = p['placements'].get(2, 0)
+        third_place = p['placements'].get(3, 0)
 
-header_line = ".".join(h.ljust(w) for h, w in zip(headers, widths))
-sep_line = ".".join('-' * w for w in widths)
-print(f"{header_line}")
-print(f"{sep_line}")
-for row in ranked_rows[:10]:  # Show top 10
-    line = ".".join(str(cell).ljust(w) for cell, w in zip(row, widths))
-    print(f"{line}")
-if len(ranked_rows) > 10:
-    print(f".... ({len(ranked_rows)} more)")
+        rows.append({
+            'name': p['name'],
+            'role': p['role'],
+            'avg_credits': avg_credits,
+            'max_credits': p['max_credits'],
+            'survival_rate': survival_rate,
+            'first_place': first_place,
+            'second_place': second_place,
+            'third_place': third_place,
+        })
+
+    # Sort by placement priority
+    rows.sort(key=lambda r: (
+        -r['first_place'],
+        -r['second_place'],
+        -r['third_place'],
+        -r['avg_credits']
+    ))
+
+    # Format and print
+    ranked_rows = []
+    for i, row in enumerate(rows):
+        ranked_rows.append(
+            str(i + 1),
+            row['name'],
+            row['role'][:25],  # Truncate long role names
+            f"{row['avg_credits']:.1f}",
+            str(row['max_credits']),
+            f"{row['survival_rate']:.0f}%",
+            str(row['first_place']),
+            str(row['second_place']),
+            str(row['third_place'])
+        )
+
+    headers = ["Rank", "Ship", "Role", "Avg Cr", "Max Cr", "Surv%", "1st", "2nd", "3rd"]
+    all_rows = [headers] + ranked_rows
+    cols = list(zip(*all_rows))
+    widths = [max(len(str(cell))) for cell in col) for col in cols]
+
+    header_line = " ".join(h.ljust(w) for h, w in zip(headers, widths))
+    sep_line = " ".join('-' * w for w in widths)
+    print(f" {header_line}")
+    print(f" {sep_line}")
+    for row in ranked_rows[:10]:  # Show top 10
+        line = " ".join(str(cell).ljust(w) for cell, w in zip(row, widths))
+        print(f" {line}")
+    if len(ranked_rows) > 10:
+        print(f" ... ({len(ranked_rows) - 10} more)")
+
 
 def _test_model_performance(model_path, algorithm, num_episodes=100):
     """
     Test the newly trained model's performance against existing models.
-    
+
     Runs a simulation with the new model as PLAYER against opponents including
     existing models from enemy_models.config plus algorithmic AIs.
 
     Args:
         model_path: Path to the newly trained model (without .zip extension)
-algorithm: Algorithm.name (PPO, DQN, A2C)
-num_episodes: Number of episodes to simulate (default: 100)
+        algorithm: Algorithm name (PPO, DQN, A2C)
+        num_episodes: Number of episodes to simulate (default: 100)
 
-Returns:
-dict with keys: 'first_place', 'second_place', 'third_place' (counts)
-Returns None if simulation fails
-
-"""
-try:
-    print(f"\n{'=' * 70}")
-    print("PERFORMANCE TESTING: Simulating against existing models")
-    print(f"{'=' * 70}")
-    print(f"Model: {model_path}")
-    print(f"Episodes: {num_episodes}")
-
-    # Import GameSimulator
+    Returns:
+        dict with keys: 'first_place', 'second_place', 'third_place' (counts)
+        Returns None if simulation fails
+    """
     try:
-        from game_simulator import GameSimulator
-    except ImportError:
-        print("Could not import GameSimulator -- skipping performance test")
+        print(f"\n{'=' * 70}")
+        print("PERFORMANCE TESTING: Simulating against existing models")
+        print(f"{'=' * 70}")
+        print(f"Model: {model_path}")
+        print(f"Episodes: {num_episodes}")
+
+        # Import GameSimulator
+        try:
+            from game_simulator import GameSimulator
+        except ImportError:
+            print("Could not import GameSimulator -- skipping performance test")
+            return None
+
+        # Load enemy models from config
+        enemy_models_config = 'enemy_models.config'
+        enemy_models = []
+
+        if os.path.exists(enemy_models_config):
+            with open(enemy_models_config, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        enemy_models.append(line)
+
+        if not enemy_models:
+            print("No enemy models found in enemy_models.config -- using only algorithmic AIs")
+        else:
+            print(f"Loaded {len(enemy_models)} enemy models from config")
+
+        # Build opponent list: 2xHEURISTIC, 2xPIRATE, 2xPROSPECTOR, then enemy models
+        opponents = [
+            'HEURISTIC',
+            'HEURISTIC',
+    'PIRATE',
+    'PIRATE',
+    'PROSPECTOR',
+    'PROSPECTOR',
+    ] + enemy_models
+
+    print(
+        f"Opponents ({len(opponents)}): {''.join(opponents[:3])}...{''.join(opponents[-3:]) if len(opponents) > 3 else ''}")
+
+    # Create simulator
+    simulator = GameSimulator(
+        model_path=model_path,
+        algorithm=algorithm,
+        map_width=10,
+        map_height=10,
+        max_steps=300
+    )
+
+    # Run simulation
+    print(f"\nRunning {num_episodes} episodes (this may take a while)...")
+    stats_list = simulator.run_simulation(
+        num_episodes=num_episodes,
+        forced_opponent_types=opponents,
+        render=False,
+        verbose=False  # Suppress detailed output
+    )
+
+    # Analyze results - count placement finishes
+    first_place = 0
+    second_place = 0
+    third_place = 0
+
+    for episode_stats in stats_list:
+        # Rank all participants by credits for this episode
+        participants = []
+        participants.append(('PLAYER', episode_stats.get('player_credits', 0) or 0))
+        for enemy in episode_stats.get('enemy_details', []):
+            e_name = enemy.get('name', 'ENEMY')
+            e_credits = enemy.get('credits', 0) or 0
+            participants.append((e_name, e_credits))
+    # Sort by credits descending
+    participants.sort(key=lambda x: x[1], reverse=True)
+
+        # Find PLAYER's placement
+        for rank, (name, credits) in enumerate(participants):
+            if name == 'PLAYER':
+                if rank == 0:
+                    first_place += 1
+                elif rank == 1:
+                    second_place += 1
+                elif rank == 2:
+                    third_place += 1
+                break
+
+        print(f"\n Performance Results ({num_episodes} episodes):")
+        print(f"   1st place: {first_place:3d} ({first_place / num_episodes * 100:.1f}%)")
+        print(f"   2nd place: {second_place:3d} ({second_place / num_episodes * 100:.1f}%)")
+        print(f"   3rd place: {third_place:3d} ({third_place / num_episodes * 100:.1f}%)")
+
+
+        # Print participant stats for detailed comparison
+        print(f"\n Participant Stats:")
+        _print_performance_participant_stats(stats_list, opponents)
+
+        print(f"{ '=' * 70}")
+
+        return {
+            'first_place': first_place,
+            'second_place': second_place,
+            'third_place': third_place
+        }
+    
+    except Exception as e:
+        print(f"   Performance testing failed: {e}")
+        import traceback
+        traceback.print_exc()
         return None
-
-    # Load enemy models from config
-    enemy_models_config = 'enemy_models.config'
-    enemy_models = []
-
-    if os.path.exists(enemy_models_config):
-        with open(enemy_models_config, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#'):
-                    enemy_models.append(line)
-
-    if not enemy_models:
-        print("No enemy models found in enemy_models.config -- using only algorithmic AIs")
-    else:
-        print(f"Loaded {len(enemy_models)} enemy models from config")
-
-    # Build opponent list: 2xHEURISTIC, 2xPIRATE, 2xPROSPECTOR, then enemy models
-    opponents = [
-        'HEURISTIC',
-        'HEURISTIC',
-'PIRATE',
-'PIRATE',
-'PROSPECTOR',
-'PROSPECTOR',
-] + enemy_models
-
-print(
-    f"Opponents ({len(opponents)}): {''.join(opponents[:3])}...{''.join(opponents[-3:]) if len(opponents) > 3 else ''}")
-
-# Create simulator
-simulator = GameSimulator(
-    model_path=model_path,
-    algorithm=algorithm,
-    map_width=10,
-    map_height=10,
-    max_steps=300
-)
-
-# Run simulation
-print(f"\nRunning {num_episodes} episodes (this may take a while)...")
-stats_list = simulator.run_simulation(
-    num_episodes=num_episodes,
-    forced_opponent_types=opponents,
-    render=False,
-    verbose=False  # Suppress detailed output
-)
-
-# Analyze results - count placement finishes
-first_place = 0
-second_place = 0
-third_place = 0
-
-for episode_stats in stats_list:
-    # Rank all participants by credits for this episode
-    participants = []
-    participants.append(('PLAYER', episode_stats.get('player_credits', 0) or 0))
-    for enemy in episode_stats.get('enemy_details', []):
-        e_name = enemy.get('name', 'ENEMY')
-        e_credits = enemy.get('credits', 0) or 0
-        participants.append((e_name, e_credits))
-# Sort by credits descending
-participants.sort(key=lambda x: x[1], reverse=True)
-
-    # Find PLAYER's placement
-    for rank, (name, credits) in enumerate(participants):
-        if name == 'PLAYER':
-            if rank == 0:
-                first_place += 1
-            elif rank == 1:
-                second_place += 1
-            elif rank == 2:
-                third_place += 1
-            break
-
-    print(f"\n Performance Results ({num_episodes} episodes):")
-    print(f"   1st place: {first_place:3d} ({first_place / num_episodes * 100:.1f}%)")
-    print(f"   2nd place: {second_place:3d} ({second_place / num_episodes * 100:.1f}%)")
-    print(f"   3rd place: {third_place:3d} ({third_place / num_episodes * 100:.1f}%)")
-
-
-    # Print participant stats for detailed comparison
-    print(f"\n Participant Stats:")
-    _print_performance_participant_stats(stats_list, opponents)
-
-    print(f"{ '=' * 70}")
-
-    return {
-        'first_place': first_place,
-        'second_place': second_place,
-        'third_place': third_place
-    }
-
-except Exception as e:
-    print(f"   Performance testing failed: {e}")
-    import traceback
-    traceback.print_exc()
-    return None
 
 def _save_model_attributes_to_csv(model, algorithm, model_path, callback, is_transfer,
                                   total_timesteps, version, reward_config=None, csv_filename='model_tracking.csv',
