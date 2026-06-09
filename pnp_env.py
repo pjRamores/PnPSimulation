@@ -14,8 +14,6 @@ import os
 import logging
 from enum import IntEnum
 
-from sympy.codegen.ast import continue_
-
 # Import stable-baselines3 models for enemy AI
 try:
     from stable_baselines3 import PPO, DQN, A2C
@@ -692,7 +690,7 @@ class ProspectorsPiratesEnv(gym.Env):
                         random.betavariate(alpha, beta_param) for _ in range(n_ast)
                     ]
 
-                    # Step 3: Assign raw nutrinium = floor(concentration ✕ mass).
+                    # Step 3: Assign raw nutrinium = floor(concentration x mass).
                     # This gives each asteroid its "natural" deposit based on the
                     # drawn concentration.  Rich asteroids (high Beta draw) get a
                     # large share of their mass as nutrinium; poor ones get little.
@@ -883,8 +881,8 @@ class ProspectorsPiratesEnv(gym.Env):
         Config file format (JSON):
         {
             "10x10": [
-                {"x": 2, "y": -3, "mass": 30, "nutrinium": 20},
-                {"x": 5, "y": -7, "mass": 45, "nutrinium": 35},
+                {"x": 2, "y": 3, "mass": 30, "nutrinium": 20},
+                {"x": 5, "y": 7, "mass": 45, "nutrinium": 35},
                 ...
             ],
             "15x15": [...],
@@ -927,7 +925,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 # New format - dict with 'asteroids' and optionally 'trading_posts'
                 asteroids_data = dimension_config['asteroids']
             else:
-                logger.warning(f"Invalid asteroid config format for dimension '{dimension_key}'!")
+                logger.warning(f"Invalid asteroid config format for dimension '{dimension_key}'")
                 logger.warning(f"  Expected list or dict with 'asteroids' key")
                 logger.warning(f"  Falling back to random asteroid generation.")
                 return None
@@ -966,7 +964,7 @@ class ProspectorsPiratesEnv(gym.Env):
 
             if not asteroids:
                 logger.warning(f"No valid asteroids found in config for dimension '{dimension_key}'")
-                logger.warning(f"   Fallin back to random asteroid generation.")
+                logger.warning(f"   Falling back to random asteroid generation.")
                 return None
 
             # Cache the loaded data
@@ -976,12 +974,33 @@ class ProspectorsPiratesEnv(gym.Env):
             return asteroids
 
         except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in asteroid config file {self.asteroid_config_path}: {e}")
+            logger.warning(f"  Falling back to random asteroid generation.")
             return None
         except Exception as e:
+            logger.error(f"Error loading asteroid config: {e}")
+            logger.warning(f"  Falling back to random asteroid generation.")
             return None
 
     def _load_predefined_trading_posts(self) -> Optional[List[dict]]:
+        """
+        Load predefined trading posts from the same asteroid configuration file.
 
+        Config file format (JSON):
+        {
+            "10x10": {
+                "asteroids": [...],
+                "trading_posts": [
+                    {"x": 1, "y": 1},
+                    {"x": 8, "y": 8},
+                    ...
+                ]
+            }
+        }
+
+        Returns:
+             List of trading post dictionaries with x,y coordinates, or None if not found
+        """
         import json
 
         # Don't cache trading posts separately - they come from same config as asteroids
@@ -996,7 +1015,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 config = json.load(f)
 
             if dimension_key not in config:
-                logger.info(f"No predefined trading posts for dimension '{dimension_key}")
+                logger.info(f"No predefined trading posts for dimension '{dimension_key}'")
                 return None
 
             dimension_config = config[dimension_key]
@@ -1008,7 +1027,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 return None
 
             if 'trading_posts' not in dimension_config:
-                logger.info(f" No 'trading_posts' key in config for dimension '{dimension_key}'")
+                logger.info(f"No 'trading_posts' key in config for dimension '{dimension_key}'")
                 return None
 
             posts_data = dimension_config['trading_posts']
@@ -1017,7 +1036,7 @@ class ProspectorsPiratesEnv(gym.Env):
             posts = []
             seen = set()
             for i, post_data in enumerate(posts_data):
-                if not all(k in posts_data for k in ['x', 'y']):
+                if not all(k in post_data for k in ['x', 'y']):
                     logger.warning(f"Invalid trading post data at index {i}: {post_data}")
                     continue
 
@@ -1032,6 +1051,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 if key in seen:
                     logger.warning(f"Duplicate trading post position at index {i} ignored: ({tx},{ty})")
                     continue
+
                 seen.add(key)
                 posts.append({'x': tx, 'y': ty})
 
@@ -1049,8 +1069,7 @@ class ProspectorsPiratesEnv(gym.Env):
             logger.warning(f"Error loading predefined trading posts: {e}")
             return None
 
-
-    def load_predefined_start_position(self) -> Optional[dict]:
+    def _load_predefined_start_position(self) -> Optional[dict]:
         """
         Load predefined starting position from configuration file.
 
@@ -1063,7 +1082,8 @@ class ProspectorsPiratesEnv(gym.Env):
             "15x15": {
                 "player_x": 7,
                 "player_y": 7
-            }
+            },
+            ...
         }
 
         Returns:
@@ -1080,7 +1100,7 @@ class ProspectorsPiratesEnv(gym.Env):
         try:
             if not os.path.exists(self.start_position_config_path):
                 logger.warning(f"Start position config file not found: {self.start_position_config_path}")
-                logger.warning(f"Falling back to random starting position.")
+                logger.warning(f"  Falling back to random starting position.")
                 return None
 
             with open(self.start_position_config_path, 'r', encoding='utf-8') as f:
@@ -1088,8 +1108,8 @@ class ProspectorsPiratesEnv(gym.Env):
 
             if dimension_key not in config:
                 logger.warning(f"No start position configuration found for dimension '{dimension_key}' in {self.start_position_config_path}")
-                logger.warning(f"Available dimensions: {list(config.keys())}")
-                logger.warning(f"Falling back to random starting position.")
+                logger.warning(f"  Available dimensions: {list(config.keys())}")
+                logger.warning(f"  Falling back to random starting position.")
                 return None
 
             start_data = config[dimension_key]
@@ -1097,13 +1117,13 @@ class ProspectorsPiratesEnv(gym.Env):
             # Validate start position data
             if not all(k in start_data for k in ['player_x', 'player_y']):
                 logger.warning(f"Invalid start position data (missing player_x or player_y): {start_data}")
-                logger.warning(f"Falling back to random starting position.")
+                logger.warning(f"  Falling back to random starting position.")
                 return None
 
             # Validate coordinates
             if not (0 <= start_data['player_x'] < self.map_width and 0 <= start_data['player_y'] < self.map_height):
                 logger.warning(f"Start position out of bounds: ({start_data['player_x']}, {start_data['player_y']})")
-                logger.warning(f"Falling back to random starting position.")
+                logger.warning(f"  Falling back to random starting position.")
                 return None
 
             start_position = {
@@ -1118,14 +1138,15 @@ class ProspectorsPiratesEnv(gym.Env):
             return start_position
 
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in start position config file: {self.start_position_config_path}: {e}")
-            logger.warning(f"Falling back to random starting position.")
-    except Exception as e:
-        logger.error(f"Error loading start position config: {e}")
-        logger.warning(f" Falling back to random starting position.")
-        return None
+            logger.error(f"Invalid JSON in start position config file {self.start_position_config_path}: {e}")
+            logger.warning(f"  Falling back to random starting position.")
+            return None
+        except Exception as e:
+            logger.error(f"Error loading start position config: {e}")
+            logger.warning(f" Falling back to random starting position.")
+            return None
 
-    def load_enemy_model_paths(self) -> Optional[List[str]]:
+    def _load_enemy_model_paths(self) -> Optional[List[str]]:
         """
         Load enemy model paths from configuration file.
 
@@ -1144,7 +1165,7 @@ class ProspectorsPiratesEnv(gym.Env):
         try:
             if not os.path.exists(self.enemy_models_config_path):
                 logger.info(f"Enemy models config file not found: {self.enemy_models_config_path}")
-                logger.info(f"No model-based enemies will be created.")
+                logger.info(f"  No model-based enemies will be created.")
                 return None
 
             model_paths = []
@@ -1162,7 +1183,7 @@ class ProspectorsPiratesEnv(gym.Env):
 
             if not model_paths:
                 logger.info(f"No model paths found in {self.enemy_models_config_path}")
-                logger.info(f"No model-based enemies will be created.")
+                logger.info(f"  No model-based enemies will be created.")
                 return None
 
             # Cache the loaded paths
@@ -1175,11 +1196,9 @@ class ProspectorsPiratesEnv(gym.Env):
             logger.warning(f"Error loading enemy model paths: {e}")
             return None
 
-    def generate_random_abilities(self) -> dict:
-        """
-        Generate a random set of abilities for this episode.
-        All participants (player and enemies) share the same abilities per episode.
-        """
+    def _generate_random_abilities(self) -> dict:
+        """Generate a random set of abilities for this episode.
+        All participants (player and enemies) share the same abilities per episode."""
         return {
             'energy_max': random.randint(0, 5),
             'recharge_energy': random.randint(0, 3),
@@ -1225,90 +1244,91 @@ class ProspectorsPiratesEnv(gym.Env):
                 except Exception:
                     pass
 
-    if temp_model is None and 'dqn' in model_path.lower():
-        try:
-            temp_model = DQN.load(model_path)
-        except Exception:
-            pass
+            # Try DQN if PPO failed
+            if temp_model is None and 'dqn' in model_path.lower():
+                try:
+                    temp_model = DQN.load(model_path)
+                except Exception:
+                    pass
 
-        # Try A2C if both failed
-        if temp_model is None:
+            # Try A2C if both failed
+            if temp_model is None:
+                try:
+                    temp_model = A2C.load(model_path)
+                except Exception:
+                    pass
+
+            # If we couldn't load the model at all, return None
+            if temp_model is None:
+                logger.warning(f"Failed to load enemy model: {model_path}")
+                return None
+
+            # Check action space compatibility
+            model_action_space = temp_model.action_space.n
+            env_action_space = self.action_space.n
+
+            if model_action_space != env_action_space:
+                # Check if this is the known 15 vs 14 issue (LOWER_SHIELDS removed)
+                if model_action_space == 15 and env_action_space == 14:
+                    # Old model (15 actions with LOWER_SHIELDS) vs new environment (14 actions)
+                    # Actions: 0-11 are the same, 12 (LOWER_SHIELDS) -> WAIT, 13->12, 14->13
+                    logger.info(f"Enemy model {model_path} has old action space (15), using compatibility mode")
+                else:
+                    logger.warning(f"Enemy model {model_path} has incompatible action space: {model_action_space} vs {env_action_space}")
+                    return None
+
+            # Reload model WITH environment binding for proper normalization and observation processing
+            # This ensures the enemy model gets the same treatment as the player model,
+            # preventing performance gaps due to different observation normalization.
+            # Skip env binding if observation spaces are incompatible (e.g. old model with 128 obs vs 200).
+            obs_compat = True
             try:
-                temp_model = A2C.load(model_path)
+                from gymnasium import spaces as _spaces
+                model_obs_space = temp_model.observation_space
+                if isinstance(model_obs_space, _spaces.Dict) and \
+                   isinstance(self.observation_space, _spaces.Dict) and \
+                   'observation' in model_obs_space.spaces and \
+                   'observation' in self.observation_space.spaces:
+                    if model_obs_space['observation'].shape != self.observation_space['observation'].shape:
+                        obs_compat = False
+                        logger.info(f"Enemy model {model_path} has different obs size: "
+                                   f"{(model_obs_space['observation'].shape[0])} vs."
+                                   f"{self.observation_space['observation'].shape[0]}", )
             except Exception:
                 pass
 
-        # If we couldn't load the model at all, return None
-        if temp_model is None:
-            logger.warning(f"Failed to load enemy model: {model_path}")
+            if not obs_compat:
+                self._enemy_models[model_path] = temp_model
+                logger.info(f"Loaded enemy model without env binding: {model_path} (action space: {model_action_space})")
+                return temp_model
+
+            try:
+                # Determine which algorithm to use for reload
+                final_model = None
+                if 'ppo' in model_path.lower() or isinstance(temp_model, PPO):
+                    final_model = PPO.load(model_path, env=self)
+                elif 'dqn' in model_path.lower() or isinstance(temp_model, DQN):
+                    final_model = DQN.load(model_path, env=self)
+                else:
+                    final_model = A2C.load(model_path, env=self)
+
+                # Cache the environment-bound model
+                self._enemy_models[model_path] = final_model
+                logger.info(f"Loaded enemy model with env binding: {model_path} (action space: {model_action_space})")
+                return final_model
+            except Exception as e:
+                # Fallback to model without env binding if reload fails
+                logger.warning(f"Failed to reload model with env binding ({e}), using original model without binding")
+                self._enemy_models[model_path] = temp_model
+                logger.info(f"Loaded enemy model without env binding: {model_path} (action space: {model_action_space})")
+                return temp_model
+
+        except Exception as e:
+            logger.warning(f"Error loading enemy model {model_path}: {e}")
             return None
 
-        # Check action space compatibility
-        model_action_space = temp_model.action_space.n
-        env_action_space = self.action_space.n
 
-        if model_action_space != env_action_space:
-            # Check if this is the known 15 vs 14 issue (LOWER_SHIELDS removed)
-            if model_action_space == 15 and env_action_space == 14:
-                # Old model (15 actions with LOWER_SHIELDS) vs new environment (14 actions)
-                # Actions: 0-11 are the same, 12 (LOWER_SHIELDS) -> WAIT, 13->12, 14->13
-                logger.info(f"Enemy model {model_path} has old action space (15), using compatibility mode")
-            else:
-                logger.warning(f"Enemy model {model_path} has incompatible action space: {model_action_space} vs {env_action_space}")
-                return None
-
-        # Reload model WITH environment binding for proper normalization and observation processing
-        # This ensures the enemy model gets the same treatment as the player model,
-        # preventing performance gaps due to different observation normalization.
-        # Skip env binding if observation spaces are incompatible (e.g. old model with 128 obs vs 200).
-        obs_compat = True
-        try:
-            from gymnasium import spaces as _spaces
-            model_obs_space = temp_model.observation_space
-            if isinstance(model_obs_space, _spaces.Dict) and \
-               isinstance(self.observation_space, _spaces.Dict) and \
-               'observation' in model_obs_space.spaces and \
-               'observation' in self.observation_space.spaces:
-                if model_obs_space['observation'].shape != self.observation_space['observation'].shape:
-                    obs_compat = False
-                    logger.info(f"Enemy model {model_path} has different obs size: "
-                               f"{(model_obs_space['observation'].shape[0])} vs."
-                               f"{self.observation_space['observation'].shape[0]}", )
-        except Exception:
-            pass
-
-    if not obs_compat:
-        self._enemy_models[model_path] = temp_model
-        logger.info(f"Loaded enemy model without env binding: {model_path} (action space: {model_action_space})")
-        return temp_model
-
-    try:
-        # Determine which algorithm to use for reload
-        final_model = None
-        if 'ppo' in model_path.lower() or isinstance(temp_model, PPO):
-            final_model = PPO.load(model_path, env=self)
-        elif 'dqn' in model_path.lower() or isinstance(temp_model, DQN):
-            final_model = DQN.load(model_path, env=self)
-        else:
-            final_model = A2C.load(model_path, env=self)
-
-        # Cache the environment-bound model
-        self._enemy_models[model_path] = final_model
-        logger.info(f"Loaded enemy model with env binding: {model_path} (action space: {model_action_space})")
-        return final_model
-    except Exception as e:
-        # Fallback to model without env binding if reload fails
-        logger.warning(f"Failed to reload model with env binding ({e}), using original model without binding")
-        self._enemy_models[model_path] = temp_model
-        logger.info(f"Loaded enemy model without env binding: {model_path} (action space: {model_action_space})")
-        return temp_model
-
-    except Exception as e:
-        logger.warning(f"Error loading enemy model {model_path}: {e}")
-        return None
-
-
-    def normalize_action(self, action) -> int:
+    def _normalize_action(self, action) -> int:
         """Normalize various action types (numpy.array, list, tuple, scalar) into int."""
         # Numpy array
         try:
@@ -1318,220 +1338,221 @@ class ProspectorsPiratesEnv(gym.Env):
                 except Exception:
                     # Fallback to first element
                     return int(action[0])
-        # Lists or tuples
-        if isinstance(action, (list, tuple)):
-            return int(action[0])
-        # Scalars (int-like)
-        return int(action)
-    except Exception as e:
-        raise ValueError(f"Unable to normalize action to int: {action!r}") from e
+            # Lists or tuples
+            if isinstance(action, (list, tuple)):
+                return int(action[0])
+            # Scalars (int-like)
+            return int(action)
+        except Exception as e:
+            raise ValueError(f"Unable to normalize action to int: {action!r}") from e
 
 
-def is_action_valid_for_state(self, action: int, ship: dict, is_player: bool = True) -> Tuple[bool, str]:
-    """
-    Validate if an action is valid given the current game state.
-Enhanced action masking rules:
-1. DESTROYED state: only REPAWN is valid
-2. Not DESTROYED: REPAWN is invalid
-3. RECHARGING state: only WAIT and RECHARGE_END are valid
-4. Not RECHARGING: RECHARGE_END is invalid (WAIT is always valid for gaining action points)
-5. RECHARGING + full energy: only RECHARGE_END is valid
-6. ATTACK: requires enemy in same zone
-7. MINE: requires asteroid at current location
-8. SELL: requires trading post at current location
-9. All actions: respect energy requirements
-10. Energy-consuming actions masked when insufficient energy
-11. JUMP_TO_TRADING_POST and SELL require nutrinium
-12. RAISE_SHIELDS: requires combat situation (enemy in same zone)
-13. JUMP_TO_ASTEROID: masked when already at asteroid with nutrinium >= 5%
-14. JUMP_TO_ASTEROID: masked when nearest asteroid is at same location (distance 0, would be a no-op)
-15. RECHARGE: masked when energy > 50% (avoid wasteful recharge cycles)
-16. JUMP_TO_TRADING_POST: masked when already at a trading post (use SELL)
-17. WAIT: masked when energy is critically low (< min useful cost) and NOT recharging
-(prevents dead-end: WAIT doesn't restore energy, only RECHARGE does)
+    def is_action_valid_for_state(self, action: int, ship: dict, is_player: bool = True) -> Tuple[bool, str]:
+        """
+        Validate if an action is valid given the current game state.
 
-Args:
-    action: The action to validate
-    ship: The ship attempting the action
-    is_player: Whether this is the player ship
+        Enhanced action masking rules:
+        1. DESTROYED state: only REPAWN is valid
+        2. Not DESTROYED: REPAWN is invalid
+        3. RECHARGING state: only WAIT and RECHARGE_END are valid
+        4. Not RECHARGING: RECHARGE_END is invalid (WAIT is always valid for gaining action points)
+        5. RECHARGING + full energy: only RECHARGE_END is valid
+        6. ATTACK: requires enemy in same zone
+        7. MINE: requires asteroid at current location
+        8. SELL: requires trading post at current location
+        9. All actions: respect energy requirements
+        10. Energy-consuming actions masked when insufficient energy
+        11. JUMP_TO_TRADING_POST and SELL require nutrinium
+        12. RAISE_SHIELDS: requires combat situation (enemy in same zone)
+        13. JUMP_TO_ASTEROID: masked when already at asteroid with nutrinium >= 5%
+        14. JUMP_TO_ASTEROID: masked when nearest asteroid is at same location (distance 0, would be a no-op)
+        15. RECHARGE: masked when energy > 50% (avoid wasteful recharge cycles)
+        16. JUMP_TO_TRADING_POST: masked when already at a trading post (use SELL)
+        17. WAIT: masked when energy is critically low (< min useful cost) and NOT recharging
+        (prevents dead-end: WAIT doesn't restore energy, only RECHARGE does)
 
-Returns:
-    (is_valid, reason) -- True if valid, False with reason string if invalid
+        Args:
+            action: The action to validate
+            ship: The ship attempting the action
+            is_player: Whether this is the player ship
 
-"""
-# Rule 1: If DESTROYED, only REPAWN is valid
-if ship.get('destroyed', False):
-    if action == ActionType.REPAWN:
-        return True, ""
-    else:
-        return False, "ship is destroyed, only REPAWN is valid"
+        Returns:
+            (is_valid, reason) -- True if valid, False with reason string if invalid
 
-# Rule 2: If NOT destroyed, REPAWN is invalid
-if action == ActionType.REPAWN:
-    return False, "can only respawn when destroyed"
+        """
+        # Rule 1: If DESTROYED, only REPAWN is valid
+        if ship.get('destroyed', False):
+            if action == ActionType.REPAWN:
+                return True, ""
+            else:
+                return False, "ship is destroyed, only REPAWN is valid"
 
-# Rule 3 & 5: If RECHARGING, only WAIT and RECHARGE_END are valid
-# If recharging + full energy, only RECHARGE_END is valid
-# Rule 3b: RECHARGE_END is masked until energy >= 50% to prevent
-# inefficient short recharge cycles (e.g. recharging from 7->17
-# then immediately jumping/mining back to low energy)
-if ship.get('recharging', False):
-    recharge_end_threshold = int(self.config['max_energy'] * 0.5)
-    if ship['energy'] >= self.config['max_energy']:
-        # Rule 5: Full energy while recharging -> only RECHARGE_END
+        # Rule 2: If NOT destroyed, REPAWN is invalid
+        if action == ActionType.REPAWN:
+            return False, "can only respawn when destroyed"
+
+        # Rule 3 & 5: If RECHARGING, only WAIT and RECHARGE_END are valid
+        # If recharging + full energy, only RECHARGE_END is valid
+        # Rule 3b: RECHARGE_END is masked until energy >= 50% to prevent
+        # inefficient short recharge cycles (e.g. recharging from 7->17
+        # then immediately jumping/mining back to low energy)
+        if ship.get('recharging', False):
+            recharge_end_threshold = int(self.config['max_energy'] * 0.5)
+            if ship['energy'] >= self.config['max_energy']:
+                # Rule 5: Full energy while recharging -> only RECHARGE_END
+                if action == ActionType.RECHARGE_END:
+                    return True, ""
+                else:
+                    return False, "energy full while recharging, must end recharge"
+            elif ship['energy'] < recharge_end_threshold:
+                # Rule 3b: Energy too low to end recharging -> only WAIT
+                if action == ActionType.WAIT:
+                    return True, ""
+                else:
+                    return False, f"energy too low to end recharge ({ship['energy']}/{self.config['max_energy']}, need {recharge_end_threshold})"
+            else:
+                # Rule 3: Recharging with sufficient energy -> WAIT or RECHARGE_END
+                if action == ActionType.WAIT:
+                    return True, ""
+                elif action == ActionType.RECHARGE_END:
+                    return True, ""
+                else:
+                    return False, "while recharging, can only WAIT or RECHARGE_END"
+
+        # Rule 4: If NOT recharging, RECHARGE_END is invalid
+        # Note: WAIT is always valid (ship does nothing / gains action points)
         if action == ActionType.RECHARGE_END:
-            return True, ""
-        else:
-            return False, "energy full while recharging, must end recharge"
-    elif ship['energy'] < recharge_end_threshold:
-        # Rule 3b: Energy too low to end recharging -> only WAIT
+            return False, "not currently recharging"
+
+        # From here: ship is not destroyed and not recharging
+        # Validate specific actions with their requirements
+
+        # WAIT -- generally valid but masked when energy is critically low and not recharging.
+        # Per game rules: "WAIT does not require ENERGY. If the ship is RECHARGING
+        # then it generates ENERGY." So WAIT without recharging at low energy is a
+        # dead-end that traps the agent forever (can't do anything useful, energy
+        # never recovers). Force the agent to RECHARGE instead.
         if action == ActionType.WAIT:
+            if not ship.get('recharging', False):
+                # Check if energy is too low to perform any useful action
+                # Move (2 energy) is the cheapest broadly-useful action.
+                # Attack (1 energy) requires enemy in same zone (rare/situational).
+                # If energy < move cost, the player can't do anything productive
+                # and must RECHARGE to recover energy.
+                min_useful_energy = self.config['energy_costs']['move']
+                if ship['energy'] < min_useful_energy:
+                    return False, "energy too low to do anything useful, must RECHARGE instead of WAIT"
             return True, ""
-        else:
-            return False, f"energy too low to end recharge ({ship['energy']}/{self.config['max_energy']}, need {recharge_end_threshold})"
-    else:
-        # Rule 3: Recharging with sufficient energy -> WAIT or RECHARGE_END
-        if action == ActionType.WAIT:
+
+        # MINE -- requires asteroid at current location with nutrinium
+        if action == ActionType.MINE:
+            # Rule 10: Check energy requirement
+            if ship['energy'] < self.config['energy_costs']['mine']:
+                return False, "insufficient energy to mine"
+            # Rule 8: Check asteroid at location
+            asteroid = self._get_entity_at_location(ship['x'], ship['y'], self.asteroids)
+            if asteroid is None:
+                return False, "no asteroid at current location"
+            if asteroid['nutrinium'] <= 0:
+                return False, "asteroid has no nutrinium"
+        return True, ""
+
+        # MOVE actions -- require sufficient energy (Rule 10)
+        if action in [ActionType.MOVE_NORTH, ActionType.MOVE_SOUTH, ActionType.MOVE_EAST, ActionType.MOVE_WEST]:
+            if ship['energy'] < self.config['energy_costs']['move']:
+                return False, "insufficient energy to move"
+            # Check if move would go off map
+            new_x, new_y = ship['x'], ship['y']
+            if action == ActionType.MOVE_NORTH:
+                new_y = ship['y'] - 1
+            elif action == ActionType.MOVE_SOUTH:
+                new_y = ship['y'] + 1
+            elif action == ActionType.MOVE_EAST:
+                new_x = ship['x'] + 1
+            elif action == ActionType.MOVE_WEST:
+                new_x = ship['x'] - 1
+
+            if new_x < 0 or new_x >= self.map_width or new_y < 0 or new_y >= self.map_height:
+                return False, "would move off map"
             return True, ""
-        elif action == ActionType.RECHARGE_END:
+
+        # RECHARGE -- can only start if not already recharging and energy is low enough
+        # Masked when energy > 50% to prevent wasteful recharge cycles
+        # Also masked immediately after ending a recharge to prevent recharge loops
+        if action == ActionType.RECHARGE:
+            # Already checked: not recharging (otherwise would have been caught above)
+            if ship.get('just_recharged', False):
+                return False, "just finished recharging, do something productive first"
+            if ship['energy'] >= self.config['max_energy']:
+                return False, "energy already full"
+            recharge_threshold = int(self.config['max_energy'] * 0.3)
+            if ship['energy'] > recharge_threshold:
+                return False, f"energy too high to recharge ({ship['energy']} / {self.config['max_energy']}, threshold {recharge_threshold})"
             return True, ""
-        else:
-            return False, "while recharging, can only WAIT or RECHARGE_END"
 
-# Rule 4: If NOT recharging, RECHARGE_END is invalid
-# Note: WAIT is always valid (ship does nothing / gains action points)
-if action == ActionType.RECHARGE_END:
-    return False, "not currently recharging"
+        # RECHARGE_END -- already handled in recharging state check above
+        # This code path won't be reached for RECHARGE_END
 
-# From here: ship is not destroyed and not recharging
-# Validate specific actions with their requirements
+        # ATTACK -- requires enemy in same zone and sufficient energy
+        if action == ActionType.ATTACK:
+            # Rule 10: Check energy requirement
+            if ship['energy'] < self.config['energy_costs']['attack']:
+                return False, "insufficient energy to attack"
 
-# WAIT -- generally valid but masked when energy is critically low and not recharging.
-# Per game rules: "WAIT does not require ENERGY. If the ship is RECHARGING
-# then it generates ENERGY." So WAIT without recharging at low energy is a
-# dead-end that traps the agent forever (can't do anything useful, energy
-# never recovers). Force the agent to RECHARGE instead.
-if action == ActionType.WAIT:
-    if not ship.get('recharging', False):
-        # Check if energy is too low to perform any useful action
-        # Move (2 energy) is the cheapest broadly-useful action.
-        # Attack (1 energy) requires enemy in same zone (rare/situational).
-        # If energy < move cost, the player can't do anything productive
-        # and must RECHARGE to recover energy.
-        min_useful_energy = self.config['energy_costs']['move']
-        if ship['energy'] < min_useful_energy:
-            return False, "energy too low to do anything useful, must RECHARGE instead of WAIT"
-    return True, ""
+            # Rule 7: Check if any other ship exists in the same zone
+            if is_player:
+                targets = self.opponent_ships
+            else:
+                # Opponents can target the player OR other opponents in the same zone
+                targets = [self.player_ship] + [s for s in self.opponent_ships if s is not ship]
 
-# MINE -- requires asteroid at current location with nutrinium
-if action == ActionType.MINE:
-    # Rule 10: Check energy requirement
-    if ship['energy'] < self.config['energy_costs']['mine']:
-        return False, "insufficient energy to mine"
-    # Rule 8: Check asteroid at location
-    asteroid = self._get_entity_at_location(ship['x'], ship['y'], self.asteroids)
-    if asteroid is None:
-        return False, "no asteroid at current location"
-    if asteroid['nutrinium'] <= 0:
-        return False, "asteroid has no nutrinium"
-return True, ""
+            active_targets = [t for t in targets if not t.get('destroyed', False)]
+            if not active_targets:
+                return False, "no enemy ships available"
 
-# MOVE actions -- require sufficient energy (Rule 10)
-if action in [ActionType.MOVE_NORTH, ActionType.MOVE_SOUTH, ActionType.MOVE_EAST, ActionType.MOVE_WEST]:
-    if ship['energy'] < self.config['energy_costs']['move']:
-        return False, "insufficient energy to move"
-    # Check if move would go off map
-    new_x, new_y = ship['x'], ship['y']
-    if action == ActionType.MOVE_NORTH:
-        new_y = ship['y'] - 1
-    elif action == ActionType.MOVE_SOUTH:
-        new_y = ship['y'] + 1
-    elif action == ActionType.MOVE_EAST:
-        new_x = ship['x'] + 1
-    elif action == ActionType.MOVE_WEST:
-        new_x = ship['x'] - 1
+            # ATTACK requires an enemy in the same zone (same x,y)
+            enemy_in_zone = any(
+                t['x'] == ship['x'] and t['y'] == ship['y']
+                for t in active_targets
+            )
+            if not enemy_in_zone:
+                return False, "no enemy in same zone"
+            return True, ""
 
-    if new_x < 0 or new_x >= self.map_width or new_y < 0 or new_y >= self.map_height:
-        return False, "would move off map"
-    return True, ""
+        # JUMP_TO_ASTEROID -- requires asteroids and sufficient energy (Rule 10)
+        # Masked when already at an asteroid with nutrinium concentration >= 5%
+        # Masked when the nearest asteroid is at the same location (distance 0, would do nothing)
+        if action == ActionType.JUMP_TO_ASTEROID:
+            # Check if already at a mineable asteroid with sufficient nutrinium
+            current_asteroid = self.get_entity_at_location(ship['x'], ship['y'], self.asteroids)
+            if current_asteroid is not None and current_asteroid.get('nutrinium', 0) > 0:
+                mass = max(current_asteroid.get('mass', 1), 1)
+                concentration = current_asteroid['nutrinium'] / mass
+                if concentration >= 0.05:  # 5% threshold
+                    return False, f"already at asteroid with {concentration:.0%} nutrinium, mine it first"
 
-# RECHARGE -- can only start if not already recharging and energy is low enough
-# Masked when energy > 50% to prevent wasteful recharge cycles
-# Also masked immediately after ending a recharge to prevent recharge loops
-if action == ActionType.RECHARGE:
-    # Already checked: not recharging (otherwise would have been caught above)
-    if ship.get('just_recharged', False):
-        return False, "just finished recharging, do something productive first"
-    if ship['energy'] >= self.config['max_energy']:
-        return False, "energy already full"
-    recharge_threshold = int(self.config['max_energy'] * 0.3)
-    if ship['energy'] > recharge_threshold:
-        return False, f"energy too high to recharge ({ship['energy']} / {self.config['max_energy']}, threshold {recharge_threshold})"
-    return True, ""
+            # Find best asteroid by score (same logic as _action_jump)
+            top = self.get_top_asteroids(ship['x'], ship['y'], count=1)
+            if not top:
+                return False, "no asteroids available"
+            best = top[0]
+            distance = best['distance']
 
-# RECHARGE_END -- already handled in recharging state check above
-# This code path won't be reached for RECHARGE_END
+            # If the best asteroid is at the same location (distance 0), the jump
+            # would be a no-op. Mask it to prevent infinite loops.
+            if distance == 0:
+                return False, "best asteroid is at current location (distance 0), mine it or move away"
+            energy_cost = int(distance * self.config['energy_costs']['jump'])
 
-# ATTACK -- requires enemy in same zone and sufficient energy
-if action == ActionType.ATTACK:
-    # Rule 10: Check energy requirement
-    if ship['energy'] < self.config['energy_costs']['attack']:
-        return False, "insufficient energy to attack"
+            if ship['energy'] < energy_cost:
+                return False, f"insufficient energy (need {energy_cost}, have {ship['energy']})"
+            return True, ""
 
-    # Rule 7: Check if any other ship exists in the same zone
-    if is_player:
-        targets = self.opponent_ships
-    else:
-        # Opponents can target the player OR other opponents in the same zone
-        targets = [self.player_ship] + [s for s in self.opponent_ships if s is not ship]
-
-    active_targets = [t for t in targets if not t.get('destroyed', False)]
-    if not active_targets:
-        return False, "no enemy ships available"
-
-    # ATTACK requires an enemy in the same zone (same x,y)
-    enemy_in_zone = any(
-        t['x'] == ship['x'] and t['y'] == ship['y']
-        for t in active_targets
-    )
-    if not enemy_in_zone:
-        return False, "no enemy in same zone"
-    return True, ""
-
-# JUMP_TO_ASTEROID -- requires asteroids and sufficient energy (Rule 10)
-# Masked when already at an asteroid with nutrinium concentration >= 5%
-# Masked when the nearest asteroid is at the same location (distance 0, would do nothing)
-if action == ActionType.JUMP_TO_ASTEROID:
-    # Check if already at a mineable asteroid with sufficient nutrinium
-    current_asteroid = self.get_entity_at_location(ship['x'], ship['y'], self.asteroids)
-    if current_asteroid is not None and current_asteroid.get('nutrinium', 0) > 0:
-        mass = max(current_asteroid.get('mass', 1), 1)
-        concentration = current_asteroid['nutrinium'] / mass
-        if concentration >= 0.05:  # 5% threshold
-            return False, f"already at asteroid with {concentration:.0%} nutrinium, mine it first"
-
-    # Find best asteroid by score (same logic as _action_jump)
-    top = self.get_top_asteroids(ship['x'], ship['y'], count=1)
-    if not top:
-        return False, "no asteroids available"
-    best = top[0]
-    distance = best['distance']
-
-    # If the best asteroid is at the same location (distance 0), the jump
-    # would be a no-op. Mask it to prevent infinite loops.
-    if distance == 0:
-        return False, "best asteroid is at current location (distance 0), mine it or move away"
-    energy_cost = int(distance * self.config['energy_costs']['jump'])
-
-    if ship['energy'] < energy_cost:
-        return False, f"insufficient energy (need {energy_cost}, have {ship['energy']})"
-    return True, ""
-
-# JUMP_TO_TRADING_POST -- requires trading posts, sufficient energy, and nutrinium (Rule 11)
-# Masked when already at a trading post (should SELL instead)
-if action == ActionType.JUMP_TO_TRADING_POST:
-    # Rule 11: Requires nutrinium (no point jumping to trading post without anything to sell)
-    if ship['nutrinium'] < 10:
+        # JUMP_TO_TRADING_POST -- requires trading posts, sufficient energy, and nutrinium (Rule 11)
+        # Masked when already at a trading post (should SELL instead)
+        if action == ActionType.JUMP_TO_TRADING_POST:
+            # Rule 11: Requires nutrinium (no point jumping to trading post without anything to sell)
+            if ship['nutrinium'] < 10:
         return False, "not enough nutrinium to justify jumping to trading post (need >= 10)"
         if current_post is not None:
             return False, "already at a trading post, use SELL instead"
