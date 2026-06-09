@@ -102,9 +102,9 @@ class DynamicOpponentsWrapper(gym.Wrapper):
     def __init__(self, env: gym.Env, min_opponents: int, max_opponents: int):
         """
         Args:
-           env: The base environment
-           min_opponents: Minimum number of opponents (inclusive)
-           max_opponents: Maximum number of opponents (inclusive)
+            env: The base environment
+            min_opponents: Minimum number of opponents (inclusive)
+            max_opponents: Maximum number of opponents (inclusive)
         """
         super().__init__(env)
         self.min_opponents = min_opponents
@@ -133,9 +133,9 @@ class ActionMaskWrapper(gym.Wrapper):
     The penalty-based approach is less efficient than true masked sampling
     (MaskablePPO), but is significantly better than the silent enforcement
     fallback that existed before, because:
-        - The model receives a consistent negative reward for invalid choices.
-        - The replacement action is random among valid ones (no bias toward a
-         single fallback), so the model can't game the fallback.
+      - The model receives a consistent negative reward for invalid choices.
+      - The replacement action is random among valid ones (no bias toward a
+        single fallback), so the model can't game the fallback.
     """
 
     INVALID_ACTION_PENALTY = 0.0  # No penalty -- action is silently replaced with a valid one
@@ -384,11 +384,11 @@ class CheckpointCallback(BaseCallback):
                  verbose: int = 0):
         """
         Args:
-           save_freq: Save checkpoint every save_freq timesteps (e.g., 10_000_000 for 10M)
-           save_path: Directory to save checkpoints
-           algorithm: Algorithm name (for version numbering)
-           name_prefix: Prefix for checkpoint files
-           verbose: Verbosity level
+            save_freq: Save checkpoint every save_freq timesteps (e.g., 10_000_000 for 10M)
+            save_path: Directory to save checkpoints
+            algorithm: Algorithm name (for version numbering)
+            name_prefix: Prefix for checkpoint files
+            verbose: Verbosity level
        """
         super(CheckpointCallback, self).__init__(verbose)
         self.save_freq = save_freq
@@ -997,15 +997,15 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
     cpu_settings = set_cpu_mode(efficiency_mode=efficiency_mode, num_threads=num_threads)
     print(f"\nCPU Configuration:")
     print(f"  Mode: {cpu_settings['mode']}")
-    print(f"  Threads: {cpu_settings['threads']} / {cpu_settings['cpu_count']} CPUs")
+    print(f"  Threads: {cpu_settings['threads']}/{cpu_settings['cpu_count']} CPUs")
     if cpu_settings.get('torch_configured'):
         print(f"  PyTorch: Configured for {cpu_settings['threads']} threads")
     if cpu_settings.get('priority_set'):
         print(f"  Process Priority: {cpu_settings.get('process_priority', 'default')}")
     if efficiency_mode:
-        print(f" ⚡️ Efficiency Mode: Balanced CPU usage for background training")
+        print(f"  ⚡️ Efficiency Mode: Balanced CPU usage for background training")
     else:
-        print(f" 🚀 Performance Mode: Maximum CPU usage for fastest training")
+        print(f"  🚀 Performance Mode: Maximum CPU usage for fastest training")
     print()
 
     # Create environment
@@ -1227,7 +1227,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                 )
             else:
                 print("  Warning: sb3-contrib not available, using standard PPO")
-                print("  Action masking will not be used -- install sb3-contrib for better performance")
+                print("  Action masking will not be used - install sb3-contrib for better performance")
                 model = PPO(
                     'MultiInputPolicy',
                     env,
@@ -1488,6 +1488,7 @@ def evaluate_model(model, num_episodes=10, render=False, min_opponents=2, max_op
 
 def compare_algorithms(timesteps_per_algorithm=50000, min_opponents=2, max_opponents=2):
     """Compare different algorithms"""
+
     if not SB3_AVAILABLE:
         return
 
@@ -1590,7 +1591,7 @@ def compare_algorithms(timesteps_per_algorithm=50000, min_opponents=2, max_oppon
 
 if __name__ == "__main__":
     if not SB3_AVAILABLE:
-        pr int("\nPlease install Stable Baselines3:")
+        print("\nPlease install Stable Baselines3:")
         print("pip install stable-baselines3[extra]")
         exit(1)
 
@@ -1630,148 +1631,148 @@ Examples:
     
     # Transfer learning: fine-tune an existing model
     python example_sb3.py --algorithm PPO --timesteps 50000 --transfer-from models/ppo_pnp_model
+    
     # Transfer learning with frozen layers and custom learning rate
-    python.example_sb3.py --algorithm PPO --timesteps 50000 --transfer-from models/ppo_pnp_model --freeze-layers --learning-rate 0.00001
+    python example_sb3.py --algorithm PPO --timesteps 50000 --transfer-from models/ppo_pnp_model --freeze-layers --learning-rate 0.00001
     
     # Train on larger map with more opponents and predefined asteroids
-    python.example_sb3.py --algorithm PPO --timesteps 200000 --map-width 20 --map-height 20 --min-opponents 3 --max-opponents 5 --max-steps 50
+    python example_sb3.py --algorithm PPO --timesteps 200000 --map-width 20 --map-height 20 --min-opponents 3 --max-opponents 5 --max-steps 50
     
     # Evaluate a trained model
-    python.example_sb3.py --algorithm PPO --evaluate --model-path models/ppo_pnp_model --render
+    python example_sb3.py --algorithm PPO --evaluate --model-path models/ppo_pnp_model --render
 """
     )
 
-parser.add_argument('--algorithm', type=str, default='PPO',
-                    choices=['PPO', 'DQN', 'A2C', 'compare'],
-                    help='RL algorithm to use')
-parser.add_argument('--timesteps', type=int, default=100000,
-                    help='Total timesteps for training')
-parser.add_argument('--evaluate', action='store_true',
-                    help='Evaluate a trained model')
-parser.add_argument('--model-path', type=str, default=None,
-                    help='Path to trained model for evaluation')
-parser.add_argument('--render', action='store_true',
-                    help='Render during evaluation')
+    parser.add_argument('--algorithm', type=str, default='PPO',
+                        choices=['PPO', 'DQN', 'A2C', 'compare'],
+                        help='RL algorithm to use')
+    parser.add_argument('--timesteps', type=int, default=100000,
+                        help='Total timesteps for training')
+    parser.add_argument('--evaluate', action='store_true',
+                        help='Evaluate a trained model')
+    parser.add_argument('--model-path', type=str, default=None,
+                        help='Path to trained model for evaluation')
+    parser.add_argument('--render', action='store_true',
+                        help='Render during evaluation')
 
-# Transfer learning arguments
-parser.add_argument('--transfer-from', type=str, default=None,
-                    help='Path to pre-trained model for transfer learning')
-parser.add_argument('--freeze-layers', action='store_true',
-                    help='Freeze early network layers during transfer learning')
-parser.add_argument('--learning-rate', type=float, default=None,
-                    help='Custom learning rate for fine-tuning (default: auto-reduced)')
+    # Transfer learning arguments
+    parser.add_argument('--transfer-from', type=str, default=None,
+                        help='Path to pre-trained model for transfer learning')
+    parser.add_argument('--freeze-layers', action='store_true',
+                        help='Freeze early network layers during transfer learning')
+    parser.add_argument('--learning-rate', type=float, default=None,
+                        help='Custom learning rate for fine-tuning (default: auto-reduced)')
 
-# Reward composite options
-parser.add_argument('--no-composite', action='store_true',
-                    help='Disable composite reward calculator (use simple RewardCalculator)')
-parser.add_argument('--reward-components', type=str, default=None,
-                    help='JSON string specifying reward components (list of names or dicts)')
-parser.add_argument('--reward-components-file', type=str, default=None,
-                    help='Path to JSON file specifying reward components')
+    # Reward composite options
+    parser.add_argument('--no-composite', action='store_true',
+                        help='Disable composite reward calculator (use simple RewardCalculator)')
+    parser.add_argument('--reward-components', type=str, default=None,
+                        help='JSON string specifying reward components (list of names or dicts)')
+    parser.add_argument('--reward-components-file', type=str, default=None,
+                        help='Path to JSON file specifying reward components')
 
-# Environment configuration arguments
-parser.add_argument('--map-width', type=int, default=10,
-parser.add_argument('--map-width', type=int, default=10,
-                    help='Width of the game map (default: 10)')
-parser.add_argument('--map-height', type=int, default=10,
-                    help='Height of the game map (default: 10)')
-parser.add_argument('--min-opponents', type=int, default=2,
-                    help='Minimum number of opponent ships (default: 2)')
-parser.add_argument('--max-opponents', type=int, default=2,
-                    help='Maximum number of opponent ships (default: 2)')
-parser.add_argument('--max-steps', type=int, default=300,
-                    help='Maximum steps per episode (default: 300)')
-parser.add_argument('--predefined-asteroids', action='store_true',
-                    help='Use predefined asteroids from config file instead of random generation')
-parser.add_argument('--asteroid-config', type=str, default='asteroids_with_trading_posts.config',
-                    help='Path to asteroid configuration file (default: asteroids_with_trading_posts.config)')
-parser.add_argument('--predefined-start', action='store_true',
-                    help='Use predefined starting positions from config file')
-parser.add_argument('--start-position-config', type=str, default='start_positions.config',
-                    help='Path to starting position configuration file (default: start_positions.config)')
+    # Environment configuration arguments
+    parser.add_argument('--map-width', type=int, default=10,
+                        help='Width of the game map (default: 10)')
+    parser.add_argument('--map-height', type=int, default=10,
+                        help='Height of the game map (default: 10)')
+    parser.add_argument('--min-opponents', type=int, default=2,
+                        help='Minimum number of opponent ships (default: 2)')
+    parser.add_argument('--max-opponents', type=int, default=2,
+                        help='Maximum number of opponent ships (default: 2)')
+    parser.add_argument('--max-steps', type=int, default=300,
+                        help='Maximum steps per episode (default: 300)')
+    parser.add_argument('--predefined-asteroids', action='store_true',
+                        help='Use predefined asteroids from config file instead of random generation')
+    parser.add_argument('--asteroid-config', type=str, default='asteroids_with_trading_posts.config',
+                        help='Path to asteroid configuration file (default: asteroids_with_trading_posts.config)')
+    parser.add_argument('--predefined-start', action='store_true',
+                        help='Use predefined starting positions from config file')
+    parser.add_argument('--start-position-config', type=str, default='start_positions.config',
+                        help='Path to starting position configuration file (default: start_positions.config)')
 
-# CPU/Performance options
-parser.add_argument('--efficiency-mode', action='store_true',
-                    help='Run in efficiency mode (lower CPU usage, slower training) -- good for background training')
-parser.add_argument('--num-threads', type=int, default=None,
-                    help='Specific number of CPU threads to use (overrides efficiency mode)')
+    # CPU/Performance options
+    parser.add_argument('--efficiency-mode', action='store_true',
+                        help='Run in efficiency mode (lower CPU usage, slower training) -- good for background training')
+    parser.add_argument('--num-threads', type=int, default=None,
+                        help='Specific number of CPU threads to use (overrides efficiency mode)')
 
-args = parser.parse_args()
+    args = parser.parse_args()
 
-if args.evaluate:
-    if args.model_path:
-        if args.algorithm == 'PPO':
-            # Try to load as MaskablePPO first, fall back to regular PPO
+    if args.evaluate:
+        if args.model_path:
+            if args.algorithm == 'PPO':
+                # Try to load as MaskablePPO first, fall back to regular PPO
+                try:
+                    if SB3_CONTRIB_AVAILABLE:
+                        model = MaskablePPO.load(args.model_path)
+                        print("Loaded model as MaskablePPO")
+                    else:
+                        raise ImportError("sb3-contrib not available")
+                except Exception:
+                    model = PPO.load(args.model_path)
+                    print("Loaded model as regular PPO")
+            elif args.algorithm == 'DQN':
+                model = DQN.load(args.model_path)
+            elif args.algorithm == 'A2C':
+                model = A2C.load(args.model_path)
+            else:
+                model = None
+            if model is None:
+                print(f"Could not load model for algorithm {args.algorithm} from {args.model_path}")
+            else:
+                model.verbose = 0  # Disable verbose output during evaluation
+                evaluate_model(model, num_episodes=10, render=args.render, min_opponents=args.min_opponents,
+                              max_opponents=args.max_opponents)
+        else:
+            print("Please specify --model-path for evaluation")
+    elif args.algorithm == 'compare':
+        compare_algorithms(timesteps_per_algorithm=args.timesteps, min_opponents=args.min_opponents,
+                           max_opponents=args.max_opponents)
+    else:
+        # Prepare reward composite options
+        import json
+
+        use_composite_flag = not args.no_composite
+        composite_specs = None
+        # Priority: file over inline JSON
+        if args.reward_components_file:
             try:
-                if SB3_CONTRIB_AVAILABLE:
-                    model = MaskablePPO.load(args.model_path)
-                    print("Loaded model as MaskablePPO")
-                else:
-                    raise ImportError("sb3-contrib not available")
-            except Exception:
-                model = PPO.load(args.model_path)
-                print("Loaded model as regular PPO")
-        elif args.algorithm == 'DQN':
-model = DQN.load(args.model_path)
-elif args.algorithm == 'A2C':
-    model = A2C.load(args.model_path)
-else:
-    model = None
-if model is None:
-    print(f"Could not load model for algorithm {args.algorithm} from {args.model_path}")
-else:
-    model.verbose = 0  # Disable verbose output during evaluation
-    evaluate_model(model, num_episodes=10, render=args.render, min_opponents=args.min_opponents,
-                  max_opponents=args.max_opponents)
-else:
-    print("Please specify --model-path for evaluation")
-elif args.algorithm == 'compare':
-    compare_algorithms(timesteps_per_algorithm=args.timesteps, min_opponents=args.min_opponents,
-                       max_opponents=args.max_opponents)
-else:
-    # Prepare reward composite options
-    import json
+                with open(args.reward_components_file, 'r', encoding='utf-8') as f:
+                    composite_specs = json.load(f)
+            except Exception as e:
+                print(f"Warning: Could not read reward components file {args.reward_components_file}: {e}")
+                composite_specs = None
+        elif args.reward_components:
+            try:
+                composite_specs = json.loads(args.reward_components)
+            except Exception as e:
+                print(f"Warning: Could not parse --reward-components JSON: {e}")
+                composite_specs = None
 
-    use_composite_flag = not args.no_composite
-    composite_specs = None
-    # Priority: file over inline JSON
-    if args.reward_components_file:
-        try:
-            with open(args.reward_components_file, 'r', encoding='utf-8') as f:
-                composite_specs = json.load(f)
-        except Exception as e:
-            print(f"Warning: Could not read reward components file {args.reward_components_file}: {e}")
-            composite_specs = None
-    elif args.reward_components:
-        try:
-            composite_specs = json.loads(args.reward_components)
-        except Exception as e:
-            print(f"Warning: Could not parse --reward-components JSON: {e}")
-            composite_specs = None
-
-    model = train_with_sb3(
-        algorithm=args.algorithm,
-        total_timesteps=args.timesteps,
-transfer_from=args.transfer_from,
-    freeze_layers=args.freeze_layers,
-    fine_tune_lr=args.learning_rate,
-    map_width=args.map_width,
-    map_height=args.map_height,
-    min_opponents=args.min_opponents,
-    max_opponents=args.max_opponents,
-    max_steps=args.max_steps,
-    use_predefined_asteroids=args.predefined_asteroids,
-    asteroid_config_path=args.asteroid_config,
-    use_predefined_start=args.predefined_start,
-    start_position_config_path=args.start_position_config,
-    use_composite=use_composite_flag,
-    composite_components=composite_specs,
-    efficiency_mode=args.efficiency_mode,
-    num_threads=args.num_threads
-)
-if model:
-    # After training and saving the model, ask the user whether to proceed to evaluation
-    cont = _ask_to_evaluate()
-    if cont:
-        evaluate_model(model, num_episodes=5, render=True, min_opponents=args.min_opponents,
-                       max_opponents=args.max_opponents)
+        model = train_with_sb3(
+            algorithm=args.algorithm,
+            total_timesteps=args.timesteps,
+            transfer_from=args.transfer_from,
+            freeze_layers=args.freeze_layers,
+            fine_tune_lr=args.learning_rate,
+            map_width=args.map_width,
+            map_height=args.map_height,
+            min_opponents=args.min_opponents,
+            max_opponents=args.max_opponents,
+            max_steps=args.max_steps,
+            use_predefined_asteroids=args.predefined_asteroids,
+            asteroid_config_path=args.asteroid_config,
+            use_predefined_start=args.predefined_start,
+            start_position_config_path=args.start_position_config,
+            use_composite=use_composite_flag,
+            composite_components=composite_specs,
+            efficiency_mode=args.efficiency_mode,
+            num_threads=args.num_threads
+        )
+        if model:
+            # After training and saving the model, ask the user whether to proceed to evaluation
+            cont = _ask_to_evaluate()
+            if cont:
+                evaluate_model(model, num_episodes=5, render=True, min_opponents=args.min_opponents,
+                               max_opponents=args.max_opponents)
