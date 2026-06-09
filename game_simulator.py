@@ -1,7 +1,8 @@
 """
 Game Simulator for Prospectors n Pirates
 
-This module provides a class for simulating games using trained RL models against varying numbers of opponents.
+This module provides a class for simulating games using trained RL models
+against varying numbers of opponents.
 """
 
 import numpy as np
@@ -9,7 +10,6 @@ import random
 import os
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple
-
 
 try:
     from stable_baselines3 import PPO, DQN, A2C
@@ -22,7 +22,6 @@ try:
     SETPROCTITLE_AVAILABLE = True
 except ImportError:
     SETPROCTITLE_AVAILABLE = False
-
 
 # Windows-specific: Set console window title for better visibility
 import platform
@@ -39,11 +38,12 @@ else:
         """Placeholder for non-Windows systems"""
         pass
 
-
 from pnp_env import ProspectorsPiratesEnv, OpponentAIType
+
 
 class ActionSpaceCompatibilityWrapper:
     """Wrapper to make old models (15 actions) compatible with current environment (14 actions).
+
     Old models may have been trained with LOWER_SHIELDS (action 12) which no longer exists.
     Actions 0-11 map directly. Old action 12 (LOWER_SHIELDS) maps to WAIT.
     Old action 13 (JUMP_TO_TRADING_POST) maps to new 12. Old action 14 (RESPAWN) maps to new 13.
@@ -82,9 +82,9 @@ class ActionSpaceCompatibilityWrapper:
                 obs_arr = observation['observation']
                 if obs_arr.shape[-1] > self._model_obs_size:
                     observation = dict(observation)
-                    observation['observation'] = obs_arr[...,:self._model_obs_size]
+                    observation['observation'] = obs_arr[..., :self._model_obs_size]
             elif hasattr(observation, 'shape') and observation.shape[-1] > self._model_obs_size:
-                observation = observation[...,:self._model_obs_size]
+                observation = observation[..., :self._model_obs_size]
 
         action, state = self.model.predict(observation, deterministic=deterministic)
 
@@ -92,21 +92,24 @@ class ActionSpaceCompatibilityWrapper:
         # 0-11: same (WAIT through RAISE_SHIELDS)
         # 12 (old LOWER_SHIELDS): map to 0 (WAIT) since action no longer exists
         # 13 (old JUMP_TO_TRADING_POST): map to 12
-        # 14 (old RESPWN): map to 13
+        # 14 (old RESPAWN): map to 13
         action_int = int(action) if hasattr(action, '__int__') else int(action.item())
         if self.old_size > self.new_size:
             if action_int == 12:
-                action_int = 0. # LOWER_SHIELDS -> WAIT
+                action_int = 0  # LOWER_SHIELDS -> WAIT
             elif action_int == 13:
-                action_int = 12. # JUMP_TO_TRADING_POST
+                action_int = 12  # JUMP_TO_TRADING_POST
             elif action_int == 14:
-                action_int = 13. # RESPWN
-action = np.array(action_int)
-return action, state
+                action_int = 13  # RESPAWN
+            import numpy as np
+            action = np.array(action_int)
+
+        return action, state
+
 
 class SimulationLogger:
     """Logger that writes to both console and file(s)."""
-    
+
     def __init__(self, output_dir: str, enable_logging: bool = True):
         """
         Initialize the logger.
@@ -201,6 +204,8 @@ class SimulationLogger:
             with open(self.simulation_log_path, 'a', encoding='utf-8') as f:
                 f.write("\n" + "=" * 70 + "\n")
                 f.write(f"Simulation completed - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+
+
 class GameSimulator:
     """Simulator for running trained models against opponents"""
 
@@ -230,9 +235,9 @@ class GameSimulator:
         """Format attack payload into a readable combat summary.
 
         Example output:
-        --> E5: dmg 2 (base 2, roll 1.4, shields -0) | HP 98->96 | ATK pwr=0 nrg=50->49 | DEF shields=N evd=0 nrg=60->60
-        --> E3: dmg 1 (base 2, roll 1.8, shields -1) | HP 80->79 shields=Y | DESTROYED! stole 15 nutr
-
+            -> E5: dmg 2 (base 2, roll 1.4, shields -0) | HP 98->96 | ATK pwr=0 nrg=50->49 | DEF shields=N evd=0 nrg=60->60
+            -> E3: dmg 1 (base 2, roll 1.8, shields -1) | HP 80->79 shields=Y | DESTROYED! stole 15 nutr
+        """
         if not payload or not isinstance(payload, dict):
             return str(payload) if payload else ''
 
@@ -258,11 +263,11 @@ class GameSimulator:
         def_energy = payload.get('def_energy', '?')
 
         parts = []
-        parts.append(f"--> {target}: dmg {damage} (base {base_dmg}, roll {dmg_roll}, shields-{shield_absorbed})")
-        parts.append(f"HP: {def_health}")
-        parts.append(f"ATK[pwr={atk_power}.acc={atk_accuracy}.nrg={atk_energy}]")
+        parts.append(f"-> {target}: dmg {damage} (base {base_dmg}, roll {dmg_roll}, shields-{shield_absorbed})")
+        parts.append(f"HP {def_health}")
+        parts.append(f"ATK[pwr={atk_power} acc={atk_accuracy} nrg={atk_energy}]")
         shield_flag = 'Y' if def_shields else 'N'
-        parts.append(f"DEF[shld={shield_flag} str={def_shield_str} evd={def_evade}.nrg={def_energy}]")
+        parts.append(f"DEF[shld={shield_flag} str={def_shield_str} evd={def_evade} nrg={def_energy}]")
 
         if destroyed:
             nutr_stolen = payload.get('nutrinium_stolen', 0)
@@ -275,10 +280,10 @@ class GameSimulator:
         """Format mining payload into a readable summary.
 
         Example output (success):
-        A(3,2) nutr 20/30 density=0.6667 chance=100.0% | payout 8-> ship_nutr=15 | mass 30->22 nutr 20->12 | SKILL[acc=2 yield=1 cost=2] nrg=50->45
+          A(3,2) nutr 20/30 density=0.6667 chance=100.0% | payout 8-> ship_nutr=15 | mass 30->22 nutr 20->12 | SKILL[acc=2 yield=1 cost=2] nrg=50->45
         Example output (failure):
-        A(3,2) nutr 20/30 density=0.6667 chance=50.0% | MISS payout 0 | mass 30->29 nutr 20->20 | SKILL[acc=0 yield=1 cost=2] nrg=50->45
-
+          A(3,2) nutr 20/30 density=0.6667 chance=50.0% | MISS payout 0 | mass 30->29 nutr 20->20 | SKILL[acc=0 yield=1 cost=2] nrg=50->45
+      """
         if not payload or not isinstance(payload, dict):
             return str(payload) if payload else ''
 
@@ -299,285 +304,286 @@ class GameSimulator:
         energy = payload.get('energy', '?')
 
         parts = []
-        parts.append(f"A({ax},{ay}) nutr {ast_nutr}/{ast_mass} density={density} chance={(chance)%}")
+        parts.append(f"A({ax},{ay}) nutr {ast_nutr}/{ast_mass} density={density} chance={chance}%")
 
         if payout > 0:
             ship_nutr = payload.get('ship_nutr', '?')
-            parts.append(f"payout: {payout} -> ship_nutr={ship_nutr}")
-parts.append(f"MISS.payout:0")
-
-parts.append(f"mass:{ast_mass}->{ast_mass_after}.nutr:{ast_nutr}->{ast_nutr_after}")
-parts.append(f"SKILL{acc:mine_acc}.yield:mine_yield.cost:mine_cost}.nrg:energy}")
-
-return ''.join(parts)
-
-def print_ships_table(self, env, info: Optional[Dict] = None):
-    """Print player and opponent ship details in a table sorted by credits (desc).
-
-    Columns: Ship, Credits, Pos, State, Action, Payload, Energy, Health, Nutrinium, Status
-    """
-    # Collect rows for player and opponents
-    rows = []
-
-    # Player
-    ps = getattr(env, 'player_ship', {})
-    p_name = ps.get('name', 'PLAYER')
-    p_credits = int(ps.get('credits', 0))
-    p_action = (info.get('action') if info else '') or ''
-    p_payload = (info.get('payload') if info else '') or ''
-    p_energy = int(ps.get('energy', 0))
-    p_health = int(ps.get('health', 0))
-    p_nutr = int(ps.get('nutrinium', 0))
-    p_status = 'DESTROYED' if ps.get('destroyed', False) else 'ALIVE'
-    # Coordinates and state
-    p_x = ps.get('x', '')
-    p_y = ps.get('y', '')
-    p_pos = f"({p_x},{p_y})" if p_x != '' and p_y != '' else ''
-    p_state = ps.get('state', '')
-    rows.append((p_name, p_credits, p_pos, p_state, str(p_action), str(p_payload), p_energy, p_health, p_nutr, p_status))
-
-    # Opponents
-    last_results = getattr(env, 'last_opponent_action_results', {}) or {}
-    for i, enemy in enumerate(getattr(env, 'opponent_ships', [])):
-        e_name = enemy.get('name', f'E{i+1}')
-        e_credits = int(enemy.get('credits', 0))
-        op_res = last_results.get(i, {})
-        e_action = op_res.get('action') if op_res else ''
-        e_payload = op_res.get('payload') if op_res else ''
-        e_energy = int(enemy.get('energy', 0))
-        e_health = int(enemy.get('health', 0))
-        e_nutr = int(enemy.get('nutrinium', 0))
-        e_status = 'DESTROYED' if enemy.get('destroyed', False) else 'ALIVE'
-        e_x = enemy.get('x', '')
-        e_y = enemy.get('y', '')
-        e_pos = f"({e_x},{e_y})" if e_x != '' and e_y != '' else ''
-        e_state = enemy.get('state', '')
-        rows.append((e_name, e_credits, e_pos, e_state, str(e_action), str(e_payload), e_energy, e_health, e_nutr, e_status))
-
-    # Sort by credits descending
-    rows.sort(key=lambda r: r[1], reverse=True)
-
-    # Prepare columns and widths
-    headers = ["Ship", "Credits", "Pos", "State", "Action", "Payload", "Energy", "Health", "Nutrinium", "Status"]
-    cols = list(zip(*[[str(h) for h in headers]] + [[str(v) for v in row] for row in rows]))
-    widths = [max(len(cell) for cell in col) for col in cols]
-
-    # Print header
-    header_line = ''.join(h.ljust(w) for h, w in zip(headers, widths))
-    sep_line = ''.join('-' * w for w in widths)
-    print("\n" + header_line)
-    print(sep_line)
-
-    # Print rows
-    for row in rows:
-        line = ''.join(str(cell).ljust(w) for cell, w in zip(row, widths))
-        print(line)
-
-def __init__(self,
-              model_path: str,
-              algorithm: str = "PPO",
-              map_width: int = 10,
-              map_height: int = 10,
-              max_steps: int = 300,
-              use_predefined_asteroids: bool = False,
-              asteroid_config_path: str = 'asteroids.config',
-              use_predefined_start: bool = False,
-              start_position_config_path: str = 'start_positions.config',
-              enable_logging: bool = True,
-              output_base_dir: str = 'output'):
-    """
-    Initialize the game simulator.
-
-    Args:
-        model_path: Path to the trained model file
-        algorithm: Algorithm used (PPO, DQN, A2C)
-        map_width: Width of the game map
-        map_height: Height of the game map
-        max_steps: Maximum steps per episode
-        use_predefined_asteroids: Use predefined asteroids from config file
-        asteroid_config_path: Path to asteroid configuration file
-        use_predefined_start: Use predefined starting positions from config file
-        start_position_config_path: Path to starting position configuration file
-        enable_logging: Whether to enable logging to files
-        output_base_dir: Base directory for output logs (default='output')
-    """
-    self.model_path = model_path
-    self.algorithm = algorithm.upper()
-    self.map_width = map_width
-    self.map_height = map_height
-    self.max_steps = max_steps
-    self.use_predefined_asteroids = use_predefined_asteroids
-    self.asteroid_config_path = asteroid_config_path
-self.use_predefined_start = use_predefined_start
-self.start_position_config_path = start_position_config_path
-
-# Track cumulative player placements across episodes
-self.player_placements = {1: 0, 2: 0, 3: 0}  # 1st, 2nd, 3rd place counts
-
-# Logging setup
-self.enable_logging = enable_logging
-self.logger = None
-
-if enable_logging:
-    # Extract model name from path
-    model_name = os.path.splitext(os.path.basename(model_path))[0]
-    # Create timestamped directory name
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_dir = os.path.join(output_base_dir, f"{model_name}_{timestamp}")
-    self.logger = SimulationLogger(output_dir, enable_logging=True)
-
-# Validate model exists
-if not SB3_AVAILABLE:
-    raise ImportError("stable-baselines3 not installed. Install with: pip install stable-baselines3[extra]")
-
-if not os.path.exists(model_path + ".zip") and not os.path.exists(model_path):
-    raise FileNotFoundError(f"Model not found at {model_path}")
-
-# Statistics tracking
-self.episode_stats: List[Dict] = []
-
-def _print(self, message="", to_episode=True, to_simulation=True, to_console=True):
-    """
-    Print message to console and optionally to log files.
-    
-    Args:
-        message: Message to print/log
-        to_episode: Whether to write to current episode log
-        to_simulation: Whether to write to simulation log
-        to_console: Whether to print to console
-    """
-    if self.logger:
-        self.logger.log(message, to_episode=to_episode, to_simulation=to_simulation, to_console=to_console)
-    else:
-        if to_console:
-            print(message)
-
-def _log_episode_detail(self, message="", render=True):
-    """
-    Log episode detail message. Always logs to episode file, but only prints to console if render=True.
-    
-    Args:
-        message: Message to log
-        render: Whether currently rendering (controls console output)
-    """
-    if self.logger:
-        # Always log to episode file, but only to console if rendering
-        self.logger.log(message, to_episode=True, to_simulation=False, to_console=render)
-    else:
-        if render:
-            print(message)
-
-def wait_for_spacebar(self):
-    """
-    Wait for user to press spacebar to continue, Q to skip future pauses, or ESC to quit.
-    
-    Returns:
-        'continue' -> user pressed SPACE
-        'skip' -> user pressed 'q' to skip remaining pauses
-        'quit' -> user pressed ESC to quit the simulation
-    """
-    import msvcrt  # Windows-specific
-
-    print("[Press SPACE to continue, Q to skip remaining pauses, ESC to quit...]", end='', flush=True)
-    while True:
-        if msvcrt.kbhit():
-            key = msvcrt.getch()
-            # Check for spacebar (0x20)
-            if key == b' ':
-                print("\r" + "." * 80 + "\r", end='', flush=True)  # Clear the message
-                return 'continue'
-            # Allow 'q' to skip remaining pauses
-            elif key.lower() == b'q':
-                print("\r[Skipping remaining pauses...]" + "." * 20)
-                return 'skip'
-            # ESC to quit (0x1b)
-            elif key == b'\x1b':
-                print("\r[Quit requested - exiting simulation...]" + "." * 20)
-                return 'quit'
-            # Some terminals may emit special prefix bytes (like 0 or 224) for arrows; ignore them
-            elif key in (b'\x00', b'\xe0'):
-                if msvcrt.kbhit():
-                    _ = msvcrt.getch()
-                    continue
-    # fallback
-    return 'continue'
-
-def load_model(self, env):
-    """
-    Load the trained model for the given environment.
-    
-    Handles compatibility with old models trained with 14 actions
-    by wrapping them in a compatibility layer.
-    Also handles old models trained with flat Box observation space
-    vs new Dict observation space (action masking).
-    """
-    from gymnasium import spaces
-# Try to load the model first to check its action/observation space
-try:
-    if self.algorithm == "PPO":
-        temp_model = PPO.load(self.model_path)
-    elif self.algorithm == "DQN":
-        temp_model = DQN.load(self.model_path)
-    elif self.algorithm == "A2C":
-        temp_model = A2C.load(self.model_path)
-    else:
-        raise ValueError(f"Unknown algorithm: {self.algorithm}")
-
-    # Check if action spaces match
-    model_action_space = temp_model.action_space.n
-    env_action_space = env.action_space.n
-
-    needs_action_compat = False
-    if model_action_space != env_action_space:
-        print(f"\nWARNING: Model action space ({model_action_space}) != Environment action space ({env_action_space})")
-        print(f"This model was trained with an older version of the environment.")
-        
-        if model_action_space == 15 and env_action_space == 14:
-            print(f"Detected: Old model (15 actions with LOWER_SHIELDS) vs Current environment (14 actions)")
-            print(f"Solution: Using compatibility mode -- old LOWER_SHIELDS mapped to WAIT")
-            print(f"Note: For best results, retrain the model with the new action space\n")
-            needs_action_compat = True
+            parts.append(f"payout {payout} -> ship_nutr={ship_nutr}")
         else:
-            raise ValueError(f"Incompatible action spaces: {model_action_space} vs {env_action_space}")
+            parts.append(f"MISS payout 0")
 
-    # Check if model expects flat observation (Box) vs new Dict space
-    model_obs_space = temp_model.observation_space
-    needs_obs_compat = isinstance(model_obs_space, spaces.Box) and isinstance(env.observation_space, spaces.Dict)
+        parts.append(f"mass {ast_mass}->{ast_mass_after}.nutr:{ast_nutr}->{ast_nutr_after}")
+        parts.append(f"SKILL[acc={mine_acc} yield={mine_yield} cost={mine_cost}] nrg={energy}")
 
-    if needs_obs_compat:
-        print(f"\nWARNING: Model expects flat observation (Box), environment provides Dict.")
-        print(f"Using compatibility wrapper to extract flat observation.\n")
+        return ' | '.join(parts)
 
-    # Check if model expects Dict obs with a different (smaller) observation size
-    needs_obs_size_compat = False
-    if isinstance(model_obs_space, spaces.Dict) and isinstance(env.observation_space, spaces.Dict) and 'observation' in model_obs_space.spaces and 'observation' in env.observation_space.spaces:
-        model_obs_size = model_obs_space['observation'].shape[0]
-        env_obs_size = env.observation_space['observation'].shape[0]
-        if model_obs_size != env_obs_size:
-            print(f"\nWARNING: Model observation size ({model_obs_size}) != Environment observation size ({env_obs_size})")
+    def print_ships_table(self, env, info: Optional[Dict] = None):
+        """Print player and opponent ship details in a table sorted by credits (desc).
+
+        Columns: Ship, Credits, Pos, State, Action, Payload, Energy, Health, Nutrinium, Status
+        """
+        # Collect rows for player and opponents
+        rows = []
+
+        # Player
+        ps = getattr(env, 'player_ship', {})
+        p_name = ps.get('name', 'PLAYER')
+        p_credits = int(ps.get('credits', 0))
+        p_action = (info.get('action') if info else '') or ''
+        p_payload = (info.get('payload') if info else '') or ''
+        p_energy = int(ps.get('energy', 0))
+        p_health = int(ps.get('health', 0))
+        p_nutr = int(ps.get('nutrinium', 0))
+        p_status = 'DESTROYED' if ps.get('destroyed', False) else 'ALIVE'
+        # Coordinates and state
+        p_x = ps.get('x', '')
+        p_y = ps.get('y', '')
+        p_pos = f"({p_x},{p_y})" if p_x != '' and p_y != '' else ''
+        p_state = ps.get('state', '')
+        rows.append((p_name, p_credits, p_pos, p_state, str(p_action), str(p_payload), p_energy, p_health, p_nutr, p_status))
+
+        # Opponents
+        last_results = getattr(env, 'last_opponent_action_results', {}) or {}
+        for i, enemy in enumerate(getattr(env, 'opponent_ships', [])):
+            e_name = enemy.get('name', f'E{i+1}')
+            e_credits = int(enemy.get('credits', 0))
+            op_res = last_results.get(i, {})
+            e_action = op_res.get('action') if op_res else ''
+            e_payload = op_res.get('payload') if op_res else ''
+            e_energy = int(enemy.get('energy', 0))
+            e_health = int(enemy.get('health', 0))
+            e_nutr = int(enemy.get('nutrinium', 0))
+            e_status = 'DESTROYED' if enemy.get('destroyed', False) else 'ALIVE'
+            e_x = enemy.get('x', '')
+            e_y = enemy.get('y', '')
+            e_pos = f"({e_x},{e_y})" if e_x != '' and e_y != '' else ''
+            e_state = enemy.get('state', '')
+            rows.append((e_name, e_credits, e_pos, e_state, str(e_action), str(e_payload), e_energy, e_health, e_nutr, e_status))
+
+        # Sort by credits descending
+        rows.sort(key=lambda r: r[1], reverse=True)
+
+        # Prepare columns and widths
+        headers = ["Ship", "Credits", "Pos", "State", "Action", "Payload", "Energy", "Health", "Nutrinium", "Status"]
+        cols = list(zip(*[[str(h) for h in headers]] + [[str(v) for v in row] for row in rows]))
+        widths = [max(len(cell) for cell in col) for col in cols]
+
+        # Print header
+        header_line = ''.join(h.ljust(w) for h, w in zip(headers, widths))
+        sep_line = ''.join('-' * w for w in widths)
+        print("\n" + header_line)
+        print(sep_line)
+
+        # Print rows
+        for row in rows:
+            line = ''.join(str(cell).ljust(w) for cell, w in zip(row, widths))
+            print(line)
+
+    def __init__(self,
+                  model_path: str,
+                  algorithm: str = "PPO",
+                  map_width: int = 10,
+                  map_height: int = 10,
+                  max_steps: int = 300,
+                  use_predefined_asteroids: bool = False,
+                  asteroid_config_path: str = 'asteroids.config',
+                  use_predefined_start: bool = False,
+                  start_position_config_path: str = 'start_positions.config',
+                  enable_logging: bool = True,
+                  output_base_dir: str = 'output'):
+        """
+        Initialize the game simulator.
+
+        Args:
+            model_path: Path to the trained model file
+            algorithm: Algorithm used (PPO, DQN, A2C)
+            map_width: Width of the game map
+            map_height: Height of the game map
+            max_steps: Maximum steps per episode
+            use_predefined_asteroids: Use predefined asteroids from config file
+            asteroid_config_path: Path to asteroid configuration file
+            use_predefined_start: Use predefined starting positions from config file
+            start_position_config_path: Path to starting position configuration file
+            enable_logging: Whether to enable logging to files
+            output_base_dir: Base directory for output logs (default='output')
+        """
+        self.model_path = model_path
+        self.algorithm = algorithm.upper()
+        self.map_width = map_width
+        self.map_height = map_height
+        self.max_steps = max_steps
+        self.use_predefined_asteroids = use_predefined_asteroids
+        self.asteroid_config_path = asteroid_config_path
+        self.use_predefined_start = use_predefined_start
+        self.start_position_config_path = start_position_config_path
+
+        # Track cumulative player placements across episodes
+        self.player_placements = {1: 0, 2: 0, 3: 0}  # 1st, 2nd, 3rd place counts
+
+        # Logging setup
+        self.enable_logging = enable_logging
+        self.logger = None
+
+        if enable_logging:
+            # Extract model name from path
+            model_name = os.path.splitext(os.path.basename(model_path))[0]
+            # Create timestamped directory name
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            output_dir = os.path.join(output_base_dir, f"{model_name}_{timestamp}")
+            self.logger = SimulationLogger(output_dir, enable_logging=True)
+
+        # Validate model exists
+        if not SB3_AVAILABLE:
+            raise ImportError("stable-baselines3 not installed. Install with: pip install stable-baselines3[extra]")
+
+        if not os.path.exists(model_path + ".zip") and not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model not found at {model_path}")
+
+        # Statistics tracking
+        self.episode_stats: List[Dict] = []
+
+    def _print(self, message="", to_episode=True, to_simulation=True, to_console=True):
+        """
+        Print message to console and optionally to log files.
+
+        Args:
+            message: Message to print/log
+            to_episode: Whether to write to current episode log
+            to_simulation: Whether to write to simulation log
+            to_console: Whether to print to console
+        """
+        if self.logger:
+            self.logger.log(message, to_episode=to_episode, to_simulation=to_simulation, to_console=to_console)
+        else:
+            if to_console:
+                print(message)
+
+    def _log_episode_detail(self, message="", render=True):
+        """
+        Log episode detail message. Always logs to episode file, but only prints to console if render=True.
+
+        Args:
+            message: Message to log
+            render: Whether currently rendering (controls console output)
+        """
+        if self.logger:
+            # Always log to episode file, but only to console if rendering
+            self.logger.log(message, to_episode=True, to_simulation=False, to_console=render)
+        else:
+            if render:
+                print(message)
+
+    def wait_for_spacebar(self):
+        """
+        Wait for user to press spacebar to continue, Q to skip future pauses, or ESC to quit.
+
+        Returns:
+            'continue' -> user pressed SPACE
+            'skip' -> user pressed 'q' to skip remaining pauses
+            'quit' -> user pressed ESC to quit the simulation
+        """
+        import msvcrt  # Windows-specific
+
+        print("[Press SPACE to continue, Q to skip remaining pauses, ESC to quit...]", end='', flush=True)
+        while True:
+            if msvcrt.kbhit():
+                key = msvcrt.getch()
+                # Check for spacebar (0x20)
+                if key == b' ':
+                    print("\r" + "." * 80 + "\r", end='', flush=True)  # Clear the message
+                    return 'continue'
+                # Allow 'q' to skip remaining pauses
+                elif key.lower() == b'q':
+                    print("\r[Skipping remaining pauses...]" + "." * 20)
+                    return 'skip'
+                # ESC to quit (0x1b)
+                elif key == b'\x1b':
+                    print("\r[Quit requested - exiting simulation...]" + "." * 20)
+                    return 'quit'
+                # Some terminals may emit special prefix bytes (like 0 or 224) for arrows; ignore them
+                elif key in (b'\x00', b'\xe0'):
+                    if msvcrt.kbhit():
+                        _ = msvcrt.getch()
+                        continue
+        # fallback
+        return 'continue'
+
+    def load_model(self, env):
+        """
+        Load the trained model for the given environment.
+
+        Handles compatibility with old models trained with 14 actions
+        by wrapping them in a compatibility layer.
+        Also handles old models trained with flat Box observation space
+        vs new Dict observation space (action masking).
+        """
+        from gymnasium import spaces
+    # Try to load the model first to check its action/observation space
+    try:
+        if self.algorithm == "PPO":
+            temp_model = PPO.load(self.model_path)
+        elif self.algorithm == "DQN":
+            temp_model = DQN.load(self.model_path)
+        elif self.algorithm == "A2C":
+            temp_model = A2C.load(self.model_path)
+        else:
+            raise ValueError(f"Unknown algorithm: {self.algorithm}")
+
+        # Check if action spaces match
+        model_action_space = temp_model.action_space.n
+        env_action_space = env.action_space.n
+
+        needs_action_compat = False
+        if model_action_space != env_action_space:
+            print(f"\nWARNING: Model action space ({model_action_space}) != Environment action space ({env_action_space})")
             print(f"This model was trained with an older version of the environment.")
-            print(f"Using compatibility mode -- observation will be truncated to {model_obs_size} features.\n")
-            needs_obs_size_compat = True
 
-    # Use compatibility wrapper if needed for action, observation type, or obs size
-    if needs_action_compat or needs_obs_compat or needs_obs_size_compat:
-        return ActionSpaceCompatibilityWrapper(
-            temp_model,
-            model_action_space,
-            env_action_space
-        )
+            if model_action_space == 15 and env_action_space == 14:
+                print(f"Detected: Old model (15 actions with LOWER_SHIELDS) vs Current environment (14 actions)")
+                print(f"Solution: Using compatibility mode -- old LOWER_SHIELDS mapped to WAIT")
+                print(f"Note: For best results, retrain the model with the new action space\n")
+                needs_action_compat = True
+            else:
+                raise ValueError(f"Incompatible action spaces: {model_action_space} vs {env_action_space}")
 
-    # Fully compatible model -- load with env binding
-    if self.algorithm == "PPO":
-        return PPO.load(self.model_path, env=env)
-    elif self.algorithm == "DQN":
-        return DQN.load(self.model_path, env=env)
-    elif self.algorithm == "A2C":
-        return A2C.load(self.model_path, env=env)
+        # Check if model expects flat observation (Box) vs new Dict space
+        model_obs_space = temp_model.observation_space
+        needs_obs_compat = isinstance(model_obs_space, spaces.Box) and isinstance(env.observation_space, spaces.Dict)
 
-except Exception as e:
-    # If loading fails, raise the error
-    raise RuntimeError(f"Failed to load model: {e}")
+        if needs_obs_compat:
+            print(f"\nWARNING: Model expects flat observation (Box), environment provides Dict.")
+            print(f"Using compatibility wrapper to extract flat observation.\n")
+
+        # Check if model expects Dict obs with a different (smaller) observation size
+        needs_obs_size_compat = False
+        if isinstance(model_obs_space, spaces.Dict) and isinstance(env.observation_space, spaces.Dict) and 'observation' in model_obs_space.spaces and 'observation' in env.observation_space.spaces:
+            model_obs_size = model_obs_space['observation'].shape[0]
+            env_obs_size = env.observation_space['observation'].shape[0]
+            if model_obs_size != env_obs_size:
+                print(f"\nWARNING: Model observation size ({model_obs_size}) != Environment observation size ({env_obs_size})")
+                print(f"This model was trained with an older version of the environment.")
+                print(f"Using compatibility mode -- observation will be truncated to {model_obs_size} features.\n")
+                needs_obs_size_compat = True
+
+        # Use compatibility wrapper if needed for action, observation type, or obs size
+        if needs_action_compat or needs_obs_compat or needs_obs_size_compat:
+            return ActionSpaceCompatibilityWrapper(
+                temp_model,
+                model_action_space,
+                env_action_space
+            )
+
+        # Fully compatible model -- load with env binding
+        if self.algorithm == "PPO":
+            return PPO.load(self.model_path, env=env)
+        elif self.algorithm == "DQN":
+            return DQN.load(self.model_path, env=env)
+        elif self.algorithm == "A2C":
+            return A2C.load(self.model_path, env=env)
+
+    except Exception as e:
+        # If loading fails, raise the error
+        raise RuntimeError(f"Failed to load model: {e}")
 
 def run_episode(self,
                 num_opponents: int,
