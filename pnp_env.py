@@ -2721,8 +2721,8 @@ class ProspectorsPiratesEnv(gym.Env):
                 best_asteroid = ast
 
         if best_asteroid:
-            dist = self.calculate_distance(ship['x'], ship['y'],
-                                           best_asteroid['x'], best_asteroid['y'])
+            dist = self._calculate_distance(ship['x'], ship['y'],
+                                            best_asteroid['x'], best_asteroid['y'])
             jump_cost = int(dist * self.config['energy_costs']['jump'])
 
             # Jump aggressively -- walking wastes turns
@@ -2837,7 +2837,7 @@ class ProspectorsPiratesEnv(gym.Env):
             health_threshold = 30 if best_target_health > 50 else 20  # Lower bar for attacking weak targets
             if best_value > 10 and ship['health'] > health_threshold:
                 return ActionType.ATTACK
-    
+
         # === 4. FLEE if health is low and enemies are nearby ===
         if ship['health'] < 40 and same_zone_targets:
             # Move away from enemies -- pick a direction away from the nearest threat
@@ -2903,14 +2903,14 @@ class ProspectorsPiratesEnv(gym.Env):
             if score > best_ast_score:
                 best_ast_score = score
                 best_asteroid = ast
-    
+
         if best_asteroid:
             dist = self._calculate_distance(ship['x'], ship['y'], best_asteroid['x'], best_asteroid['y'])
             jump_cost = int(dist * self.config['energy_costs']['jump'])
 
             if dist > 2 and ship['energy'] >= jump_cost + 15:
                 return ActionType.JUMP_TO_ASTEROID
-    
+
             dx = best_asteroid['x'] - ship['x']
             dy = best_asteroid['y'] - ship['y']
             if abs(dx) > abs(dy):
@@ -3042,7 +3042,7 @@ class ProspectorsPiratesEnv(gym.Env):
 
         # Abilities (12 values)
         obs.extend([
-            abilities.get('energy_max', -5) / max(1, max_abilities.get('energy_max', 10)),
+            abilities.get('energy_max', 5) / max(1, max_abilities.get('energy_max', 10)),
             abilities.get('recharge_energy', 0) / max(1, max_abilities.get('recharge_energy', 10)),
             abilities.get('mine_accuracy', 0) / max(1, max_abilities.get('mine_accuracy', 10)),
             abilities.get('mine_yield_multiplier', 1) / max(1, max_abilities.get('mine_yield_multiplier', 5)),
@@ -3056,12 +3056,12 @@ class ProspectorsPiratesEnv(gym.Env):
             abilities.get('jump_distance', 0) / max(1, max_abilities.get('jump_distance', 10)),
         ])
 
-        # Action counter: (1 value) -- normalized by max_steps. (typical ~300)
+        # Action counter: (1 value) - normalized by max_steps (typical ~300)
         obs.append(self.action_counter / max(1, self.max_steps))
 
-        # === STRATEGIC CONTEXT: (8 values) ===
+        # === STRATEGIC CONTEXT (8 values) ===
         # These high-signal features directly encode actionable state
-        map_diag = max(1.0, math.sqrt(self.map_width ** 2 + self.map_height ** 2))
+        map_diag = max(1.0, math.sqrt(self.map_width**2 + self.map_height**2))
 
         # 1. At asteroid with nutrinium?
         ast_here = self._get_entity_at_location(ship['x'], ship['y'], self.asteroids)
@@ -3099,7 +3099,7 @@ class ProspectorsPiratesEnv(gym.Env):
             dx_tp, dy_tp = 0.0, 0.0
         obs.extend([dx_tp, dy_tp])
 
-        # === LOCAL SENSOR GRID: (with clamped/shifted window to maximize valid cells) ===
+        # === LOCAL SENSOR GRID (with clamped/shifted window to maximize valid cells) ===
         sensor_range = self.config['sensor_range']
         side = 2 * sensor_range + 1  # Grid dimension (e.g., 11 for sensor_range=5)
 
@@ -3136,12 +3136,12 @@ class ProspectorsPiratesEnv(gym.Env):
 
                     obs.append(entity_type)
                 else:
-                    # Out-of-bounds (should be rare with clamping, only when map < sensor grid)
+                    # Out of bounds (should be rare with clamping, only when map < sensor grid)
                     obs.append(-1.0)
 
         # === TOP 5 ASTEROIDS (30 values: 5 asteroids * 6 features) ===
         top_asteroids = self._get_top_asteroids(ship['x'], ship['y'], count=self.config['top_asteroids_count'])
-        max_dist = math.sqrt(self.map_width ** 2 + self.map_height ** 2)
+        max_dist = math.sqrt(self.map_width**2 + self.map_height**2)
         max_mass = float(self.config.get('asteroid_mass_max', 80))
 
         for asteroid in top_asteroids:
@@ -3210,7 +3210,7 @@ class ProspectorsPiratesEnv(gym.Env):
         if not self.asteroids:
             return []
 
-        max_dist = math.sqrt(self.map_width ** 2 + self.map_height ** 2)
+        max_dist = math.sqrt(self.map_width**2 + self.map_height**2)
         scored_asteroids = []
 
         for asteroid in self.asteroids:
@@ -3440,7 +3440,7 @@ class ProspectorsPiratesEnv(gym.Env):
         cell_entities = [[[] for _ in range(self.map_width)] for _ in range(self.map_height)]
 
         # Asteroids: show as A<nutrinium> (only if nutrinium>0)
-        for x, y, asteroid in asteroid_map.items():
+        for (x, y), asteroid in asteroid_map.items():
             if 0 <= x < self.map_width and 0 <= y < self.map_height:
                 cell_entities[y][x].append(f"A{asteroid['nutrinium']}")
 
@@ -3488,14 +3488,14 @@ class ProspectorsPiratesEnv(gym.Env):
         x_count = x_max - x_min + 1
 
         # Top header with column indices centered for the rendered window
-        header = '    ' + ''.join(str(i % 10).center(cell_width + 3) for i in range(x_min, x_max + 1))
+        header = '     ' + ''.join(str(i % 10).center(cell_width + 3) for i in range(x_min, x_max + 1))
         print(header)
 
         # Build box-drawing borders so each cell is enclosed (for the window width):
         segment = '-' * (cell_width + 2)
-        top_border = '  ' + '+' + '+'.join([segment] * x_count) + '+'
-        mid_border = '  ' + '+' + '+'.join([segment] * x_count) + '+'
-        bottom_border = '  ' + '+' + '+'.join([segment] * x_count) + '+'
+        top_border = '   ' + '+' + '+'.join([segment] * x_count) + '+'
+        mid_border = '   ' + '+' + '+'.join([segment] * x_count) + '+'
+        bottom_border = '   ' + '+' + '+'.join([segment] * x_count) + '+'
 
         print(top_border)
 
