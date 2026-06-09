@@ -20,13 +20,14 @@ try:
     SB3_AVAILABLE = True
 except ImportError:
     SB3_AVAILABLE = False
-PPO = DQN = A2C = None
+    PPO = DQN = A2C = None
 
 # Import modular reward utilities from separate module
 from reward_utils import RewardComponent, RewardCalculatorComposite, DistanceToAsteroidReward, SurvivalReward
 
 # Module logger
 logger = logging.getLogger(__name__)
+
 
 class ActionType(IntEnum):
     """Game action types"""
@@ -45,12 +46,14 @@ class ActionType(IntEnum):
     JUMP_TO_TRADING_POST = 12  # jump to nearest trading post
     RESPAWN = 13  # respawn after being destroyed
 
+
 class OpponentAIType(IntEnum):
     """AI behavior types for opponent ships"""
     PROSPECTOR = 0  # Focuses on mining and selling, avoids combat
-    PIRATE = 1  # Aggressive, prioritizes attacking and stealing
-    HEURISTIC = 2  # Balanced approach with smart decision-making
-    MODEL = 3  # Uses a trained RL model for decision-making
+    PIRATE = 1      # Aggressive, prioritizes attacking and stealing
+    HEURISTIC = 2   # Balanced approach with smart decision-making
+    MODEL = 3       # Uses a trained RL model for decision-making
+
 
 @dataclass
 class RewardConfig:
@@ -75,8 +78,9 @@ class RewardConfig:
     use_composite: bool = True
     # Optional list of component specifications to include in the composite.
     # Each entry can be either a string (component class name) or a dict:
-    #   - {'name': 'DistanceToAsteroidReward', 'params': {'weight': 0.05}}
+    #  - {'name': 'DistanceToAsteroidReward', 'params': {'weight': 0.05}}
     composite_components: Optional[List[object]] = None
+
 
 class RewardCalculator:
     """Applies RewardConfig to raw action rewards and optional shaping.
@@ -84,17 +88,21 @@ class RewardCalculator:
     The compute method takes the raw reward returned by action execution and
     returns a final scalar reward that will be accumulated by the environment.
     """
+
     def __init__(self, config: RewardConfig):
         self.config = config
 
     def compute(self, raw_reward: float, action: int, action_info: dict, *, env: Optional[object] = None, ship: Optional[dict] = None) -> float:
+        # Defensive cast
         try:
             a = int(action)
         except Exception:
             a = action
+
         multiplier = self.config.action_multipliers.get(a, 1.0)
         reward = float(raw_reward) * float(multiplier)
-# Apply success/failure adjustments if action_info provides 'success'
+
+        # Apply success/failure adjustments if action_info provides 'success'
         success = action_info.get('success', None)
         if success is True:
             reward += self.config.success_bonus
@@ -107,7 +115,7 @@ class RewardCalculator:
             try:
                 health_frac = ship.get('health', 0) / max(1.0, getattr(env, 'config', {}).get('max_health', 100))
                 if health_frac < 0.2 and a in (ActionType.RECHARGE, ActionType.RECHARGE_END, ActionType.MOVE_NORTH,
-                                                ActionType.MOVE_SOUTH, ActionType.MOVE_EAST, ActionType.MOVE_WEST):
+                                               ActionType.MOVE_SOUTH, ActionType.MOVE_EAST, ActionType.MOVE_WEST):
                     # small encouragement to take defensive/mobility actions when low HP
                     reward += 0.01
             except Exception:
@@ -115,10 +123,13 @@ class RewardCalculator:
 
         return float(reward)
 
+
 class ProspectorsPiratesEnv(gym.Env):
-    """Prospectors n Pirates Game Environment
-    A space mining game where ships can mine asteroids for nutrinium or attack other ships to steal their cargo.
-    The goal is to maximize credits earned.
+    """
+    Prospectors n Pirates Game Environment
+
+    A space mining game where ships can mine asteroids for nutrinium or attack other
+    ships to steal their cargo. The goal is to maximize credits earned.
     """
 
     metadata = {'render_modes': ['human', 'rgb_array'], 'render_fps': 4}
@@ -137,12 +148,13 @@ class ProspectorsPiratesEnv(gym.Env):
                  start_position_config_path: str = 'start_positions.config',
                  enemy_models_config_path: str = 'enemy_models.config',
                  terminate_on_player_death: bool = True,
-                 forced_opponent_types: Optional[List] = None,
+                 forced_opponent_types: Optional[list] = None,
                  # Rendering options
                  cell_width: Optional[int] = None,
                  minimap_mode: bool = False,
                  minimap_radius: int = 3):
-        """Initialize the Prospectors n Pirates environment
+        """
+        Initialize the Prospectors n Pirates environment
 
         Args:
             map_width: Width of the game map
@@ -165,13 +177,11 @@ class ProspectorsPiratesEnv(gym.Env):
         self.map_height = map_height
         self.num_opponents = num_opponents
         self.forced_opponent_types = forced_opponent_types
-
         if forced_opponent_types:
             self.num_opponents = len(forced_opponent_types)
         self.max_steps = max_steps
         self.render_mode = render_mode
         self.terminate_on_player_death = terminate_on_player_death
-
         # Rendering overrides
         self.cell_width = cell_width
         self.minimap_mode = bool(minimap_mode)
@@ -196,563 +206,566 @@ class ProspectorsPiratesEnv(gym.Env):
         self.config = {
             'max_energy': 100,
             'energy_per_recharge': 10,
-'max_health': 100,
-'max_nutrinium_cargo': 1000,
-'max_credits': 10000,
-'max_skill_points': 20,
-'energy_costs': {
-    'mine': .5,
-    'move': 2,
-    'jump': 5, # per unit distance
-    'attack': 1, # minimum
-    'shields': .1,
-},
-'combat': {
-    'base_hit_chance': 0.5,
-    'base_shield_resistance': 0.25,
-    'recharge_penalty': 0.2,
-    'damage_variance': 0.5, # + - 50%
-},
-'mining': {
-    'base_success_chance': 0.5,
-    'payout_modifier': 1.0,
-    'min_payout': 1,
-    'max_payout': 10,
-},
-'market': {
-    'nutrinium_price': 3,
-    'ship_cost': 100,
-},
-'asteroid_density': 0.15,
-'trading_post_count': 4,
-'sensor_range': 5,
-# Nutrinium distribution tuning
-# Total nutrinium budget = nutrinium_per_player * total_players * (1 +/- budget_variance)
-# This ensures enough nutrinium for all players to mine competitively, but not so much that accumulating credits becomes trivial.
-'nutrinium_per_player': 50, # target: nutrinium units available per player
-'nutrinium_budget_variance': 0.2, # +/-20% random variance on total budget
-# Beta distribution shape parameters for nutrinium concentration per asteroid.
-# alpha < beta -> skew toward lower concentrations (more poor asteroids).
-# With alpha=1.5, beta=8: ~30% poor, ~50% medium, ~20% rich asteroids.
-# The few rich asteroids become high-value strategic targets.
-'nutrinium_beta_alpha': 1.5,
-'nutrinium_beta_beta': 8.0,
-# Mass range for asteroids (larger masses lower average concentration, creating more strategic differentiation between poor and rich asteroids)
-'asteroid_mass_min': 20,
-'asteroid_mass_max': 80,
-# Ship abilities max values for normalization
-'abilities': {
-    'energy_max': -10,
-    'recharge_energy': 10,
-    'mine_accuracy': 10,
-    'mine_yield_multiplier': 5,
-    'mine_cost': .10,
-    'combat_salvage_multiplier': 5,
-    'attack_accuracy': 10,
-    'attack_power': 10,
-    'evade': 10,
-    'shield_strength': 10,
-    'jump_distance': 10,
-},
-# Observation parameters
-'top_asteroids_count': 5, # Number of top asteroids to include in observation
-}
+            'max_health': 100,
+            'max_nutrinium_cargo': 1000,
+            'max_credits': 10000,
+            'max_skill_points': 20,
+            'energy_costs': {
+                'mine': .5,
+                'move': 2,
+                'jump': 5,  # per unit distance
+                'attack': 1,  # minimum
+                'shields': .1,
+            },
+            'combat': {
+                'base_hit_chance': 0.5,
+                'base_shield_resistance': 0.25,
+                'recharge_penalty': 0.2,
+                'damage_variance': 0.5,  # + - 50%
+            },
+            'mining': {
+                'base_success_chance': 0.5,
+                'payout_modifier': 1.0,
+                'min_payout': 1,
+                'max_payout': 10,
+            },
+            'market': {
+                'nutrinium_price': 3,
+                'ship_cost': 100,
+            },
+            'asteroid_density': 0.15,
+            'trading_post_count': 4,
+            'sensor_range': 5,
+            # Nutrinium distribution tuning
+            # Total nutrinium budget = nutrinium_per_player * total_players * (1 +/- budget_variance)
+            # This ensures enough nutrinium for all players to mine competitively,
+            # but not so much that accumulating credits becomes trivial.
+            'nutrinium_per_player': 50,         # target: nutrinium units available per player
+            'nutrinium_budget_variance': 0.2,   # +/-20% random variance on total budget
+            # Beta distribution shape parameters for nutrinium concentration per asteroid.
+            # alpha < beta -> skew toward lower concentrations (more poor asteroids).
+            # With alpha=1.5, beta=8: ~30% poor, ~50% medium, ~20% rich asteroids.
+            # The few rich asteroids become high-value strategic targets.
+            'nutrinium_beta_alpha': 1.5,
+            'nutrinium_beta_beta': 8.0,
+            # Mass range for asteroids (larger masses lower average concentration,
+            # creating more strategic differentiation between poor and rich asteroids)
+            'asteroid_mass_min': 20,
+            'asteroid_mass_max': 80,
+            # Ship abilities max values for normalization
+            'abilities': {
+                'energy_max': -10,
+                'recharge_energy': 10,
+                'mine_accuracy': 10,
+                'mine_yield_multiplier': 5,
+                'mine_cost': .10,
+                'combat_salvage_multiplier': 5,
+                'attack_accuracy': 10,
+                'attack_power': 10,
+                'evade': 10,
+                'shield_strength': 10,
+                'jump_distance': 10,
+            },
+            # Observation parameters
+            'top_asteroids_count': 5,  # Number of top asteroids to include in observation
+        }
 
-# Reward shaping -- configurable; allow injection of custom RewardConfig
-self.reward_config = reward_config if reward_config is not None else RewardConfig()
-# By default use the simple RewardCalculator; if user requested a composite, build it
-if getattr(self.reward_config, 'use_composite', False):
-    try:
-        # Import component classes locally to avoid top-level import issues
-        from reward_utils import (
-            RewardCalculatorComposite,
-            DistanceToAsteroidReward,
-            SurvivalReward,
-            PenaltyNearEnemyReward,
-            SellBonusReward,
-            MiningQualityReward,
-            InappropriateActionPenalty,
-            EndOfEpisodeNutriniumReward,
-            EarlyDeathPenaltyReward,
-            CreditProgressReward,
-            IdleLoopPenalty,
-            EndOfEpisodeCreditReward,
-            PlacementReward,
-            EnergyStarvationPenalty,
-            OverriddenActionPenalty,
+        # Reward shaping - configurable; allow injection of custom RewardConfig
+        self.reward_config = reward_config if reward_config is not None else RewardConfig()
+        # By default use the simple RewardCalculator; if user requested a composite, build it
+        if getattr(self.reward_config, 'use_composite', False):
+            try:
+                # Import component classes locally to avoid top-level import issues
+                from reward_utils import (
+                    RewardCalculatorComposite,
+                    DistanceToAsteroidReward,
+                    SurvivalReward,
+                    PenaltyNearEnemyReward,
+                    SellBonusReward,
+                    MiningQualityReward,
+                    InappropriateActionPenalty,
+                    EndOfEpisodeNutriniumReward,
+                    EarlyDeathPenaltyReward,
+                    CreditProgressReward,
+                    IdleLoopPenalty,
+                    EndOfEpisodeCreditReward,
+                    PlacementReward,
+                    EnergyStarvationPenalty,
+                    OverriddenActionPenalty,
+                )
+
+                # Mapping of short names to constructor callables
+                component_map = {
+                    'DistanceToAsteroidReward': DistanceToAsteroidReward,
+                    'SurvivalReward': SurvivalReward,
+                    'PenaltyNearEnemyReward': PenaltyNearEnemyReward,
+                    'SellBonusReward': SellBonusReward,
+                    'MiningQualityReward': MiningQualityReward,
+                    'InappropriateActionPenalty': InappropriateActionPenalty,
+                    'EndOfEpisodeNutriniumReward': EndOfEpisodeNutriniumReward,
+                    'EarlyDeathPenaltyReward': EarlyDeathPenaltyReward,
+                    'CreditProgressReward': CreditProgressReward,
+                    'IdleLoopPenalty': IdleLoopPenalty,
+                    'EndOfEpisodeCreditReward': EndOfEpisodeCreditReward,
+                    'PlacementReward': PlacementReward,
+                    'EnergyStarvationPenalty': EnergyStarvationPenalty,
+                    'OverriddenActionPenalty': OverriddenActionPenalty,
+                }
+
+                comps = []
+                specs = self.reward_config.composite_components or []
+                if specs:
+                    for spec in specs:
+                        try:
+                            if isinstance(spec, str):
+                                name = spec
+                                params = {}
+                            elif isinstance(spec, dict):
+                                name = spec.get('name')
+                                params = spec.get('params', {}) or {}
+                            else:
+                                continue
+
+                            ctor = component_map.get(name)
+                            if ctor is None:
+                                # Unknown component name; skip
+                                continue
+                            # Instantiate with params if any
+                            comps.append(ctor(**params) if params else ctor())
+                        except Exception:
+                            # Skip components that fail to construct
+                            continue
+                else:
+                    # Default composite components - balanced to prioritize credit accumulation
+                    # SurvivalReward: tiny per-step bonus for staying alive (0.001/step = 0.3 total)
+                    # DistanceToAsteroidReward: gentle shaping toward mineable resources
+                    # CreditProgressReward: rewards credit gains, penalizes zero-credit idling
+                    # IdleLoopPenalty: penalizes getting stuck in non-productive loops
+                    # EndOfEpisodeCreditReward: strong end-of-episode signal for credits (0.5 per credit)
+                    # InappropriateActionPenalty: penalizes contextually bad actions (e.g., MINE with no asteroid)
+                    comps = [
+                        DistanceToAsteroidReward(),
+                        SurvivalReward(),
+                        CreditProgressReward(),
+                        IdleLoopPenalty(),
+                        EndOfEpisodeCreditReward(),
+                        EndOfEpisodeNutriniumReward(),  # Penalizes holding unsold nutrinium at episode end
+                        EarlyDeathPenaltyReward(),      # Penalizes early death proportional to remaining episode
+                        InappropriateActionPenalty(),
+                        # --- new components (analysis-driven fixes) ---
+                        PlacementReward(),              # Strong terminal reward based on final rank vs opponents
+                        SellBonusReward(),              # Reinforces the mine -> sell loop
+                        EnergyStarvationPenalty(),      # Discourages low-energy drifting / chronic energy starvation
+                        OverriddenActionPenalty(),      # Penalty when env had to override an infeasible chosen action
+                    ]
+
+                self.reward_calc = RewardCalculatorComposite(self.reward_config, comps)
+                logger.info(f"Using RewardCalculatorComposite with components: {[c.__class__.__name__ for c in comps]}")
+            except Exception as e:
+                logger.warning(f"Failed to construct RewardCalculatorComposite::{e}. Falling back to simple RewardCalculator.")
+        else:
+            self.reward_calc = RewardCalculator(self.reward_config)
+
+        # Invalid action handling / diagnostics
+        # If True, the env will print warnings when an invalid action is provided
+        self.warn_on_invalid_action = bool(warn_on_invalid_action)
+        # Counter for invalid actions encountered (normalization failures or OOB)
+        self.invalid_action_count = 0
+        # Counter for state-invalid actions (valid action code but invalid given current state)
+        self.state_invalid_action_count = 0
+
+        # Action space: discrete actions
+        # 0: WAIT, 1: MINE, 2-5: MOVE (N,S,E,W), 6: RECHARGE, 7: RECHARGE_END,
+        # 8: ATTACK (closest enemy), 9: JUMP_TO_ASTEROID (to nearest asteroid), 10: SELL,
+        # 11: RAISE_SHIELDS, 12: JUMP_TO_TRADING_POST, 13: RESPAWN
+        self.action_space = spaces.Discrete(14)
+
+        # Observation space: flattened representation of game state
+        # Enhanced ship state (based on full metadata):
+        # - Basic: x, y, energy, health, nutrinium, credits (6)
+        # - State flags: recharging, shields_up, state_ready (3)
+        # - Skill points: total, spent (2)
+        # - Abilities: 12 ability values
+        # - Action counter: actions taken this episode (1)
+        # Total ship state: 24 values
+
+        # + Strategic context (high-signal features): 8 values
+        # - at_asteroid: 1 if on asteroid with nutrinium, 0 otherwise
+        # - at_trading_post: 1 if on trading post, 0 otherwise
+        # - has_nutrinium: nutrinium / cargo_cap (how full is cargo)
+        # - enemy_in_zone: 1 if enemy at same location, 0 otherwise
+        # - nearest_asteroid_dist: distance / map_diag (normalized)
+        # - nearest_trading_post_dist: distance / map_diag (normalized)
+        # - energy_ratio: energy / max_energy (redundant but grouped with context)
+        # - episode_progress: current_step / max_steps
+
+        # + Local sensor data (grid around ship)
+        # + Top 5 asteroids (x, y, mass, nutrinium, distance, score) = 6 values each = 30 total
+        # + Nearest trading post (x, y, distance) = 3 values
+        # + Two enemy types at player location:
+        # - Strongest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
+        # - Weakest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
+        # Total enemy info: 14 values
+
+        ship_state_size = 24  # Complete ship state (including action counter)
+        strategic_context_size = 8  # High-signal strategic features
+        sensor_grid_size = (2 * self.config['sensor_range'] + 1) ** 2
+        top_asteroids_size = self.config['top_asteroids_count'] * 6  # 5 asteroids * 6 features each
+        trading_post_size = 3  # x, y, distance
+        enemy_info_size = 14  # 2 enemies * 7 features each
+        obs_size = (
+            ship_state_size +
+            strategic_context_size +
+            sensor_grid_size +
+            top_asteroids_size +
+            trading_post_size +
+            enemy_info_size
         )
 
-        # Mapping of short names to constructor callables
-        component_map = {
-            'DistanceToAsteroidReward': DistanceToAsteroidReward,
-            'SurvivalReward': SurvivalReward,
-            'PenaltyNearEnemyReward': PenaltyNearEnemyReward,
-            'SellBonusReward': SellBonusReward,
-            'MiningQualityReward': MiningQualityReward,
-            'InappropriateActionPenalty': InappropriateActionPenalty,
-            'EndOfEpisodeNutriniumReward': EndOfEpisodeNutriniumReward,
-            'EarlyDeathPenaltyReward': EarlyDeathPenaltyReward,
-            'CreditProgressReward': CreditProgressReward,
-            'IdleLoopPenalty': IdleLoopPenalty,
-            'EndOfEpisodeCreditReward': EndOfEpisodeCreditReward,
-            'PlacementReward': PlacementReward,
-            'EnergyStarvationPenalty': EnergyStarvationPenalty,
-            'OverriddenActionPenalty': OverriddenActionPenalty,
-        }
-comps = []
-specs = self.reward_config.composite_components or []
-if specs:
-    for spec in specs:
-        try:
-            if isinstance(spec, str):
-                name = spec
-                params = {}
-            elif isinstance(spec, dict):
-                name = spec.get('name')
-                params = spec.get('params', {}) or {}
+        # Use Dict observation space to support action masking
+        self.observation_space = spaces.Dict({
+            'observation': spaces.Box(
+                low=-1.0,  # Allow -1.0 for out-of-bounds indicators in sensor grid
+                high=1.0,
+                shape=(obs_size,),
+                dtype=np.float32
+            ),
+            'action_mask': spaces.Box(
+                low=0,
+                high=1,
+                shape=(14,),  # One mask value per action
+                dtype=np.int8
+            )
+        })
+
+        # Initialize state variables
+        self.current_step = 0
+        self.action_counter = 0  # Track actions taken in current episode (max ~300 for 5 min @ 1 action/sec)
+        self.player_ship = None
+        self.opponent_ships = []
+        self.asteroids = []
+        self.trading_posts = []
+
+        # Track last actions for display
+        self.last_player_action = None
+        self.last_opponent_actions = {}
+        # Track last action results for display (dicts)
+        self.last_player_action_result = None
+        self.last_opponent_action_results = {}
+
+    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, dict]:
+        """Reset the environment to initial state"""
+        super().reset(seed=seed)
+
+        if seed is not None:
+            random.seed(seed)
+            np.random.seed(seed)
+
+        self.current_step = 0
+
+        # Reset action tracking
+        self.action_counter = 0  # Reset action counter for new episode
+        self.last_player_action = None
+        self.last_opponent_actions = {}
+        self.last_player_action_result = None
+        self.last_opponent_action_results = {}
+
+        # Initialize player ship position
+        if self.use_predefined_start:
+            start_pos = self._load_predefined_start_position()
+            if start_pos is not None:
+                player_x, player_y = start_pos['player_x'], start_pos['player_y']
             else:
-                continue
-
-            ctor = component_map.get(name)
-            if ctor is None:
-                # Unknown component name; skip
-                continue
-            # Instantiate with params if any
-            comps.append(ctor(**params) if params else ctor())
-        except Exception:
-            # Skip components that fail to construct
-            continue
-else:
-    # Default composite components - balanced to prioritize credit accumulation
-    # SurvivalReward: tiny per-step bonus for staying alive (0.001/step = 0.3 total)
-    # DistanceToAsteroidReward: gentle shaping toward mineable resources
-    # CreditProgressReward: rewards credit gains, penalizes zero-credit idling
-    # IdleLoopPenalty: penalizes getting stuck in non-productive loops
-    # EndOfEpisodeCreditReward: strong end-of-episode signal for credits (0.5 per credit)
-    # InappropriateActionPenalty: penalizes contextually bad actions (e.g., MINE with no asteroid)
-    comps = [
-        DistanceToAsteroidReward(),
-        SurvivalReward(),
-        CreditProgressReward(),
-        IdleLoopPenalty(),
-        EndOfEpisodeCreditReward(),
-        EndOfEpisodeNutriniumReward(),  # Penalizes holding unsold nutrinium at episode end
-        EarlyDeathPenaltyReward(),      # Penalizes early death proportional to remaining episode
-        InappropriateActionPenalty(),
-        # --- new components (analysis-driven fixes) ---
-        PlacementReward(),              # Strong terminal reward based on final rank vs opponents
-        SellBonusReward(),              # Reinforces the mine -> sell loop
-        EnergyStarvationPenalty(),      # Discourages low-energy drifting / chronic energy starvation
-        OverriddenActionPenalty(),      # Penalty when env had to override an infeasible chosen action
-    ]
-
-self.reward_calc = RewardCalculatorComposite(self.reward_config, comps)
-logger.info(f"Using RewardCalculatorComposite with components: {[c.__class__.__name__ for c in comps]}")
-except Exception as e:
-    logger.warning(f"Failed to construct RewardCalculatorComposite::{e}. Falling back to simple RewardCalculator.")
-else:
-    self.reward_calc = RewardCalculator(self.reward_config)
-
-# Invalid action handling / diagnostics
-# If True, the env will print warnings when an invalid action is provided
-self.warn_on_invalid_action = bool(warn_on_invalid_action)
-# Counter for invalid actions encountered (normalization failures or OOB)
-self.invalid_action_count = 0
-# Counter for state-invalid actions (valid action code but invalid given current state)
-self.state_invalid_action_count = 0
-
-# Action space: discrete actions
-# 0: WAIT, 1: MINE, 2-5: MOVE (N,S,E,W), 6: RECHARGE, 7: RECHARGE_END,
-# 8: ATTACK (closest enemy), 9: JUMP_TO_ASTEROID (to nearest asteroid), 10: SELL,
-# 11: RAISE_SHIELDS, 12: JUMP_TO_TRADING_POST, 13: RESPAWN
-self.action_space = spaces.Discrete(14)
-
-# Observation space: flattened representation of game state
-# Enhanced ship state (based on full metadata):
-# - Basic: x, y, energy, health, nutrinium, credits (6)
-# - State flags: recharging, shields_up, state_ready (3)
-# - Skill points: total, spent (2)
-# - Abilities: 12 ability values
-# - Action counter: actions taken this episode (1)
-# Total ship state: 24 values
-
-# + Strategic context (high-signal features): 8 values
-# - at_asteroid: 1 if on asteroid with nutrinium, 0 otherwise
-# - at_trading_post: 1 if on trading post, 0 otherwise
-# - has_nutrinium: nutrinium / cargo_cap (how full is cargo)
-# - enemy_in_zone: 1 if enemy at same location, 0 otherwise
-# - nearest_asteroid_dist: distance / map_diag (normalized)
-# - nearest_trading_post_dist: distance / map_diag (normalized)
-# - energy_ratio: energy / max_energy (redundant but grouped with context)
-# - episode_progress: current_step / max_steps
-
-# + Local sensor data (grid around ship)
-# + Top 5 asteroids (x, y, mass, nutrinium, distance, score) = 6 values each = 30 total
-# + Nearest trading post (x, y, distance) = 3 values
-# + Two enemy types at player location:
-# - Strongest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
-# - Weakest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
-# Total enemy info: 14 values
-
-ship_state_size = 24  # Complete ship state (including action counter)
-strategic_context_size = 8  # High-signal strategic features
-sensor_grid_size = (2 * self.config['sensor_range'] + 1) ** 2
-top_asteroids_size = self.config['top_asteroids_count'] * 6  # 5 asteroids * 6 features each
-trading_post_size = 3  # x, y, distance
-enemy_info_size = 14  # 2 enemies * 7 features each
-obs_size = (
-    ship_state_size +
-    strategic_context_size +
-    sensor_grid_size +
-    top_asteroids_size +
-    trading_post_size +
-    enemy_info_size
-)
-
-# Use Dict observation space to support action masking
-self.observation_space = spaces.Dict({
-    'observation': spaces.Box(
-        low=-1.0,  # Allow -1.0 for out-of-bounds indicators in sensor grid
-        high=1.0,
-        shape=(obs_size,),
-        dtype=np.float32
-    ),
-    'action_mask': spaces.Box(
-        low=0,
-        high=1,
-        shape=(14,),  # One mask value per action
-        dtype=np.int8
-    )
-})
-
-# Initialize state variables
-self.current_step = 0
-self.action_counter = 0  # Track actions taken in current episode (max ~300 for 5 min @ 1 action/sec)
-self.player_ship = None
-self.opponent_ships = []
-self.asteroids = []
-self.trading_posts = []
-
-# Track last actions for display
-self.last_player_action = None
-self.last_opponent_actions = {}
-# Track last action results for display (dicts)
-self.last_player_action_result = None
-self.last_opponent_action_results = {}
-
-def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, dict]:
-    """Reset the environment to initial state"""
-    super().reset(seed=seed)
-
-    if seed is not None:
-        random.seed(seed)
-        np.random.seed(seed)
-
-    self.current_step = 0
-
-    # Reset action tracking
-    self.action_counter = 0  # Reset action counter for new episode
-    self.last_player_action = None
-    self.last_opponent_actions = {}
-    self.last_player_action_result = None
-    self.last_opponent_action_results = {}
-
-    # Initialize player ship position
-    if self.use_predefined_start:
-        start_pos = self._load_predefined_start_position()
-        if start_pos is not None:
-            player_x, player_y = start_pos['player_x'], start_pos['player_y']
+                # Fallback to random if loading failed
+                player_x = random.randint(0, self.map_width - 1)
+                player_y = random.randint(0, self.map_height - 1)
         else:
-            # Fallback to random if loading failed
             player_x = random.randint(0, self.map_width - 1)
             player_y = random.randint(0, self.map_height - 1)
-    else:
-        player_x = random.randint(0, self.map_width - 1)
-        player_y = random.randint(0, self.map_height - 1)
 
-    # Generate shared abilities for this episode - all participants get the same abilities
-    self._episode_abilities = self._generate_random_abilities()
+        # Generate shared abilities for this episode - all participants get the same abilities
+        self._episode_abilities = self._generate_random_abilities()
 
-    self.player_ship = {
-        'name': 'P',  # Player ship name
-        'x': player_x,
-        'y': player_y,
-        'energy': self.config['max_energy'],
-        'health': self.config['max_health'],
-        'nutrinium': 0,
-        'credits': 0,
-        'recharging': False,
-        'just_recharged': False,
-        'shields_up': False,
-        'destroyed': False,
-        'state': 'READY',  # READY, RECHARGING, DESTROYED
-        'respawn_count': 0,  # Track number of times respawned this episode
-        'skill_points_total': 5,
-        'skill_points_spent': 0,
-        # Ship abilities - same as all other participants this episode
-        'abilities': dict(self._episode_abilities),
-    }
+        self.player_ship = {
+            'name': 'P',  # Player ship name
+            'x': player_x,
+            'y': player_y,
+            'energy': self.config['max_energy'],
+            'health': self.config['max_health'],
+            'nutrinium': 0,
+            'credits': 0,
+            'recharging': False,
+            'just_recharged': False,
+            'shields_up': False,
+            'destroyed': False,
+            'state': 'READY',  # READY, RECHARGING, DESTROYED
+            'respawn_count': 0,  # Track number of times respawned this episode
+            'skill_points_total': 5,
+            'skill_points_spent': 0,
+            # Ship abilities - same as all other participants this episode
+            'abilities': dict(self._episode_abilities),
+        }
 
-    # Initialize opponent ships
-    self.opponent_ships = []
+        # Initialize opponent ships
+        self.opponent_ships = []
 
-    # Load available enemy models
-    enemy_model_paths = self._load_enemy_model_paths()
+        # Load available enemy models
+        enemy_model_paths = self._load_enemy_model_paths()
 
-    for i in range(self.num_opponents):
-        # Decide AI type: use forced list if provided, otherwise random
-        use_model = False
-        model_path = None
-ai_type = None
+        for i in range(self.num_opponents):
+            # Decide AI type: use forced list if provided, otherwise random
+            use_model = False
+            model_path = None
+            ai_type = None
 
-if self.forced_opponent_types and i < len(self.forced_opponent_types):
-    # Use forced opponent type from the list
-    forced_type = self.forced_opponent_types[i]
-    # forced_type is a string: HEURISTIC, PIRATE, PROSPECTOR, or a model path
-    forced_upper = forced_type.upper()
-    if forced_upper == 'HEURISTIC':
-        ai_type = OpponentAIType.HEURISTIC
-    elif forced_upper == 'PIRATE':
-        ai_type = OpponentAIType.PIRATE
-    elif forced_upper == 'PROSPECTOR':
-        ai_type = OpponentAIType.PROSPECTOR
-    else:
-        # Treat as model path
-        ai_type = OpponentAIType.MODEL
-        use_model = True
-        model_path = forced_type
-else:
-    # No forced type - use random selection
-    if enemy_model_paths and len(enemy_model_paths) > 0:
-        if random.random() < 0.15:  # 15% chance to use model (reduced from 50% for training performance)
-            use_model = True
-            model_path = random.choice(enemy_model_paths)
-            ai_type = OpponentAIType.MODEL
+            if self.forced_opponent_types and i < len(self.forced_opponent_types):
+                # Use forced opponent type from the list
+                forced_type = self.forced_opponent_types[i]
+                # forced_type is a string: HEURISTIC, PIRATE, PROSPECTOR, or a model path
+                forced_upper = forced_type.upper()
+                if forced_upper == 'HEURISTIC':
+                    ai_type = OpponentAIType.HEURISTIC
+                elif forced_upper == 'PIRATE':
+                    ai_type = OpponentAIType.PIRATE
+                elif forced_upper == 'PROSPECTOR':
+                    ai_type = OpponentAIType.PROSPECTOR
+                else:
+                    # Treat as model path
+                    ai_type = OpponentAIType.MODEL
+                    use_model = True
+                    model_path = forced_type
+            else:
+                # No forced type - use random selection
+                if enemy_model_paths and len(enemy_model_paths) > 0:
+                    if random.random() < 0.15:  # 15% chance to use model (reduced from 50% for training performance)
+                        use_model = True
+                        model_path = random.choice(enemy_model_paths)
+                        ai_type = OpponentAIType.MODEL
 
-    if ai_type is None:
-        # Randomly assign algorithm-based AI type with weighted distribution
-        # 40% prospector, 30% pirate, 30% heuristic
-        ai_type_roll = random.random()
-        if ai_type_roll < 0.4:
-            ai_type = OpponentAIType.PROSPECTOR
-        elif ai_type_roll < 0.7:
-            ai_type = OpponentAIType.PIRATE
-        else:
-            ai_type = OpponentAIType.HEURISTIC
+                if ai_type is None:
+                    # Randomly assign algorithm-based AI type with weighted distribution
+                    # 40% prospector, 30% pirate, 30% heuristic
+                    ai_type_roll = random.random()
+                    if ai_type_roll < 0.4:
+                        ai_type = OpponentAIType.PROSPECTOR
+                    elif ai_type_roll < 0.7:
+                        ai_type = OpponentAIType.PIRATE
+                    else:
+                        ai_type = OpponentAIType.HEURISTIC
 
-ship = {
-    'name': f'E{i + 1}',  # Enemy ship name (E1, E2, E3, etc.)
-    'id': f'opponent_{i}',
-    'ai_type': ai_type,  # Store AI behavior type
-    'model_path': model_path if use_model else None,  # Model path for MODEL type enemies
-    'x': random.randint(0, self.map_width - 1),
-    'y': random.randint(0, self.map_height - 1),
-    'energy': self.config['max_energy'],
-    'health': self.config['max_health'],
-    'nutrinium': 0,  # Start with 0 nutrinium (must mine to collect)
-    'credits': 0,  # Start with 0 credits (must sell to earn)
-    'recharging': False,
-    'just_recharged': False,
-    'shields_up': False,
-    'destroyed': False,
-    'state': 'READY',
-    'skill_points_total': 5,
-    'skill_points_spent': random.randint(0, 5),
-    # Ship abilities - same as all other participants this episode
-    'abilities': dict(self._episode_abilities),
-}
+            ship = {
+                'name': f'E{i + 1}',  # Enemy ship name (E1, E2, E3, etc.)
+                'id': f'opponent_{i}',
+                'ai_type': ai_type,  # Store AI behavior type
+                'model_path': model_path if use_model else None,  # Model path for MODEL type enemies
+                'x': random.randint(0, self.map_width - 1),
+                'y': random.randint(0, self.map_height - 1),
+                'energy': self.config['max_energy'],
+                'health': self.config['max_health'],
+                'nutrinium': 0,  # Start with 0 nutrinium (must mine to collect)
+                'credits': 0,  # Start with 0 credits (must sell to earn)
+                'recharging': False,
+                'just_recharged': False,
+                'shields_up': False,
+                'destroyed': False,
+                'state': 'READY',
+                'skill_points_total': 5,
+                'skill_points_spent': random.randint(0, 5),
+                # Ship abilities - same as all other participants this episode
+                'abilities': dict(self._episode_abilities),
+            }
+            self.opponent_ships.append(ship)
 
-self.opponent_ships.append(ship)
-
-# Generate asteroids
-self.asteroids = []
-
-if self.use_predefined_asteroids:
-    # Load predefined asteroids from config file
-    predefined = self._load_predefined_asteroids()
-    if predefined is not None:
-        # Deep copy the predefined asteroids to avoid modifying cached data
-        import copy
-        self.asteroids = copy.deepcopy(predefined)
-    else:
-        # Fallback to random generation if loading failed
-        self.use_predefined_asteroids = False  # Disable for this episode
-
-if not self.use_predefined_asteroids or not self.asteroids:
-    # Random asteroid generation using jittered-grid (stratified sampling)
-    # This reduces clustering by partitioning the map into k x k buckets
-    # and placing at most one asteroid per selected bucket at a random location inside that bucket.
-    num_cells = max(1, self.map_width * self.map_height)
-    desired = int(self.map_width * self.map_height * self.config['asteroid_density'])
-    num_asteroids = max(0, min(desired, num_cells))
-
-    if num_asteroids == 0:
+        # Generate asteroids
         self.asteroids = []
-    else:
-        # Determine grid dimension k so that k*k >= num_asteroids
-        k = int(math.ceil(math.sqrt(num_asteroids)))
 
-        # Compute cell width/height (may be fractional)
-        cell_w = float(self.map_width) / k
-        cell_h = float(self.map_height) / k
+        if self.use_predefined_asteroids:
+            # Load predefined asteroids from config file
+            predefined = self._load_predefined_asteroids()
+            if predefined is not None:
+                # Deep copy the predefined asteroids to avoid modifying cached data
+                import copy
+                self.asteroids = copy.deepcopy(predefined)
+            else:
+                # Fallback to random generation if loading failed
+                self.use_predefined_asteroids = False  # Disable for this episode
 
-        # Build list of bucket indices (row, col) then randomly choose num_asteroids buckets
-        buckets = [(r, c) for r in range(k) for c in range(k)]
-        # If more buckets than needed, sample without replacement to choose buckets
-        chosen_buckets = random.sample(buckets, k=num_asteroids) if num_asteroids < len(buckets) else buckets
+        if not self.use_predefined_asteroids or not self.asteroids:
+            # Random asteroid generation using jittered-grid (stratified sampling)
+            # This reduces clustering by partitioning the map into k x k buckets
+            # and placing at most one asteroid per selected bucket at a random location inside that bucket.
+            num_cells = max(1, self.map_width * self.map_height)
+            desired = int(self.map_width * self.map_height * self.config['asteroid_density'])
+            num_asteroids = max(0, min(desired, num_cells))
 
-        placed = set()
-        for (r, c) in chosen_buckets:
-            # Determine integer ranges for this bucket
-            x_min = int(math.floor(c * cell_w))
-            x_max = int(math.floor((c + 1) * cell_w)) - 1
-            y_min = int(math.floor(r * cell_h))
-y_max = int(math.floor((r + 1) * cell_h)) - 1
+            if num_asteroids == 0:
+                self.asteroids = []
+            else:
+                # Determine grid dimension k so that k*k >= num_asteroids
+                k = int(math.ceil(math.sqrt(num_asteroids)))
 
-# Clamp ranges to map bounds
-x_min = max(0, min(self.map_width - 1, x_min))
-x_max = max(0, min(self.map_width - 1, max(x_min, x_max)))
-y_min = max(0, min(self.map_height - 1, y_min))
-y_max = max(0, min(self.map_height - 1, max(y_min, y_max)))
+                # Compute cell width/height (may be fractional)
+                cell_w = float(self.map_width) / k
+                cell_h = float(self.map_height) / k
 
-# If the bucket ended up empty (very small map), fall back to global random pos
-if x_min > x_max or y_min > y_max:
-    ax = random.randint(0, self.map_width - 1)
-    ay = random.randint(0, self.map_height - 1)
-else:
-    ax = random.randint(x_min, x_max)
-    ay = random.randint(y_min, y_max)
+                # Build list of bucket indices (row, col) then randomly choose num_asteroids buckets
+                buckets = [(r, c) for r in range(k) for c in range(k)]
+                # If more buckets than needed, sample without replacement to choose buckets
+                chosen_buckets = random.sample(buckets, k=num_asteroids) if num_asteroids < len(buckets) else buckets
 
-# Ensure uniqueness; if occupied, try a few nearby cells, otherwise skip
-attempts = 0
-while (ax, ay) in placed and attempts < 8:
-    ax = min(self.map_width - 1, max(0, ax + random.randint(-1, 1)))
-    ay = min(self.map_height - 1, max(0, ay + random.randint(-1, 1)))
-    attempts += 1
-if (ax, ay) in placed:
-    # As a last resort, find any free cell
-    for xx in range(self.map_width):
-        found = False
-        for yy in range(self.map_height):
-            if (xx, yy) not in placed:
-                ax, ay = xx, yy
-                found = True
-                break
-        if found:
-            break
+                placed = set()
+                for (r, c) in chosen_buckets:
+                    # Determine integer ranges for this bucket
+                    x_min = int(math.floor(c * cell_w))
+                    x_max = int(math.floor((c + 1) * cell_w)) - 1
+                    y_min = int(math.floor(r * cell_h))
+                    y_max = int(math.floor((r + 1) * cell_h)) - 1
 
-placed.add((ax, ay))
+                    # Clamp ranges to map bounds
+                    x_min = max(0, min(self.map_width - 1, x_min))
+                    x_max = max(0, min(self.map_width - 1, max(x_min, x_max)))
+                    y_min = max(0, min(self.map_height - 1, y_min))
+                    y_max = max(0, min(self.map_height - 1, max(y_min, y_max)))
 
-# Mass is assigned independently; nutrinium will be set in the budget-distribution pass below.
-mass_min = self.config.get('asteroid_mass_min', 10)
-mass_max = self.config.get('asteroid_mass_max', 50)
-mass = random.randint(mass_min, mass_max)
-self.asteroids.append({'x': ax, 'y': ay, 'mass': mass, 'nutrinium': 0})
+                    # If the bucket ended up empty (very small map), fall back to global random pos
+                    if x_min > x_max or y_min > y_max:
+                        ax = random.randint(0, self.map_width - 1)
+                        ay = random.randint(0, self.map_height - 1)
+                    else:
+                        ax = random.randint(x_min, x_max)
+                        ay = random.randint(y_min, y_max)
 
-# --- Nutrinium budget distribution across asteroids ---
-# Step 1: Compute total nutrinium budget relative to player count.
-# Budget = nutrinium_per_player * total_players * (1 +/- variance).
-# This ensures competitive but not trivial nutrinium availability.
-total_players = 1 + self.num_opponents
-base_budget = self.config.get('nutrinium_per_player', 50) * total_players
-variance = self.config.get('nutrinium_budget_variance', 0.2)
-budget = int(base_budget * random.uniform(1.0 - variance, 1.0 + variance))
-budget = max(total_players, budget) # at least 1 per player
+                    # Ensure uniqueness; if occupied, try a few nearby cells, otherwise skip
+                    attempts = 0
+                    while (ax, ay) in placed and attempts < 8:
+                        ax = min(self.map_width - 1, max(0, ax + random.randint(-1, 1)))
+                        ay = min(self.map_height - 1, max(0, ay + random.randint(-1, 1)))
+                        attempts += 1
+                    if (ax, ay) in placed:
+                        # As a last resort, find any free cell
+                        for xx in range(self.map_width):
+                            found = False
+                            for yy in range(self.map_height):
+                                if (xx, yy) not in placed:
+                                    ax, ay = xx, yy
+                                    found = True
+                                    break
+                            if found:
+                                break
 
-if self.asteroids:
-    n_ast = len(self.asteroids)
-    alpha = self.config.get('nutrinium_beta_alpha', 1.5)
-    beta_param = self.config.get('nutrinium_beta_beta', 8.0)
+                    placed.add((ax, ay))
 
-# Step 2: Draw a target concentration for each asteroid from a Beta distribution.
-# Beta(1.5, 8) produces a right-skewed distribution: many poor asteroids, few rich ones.
-# The concentrations are applied directly to each asteroid's mass so the richness pattern is preserved regardless of budget scaling.
-target_concentrations = [random.betavariate(alpha, beta_param) for _ in range(n_ast)]
+                    # Mass is assigned independently; nutrinium will be set in the
+                    # budget-distribution pass below.
+                    mass_min = self.config.get('asteroid_mass_min', 10)
+                    mass_max = self.config.get('asteroid_mass_max', 50)
+                    mass = random.randint(mass_min, mass_max)
+                    self.asteroids.append({'x': ax, 'y': ay, 'mass': mass, 'nutrinium': 0})
 
-# Step 3: Assign raw nutrinium = floor(concentration * mass).
-# This gives each asteroid its "natural" deposit based on the drawn concentration. Rich asteroids (high Beta draw) get a large share of their mass as nutrinium; poor ones get little.
-raw_nutr = [int(c * a['mass']) for c, a in zip(target_concentrations, self.asteroids)]
-raw_total = sum(raw_nutr)
+                # --- Nutrinium budget distribution across asteroids ---
+                # Step 1: Compute total nutrinium budget relative to player count.
+                # Budget = nutrinium_per_player * total_players * (1 +/- variance).
+                # This ensures competitive but not trivial nutrinium availability.
+                total_players = 1 + self.num_opponents
+                base_budget = self.config.get('nutrinium_per_player', 50) * total_players
+                variance = self.config.get('nutrinium_budget_variance', 0.2)
+                budget = int(base_budget * random.uniform(1.0 - variance, 1.0 + variance))
+                budget = max(total_players, budget) # at least 1 per player
 
-# Step 4: Scale to hit the budget while preserving concentration ordering and capping each asteroid at its mass.
-if raw_total > 0 and raw_total != budget:
-    # First pass: proportional scaling
-    scale = budget / raw_total
-    allocated = [max(0, int(r * scale)) for r in raw_nutr]
+                if self.asteroids:
+                    n_ast = len(self.asteroids)
+                    alpha = self.config.get('nutrinium_beta_alpha', 1.5)
+                    beta_param = self.config.get('nutrinium_beta_beta', 8.0)
 
-# Clamp each to mass
-for i in range(n_ast):
-    allocated[i] = min(allocated[i], self.asteroids[i]['mass'])
+                    # Step 2: Draw a target concentration for each asteroid from a Beta distribution.
+                    # Beta(1.5, 8) produces a right-skewed distribution: many poor asteroids, few rich ones.
+                    # The concentrations are applied directly to each asteroid's mass so the richness pattern is preserved regardless of budget scaling.
+                    target_concentrations = [random.betavariate(alpha, beta_param) for _ in range(n_ast)]
 
-# Second pass: distribute remaining deficit/surplus among non-capped asteroids, respecting mass ceiling.
-deficit = budget - sum(allocated)
-if deficit > 0:
-    # Sort uncapped asteroids by remaining headroom (desc)
-    headroom = [(self.asteroids[i]['mass'] - allocated[i], i) for i in range(n_ast) if allocated[i] < self.asteroids[i]['mass']]
-    headroom.sort(reverse=True)
-    for _, idx in headroom:
-        give = min(deficit, self.asteroids[idx]['mass'] - allocated[idx])
-        allocated[idx] += give
-        deficit -= give
-        if deficit <= 0:
-        break
-    elif deficit < 0:
-        # Over budget -- trim from richest first
-        surplus = -deficit
-        richest = sorted(range(n_ast), key=lambda i: allocated[i], reverse=True)
-        for idx in richest:
-            take = min(surplus, allocated[idx])
-            allocated[idx] -= take
-            surplus -= take
-            if surplus <= 0:
-                break
-    elif raw_total == 0:
-        # All concentrations were ~0; distribute budget evenly
-        per = budget // n_ast
-        allocated = [min(per, a['mass']) for a in self.asteroids]
-        leftover = budget - sum(allocated)
-        for i in range(n_ast):
-            if leftover <= 0:
-                break
-            give = min(leftover, self.asteroids[i]['mass'] - allocated[i])
-            allocated[i] += give
-            leftover -= give
-        else:
-            allocated = raw_nutr
+                    # Step 3: Assign raw nutrinium = floor(concentration * mass).
+                    # This gives each asteroid its "natural" deposit based on the drawn concentration. Rich asteroids (high Beta draw) get a large share of their mass as nutrinium; poor ones get little.
+                    raw_nutr = [int(c * a['mass']) for c, a in zip(target_concentrations, self.asteroids)]
+                    raw_total = sum(raw_nutr)
 
-    # Step 5: Final assignment
-    for i, asteroid in enumerate(self.asteroids):
-        asteroid['nutrinium'] = min(allocated[i], asteroid['mass'])
+                    # Step 4: Scale to hit the budget while preserving concentration ordering and capping each asteroid at its mass.
+                    if raw_total > 0 and raw_total != budget:
+                        # First pass: proportional scaling
+                        scale = budget / raw_total
+                        allocated = [max(0, int(r * scale)) for r in raw_nutr]
 
-# Generate trading posts
-self.trading_posts = []
+                        # Clamp each to mass
+                        for i in range(n_ast):
+                            allocated[i] = min(allocated[i], self.asteroids[i]['mass'])
 
-if self.use_predefined_asteroids:
-    # Load predefined trading posts from the same config file
-    predefined_posts = self._load_predefined_trading_posts()
-    if predefined_posts is not None:
-        # Deep copy the predefined trading posts
-        import copy
-        self.trading_posts = copy.deepcopy(predefined_posts)
+                            # Second pass: distribute remaining deficit/surplus among non-capped asteroids, respecting mass ceiling.
+                            deficit = budget - sum(allocated)
+                            if deficit > 0:
+                                # Sort uncapped asteroids by remaining headroom (desc)
+                                headroom = [(self.asteroids[i]['mass'] - allocated[i], i) for i in range(n_ast) if allocated[i] < self.asteroids[i]['mass']]
+                                headroom.sort(reverse=True)
+                                for _, idx in headroom:
+                                    give = min(deficit, self.asteroids[idx]['mass'] - allocated[idx])
+                                    allocated[idx] += give
+                                    deficit -= give
+                                    if deficit <= 0:
+                                    break
+                                elif deficit < 0:
+                                    # Over budget -- trim from richest first
+                                    surplus = -deficit
+                                    richest = sorted(range(n_ast), key=lambda i: allocated[i], reverse=True)
+                                    for idx in richest:
+                                        take = min(surplus, allocated[idx])
+                                        allocated[idx] -= take
+                                        surplus -= take
+                                        if surplus <= 0:
+                                            break
+                            elif raw_total == 0:
+                                # All concentrations were ~0; distribute budget evenly
+                                per = budget // n_ast
+                                allocated = [min(per, a['mass']) for a in self.asteroids]
+                                leftover = budget - sum(allocated)
+                                for i in range(n_ast):
+                                    if leftover <= 0:
+                                        break
+                                    give = min(leftover, self.asteroids[i]['mass'] - allocated[i])
+                                    allocated[i] += give
+                                    leftover -= give
+                            else:
+                                allocated = raw_nutr
 
-# Ensure asteroids and trading posts do not overlap and that trading posts are unique
-asteroid_positions = {(a['x'], a['y']) for a in self.asteroids}
+                            # Step 5: Final assignment
+                            for i, asteroid in enumerate(self.asteroids):
+                                asteroid['nutrinium'] = min(allocated[i], asteroid['mass'])
 
-# If we have predefined trading posts loaded, remove any that overlap asteroids
-if self.trading_posts:
-    filtered_posts = []
-    seen_posts = set()
-    for post in self.trading_posts:
-        key = (post['x'], post['y'])
-        if key in asteroid_positions:
-            logger.warning(f"Predefined trading post at {key} overlaps an asteroid and will be ignored.")
-            continue
-        if key in seen_posts:
-            logger.warning(f"Duplicate predefined trading post at {key} ignored.")
-            continue
-        seen_posts.add(key)
-        filtered_posts.append(post)
-    self.trading_posts = filtered_posts
+            # Generate trading posts
+            self.trading_posts = []
+
+            if self.use_predefined_asteroids:
+                # Load predefined trading posts from the same config file
+                predefined_posts = self._load_predefined_trading_posts()
+                if predefined_posts is not None:
+                    # Deep copy the predefined trading posts
+                    import copy
+                    self.trading_posts = copy.deepcopy(predefined_posts)
+
+            # Ensure asteroids and trading posts do not overlap and that trading posts are unique
+            asteroid_positions = {(a['x'], a['y']) for a in self.asteroids}
+
+            # If we have predefined trading posts loaded, remove any that overlap asteroids
+            if self.trading_posts:
+                filtered_posts = []
+                seen_posts = set()
+                for post in self.trading_posts:
+                    key = (post['x'], post['y'])
+                    if key in asteroid_positions:
+                        logger.warning(f"Predefined trading post at {key} overlaps an asteroid and will be ignored.")
+                        continue
+                    if key in seen_posts:
+                        logger.warning(f"Duplicate predefined trading post at {key} ignored.")
+                        continue
+                    seen_posts.add(key)
+                    filtered_posts.append(post)
+                self.trading_posts = filtered_posts
 
 # If not enough trading posts (or none), generate remaining using jittered-grid
 # to ensure good spatial coverage and avoid clustering. Trading posts will
