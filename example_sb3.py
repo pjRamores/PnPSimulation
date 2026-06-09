@@ -389,7 +389,7 @@ class CheckpointCallback(BaseCallback):
             algorithm: Algorithm name (for version numbering)
             name_prefix: Prefix for checkpoint files
             verbose: Verbosity level
-       """
+        """
         super(CheckpointCallback, self).__init__(verbose)
         self.save_freq = save_freq
         self.save_path = save_path
@@ -1642,7 +1642,6 @@ Examples:
     python example_sb3.py --algorithm PPO --evaluate --model-path models/ppo_pnp_model --render
 """
     )
-
     parser.add_argument('--algorithm', type=str, default='PPO',
                         choices=['PPO', 'DQN', 'A2C', 'compare'],
                         help='RL algorithm to use')
@@ -1693,7 +1692,7 @@ Examples:
 
     # CPU/Performance options
     parser.add_argument('--efficiency-mode', action='store_true',
-                        help='Run in efficiency mode (lower CPU usage, slower training) -- good for background training')
+                        help='Run in efficiency mode (lower CPU usage, slower training) - good for background training')
     parser.add_argument('--num-threads', type=int, default=None,
                         help='Specific number of CPU threads to use (overrides efficiency mode)')
 
@@ -1723,7 +1722,7 @@ Examples:
             else:
                 model.verbose = 0  # Disable verbose output during evaluation
                 evaluate_model(model, num_episodes=10, render=args.render, min_opponents=args.min_opponents,
-                              max_opponents=args.max_opponents)
+                               max_opponents=args.max_opponents)
         else:
             print("Please specify --model-path for evaluation")
     elif args.algorithm == 'compare':
