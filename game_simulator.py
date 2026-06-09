@@ -1024,7 +1024,6 @@ class GameSimulator:
                 percentage = (count / step) * 100 if step > 0 else 0
                 print(f"  {act_name:15} (Action {act}): {count:4} times ({percentage:5.1f}%)")
 
-
         # Final render
         if render:
             env.render()
@@ -1355,7 +1354,7 @@ class GameSimulator:
         self._print("SIMULATION SUMMARY", to_episode=False)
         self._print("=" * 70, to_episode=False)
         self._print(f"Episodes Completed: {len(self.episode_stats)}", to_episode=False)
-        self._print(f"Average Reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f)}", to_episode=False)
+        self._print(f"Average Reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}", to_episode=False)
         self._print(f"Average Credits: {np.mean(credits):.1f} +/- {np.std(credits):.1f}", to_episode=False)
         self._print(f"Average Steps: {np.mean(steps):.1f}", to_episode=False)
         self._print(f"Max Credits: {max(credits)}", to_episode=False)
@@ -1583,46 +1582,46 @@ def main():
 
     parser = argparse.ArgumentParser(description='Simulate Prospectors n Pirates with trained model')
     parser.add_argument('--model-path', type=str, default='models/ppo_pnp_model',
-                         help='Path to trained model')
+                           help='Path to trained model')
     parser.add_argument('--algorithm', type=str, default='PPO',
-                         choices=['PPO', 'DQN', 'A2C'],
-                         help='Algorithm used for the trained model')
+                           choices=['PPO', 'DQN', 'A2C'],
+                           help='Algorithm used for the trained model')
     parser.add_argument('--episodes', type=int, default=5,
-                         help='Number of episodes to run')
+                           help='Number of episodes to run')
     parser.add_argument('--min-opponents', type=int, default=1,
-                         help='Minimum number of opponents')
+                           help='Minimum number of opponents')
     parser.add_argument('--max-opponents', type=int, default=5,
-                         help='Maximum number of opponents')
+                           help='Maximum number of opponents')
     parser.add_argument('--no-render', action='store_true',
-                         help='Disable rendering')
+                           help='Disable rendering')
     parser.add_argument('--render-interval', type=int, default=20,
-                         help='Steps between renders')
+                           help='Steps between renders')
     parser.add_argument('--pause', action='store_true',
-                         help='Pause after each render step (press SPACE to continue)')
+                           help='Pause after each render step (press SPACE to continue)')
     parser.add_argument('--map-width', type=int, default=10,
-                         help='Map width')
+                           help='Map width')
     parser.add_argument('--map-height', type=int, default=10,
-                         help='Map height')
+                           help='Map height')
     parser.add_argument('--max-steps', type=int, default=300,
-                         help='Maximum steps per episode')
+                           help='Maximum steps per episode')
     parser.add_argument('--predefined-asteroids', action='store_true',
-                         help='Use predefined asteroids from config file')
+                           help='Use predefined asteroids from config file')
     parser.add_argument('--asteroid-config', type=str, default='asteroids_with_trading_posts.config',
-                         help='Path to asteroid configuration file')
+                           help='Path to asteroid configuration file')
     parser.add_argument('--predefined-start', action='store_true',
-                         help='Use predefined starting positions from config file')
+                           help='Use predefined starting positions from config file')
     parser.add_argument('--start-position-config', type=str, default='start_positions.config',
-                         help='Path to starting position configuration file')
+                           help='Path to starting position configuration file')
     parser.add_argument('--cell-width', type=int, default=None,
-                         help='Cell width for rendering (default: None)')
+                           help='Cell width for rendering (default: None)')
     parser.add_argument('--minimap', action='store_true',
-                         help='Enable minimap rendering')
+                           help='Enable minimap rendering')
     parser.add_argument('--minimap-radius', type=int, default=3,
-                         help='Minimap radius (default: 3)')
+                           help='Minimap radius (default: 3)')
     parser.add_argument('--print-each-step', action='store_true',
-                         help='Print detailed info for each step during simulation')
+                           help='Print detailed info for each step during simulation')
     parser.add_argument('--opponents', type=str, default=None,
-                         help='Comma-separated list of exact opponents (e.g. HEURISTIC,PIRATE,PROSPECTOR,models/ppo_pnp_model_v29). Overrides --min-opponents and --max-opponents.')
+                           help='Comma-separated list of exact opponents (e.g. HEURISTIC,PIRATE,PROSPECTOR,models/ppo_pnp_model_v29). Overrides --min-opponents and --max-opponents.')
 
     args = parser.parse_args()
 
