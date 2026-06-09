@@ -1617,7 +1617,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 if self.warn_on_invalid_action or os.getenv('PNP_DEBUG_MASK'):
                     enemy_positions = [(t.get('name', '?'), t.get('x'), t.get('y')) for t in active_targets]
                     logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')} pos=({ship.get('x')},{ship.get('y')}) enemies={enemy_positions} -> invalid: {reason}")
-                return False, f"no enemy in same zone, no threat"
+                return False, "no enemy in same zone, no threat"
 
             if self.warn_on_invalid_action or os.getenv('PNP_DEBUG_MASK'):
                 logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')} pos=({ship.get('x')},{ship.get('y')}) has enemy in zone -> ALLOWED")
@@ -1722,7 +1722,6 @@ class ProspectorsPiratesEnv(gym.Env):
                         action = int(ActionType.WAIT)
                         if self.warn_on_invalid_action:
                             logger.warning(f"Forcing {ActionType(original_action).name} -> WAIT (recharging)")
-
                 elif self.player_ship.get('destroyed', False):
                     action = int(ActionType.RESPAWN)
                     if self.warn_on_invalid_action:
@@ -1985,7 +1984,7 @@ class ProspectorsPiratesEnv(gym.Env):
                     'respawn_count': ship.get('respawn_count', 0)
                 }
 
-            return reward, info
+        return reward, info
 
     def _action_mine(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
         """Mine an asteroid at the current location"""
@@ -2016,16 +2015,16 @@ class ProspectorsPiratesEnv(gym.Env):
         mine_details = {
             'asteroid_x': asteroid['x'],
             'asteroid_y': asteroid['y'],
-            '# Asteroid state before mining',
-            'ast_mass': f"(asteroid_mass_before)",
-            'ast_nutr': f"(asteroid_nutr_before)",
+            # Asteroid state before mining
+            'ast_mass': f"{asteroid_mass_before}",
+            'ast_nutr': f"{asteroid_nutr_before}",
             'ast_density': round(density, 4),
             'success_chance': round(success_chance * 100, 1),
-            '# Miner skills',
+            # Miner skills
             'mine_accuracy': abilities.get('mine_accuracy', 0),
             'mine_yield': abilities.get('mine_yield_multiplier', 1),
             'mine_cost_skill': abilities.get('mine_cost', 2),
-            '# Energy',
+            # Energy
             'energy': f"{energy_before}->{ship['energy']}",
             'energy_cost': self.config['energy_costs']['mine'],
         }
@@ -2056,7 +2055,6 @@ class ProspectorsPiratesEnv(gym.Env):
 
             return -0.05, False, mine_details
 
-
     def _action_move(self, ship: dict, action: int) -> Tuple[float, bool, Optional[dict]]:
         """Move ship in a direction"""
         if ship['energy'] < self.config['energy_costs']['move']:
@@ -2079,7 +2077,8 @@ class ProspectorsPiratesEnv(gym.Env):
         ship['x'] = new_x
         ship['y'] = new_y
         ship['energy'] -= self.config['energy_costs']['move']
-    return -0.01, True, {'from': (ship['x'] - 1 if action == ActionType.MOVE_EAST else -1 if action == ActionType.MOVE_WEST else 0), ship['y'] - 1 if action == ActionType.MOVE_SOUTH else -1 if action == ActionType.MOVE_NORTH else 0)}, 'to': (ship['x'], ship['y']))
+
+        return -0.01, True, {'from': (ship['x'] - (1 if action == ActionType.MOVE_EAST else - (1 if action == ActionType.MOVE_WEST else 0), ship['y'] - 1 if action == ActionType.MOVE_SOUTH else -1 if action == ActionType.MOVE_NORTH else 0)), 'to': (ship['x'], ship['y'])}
 
     def _action_recharge(self, ship: dict) -> bool:
         """Start recharging"""
@@ -2100,11 +2099,11 @@ class ProspectorsPiratesEnv(gym.Env):
         """Raise shields for a ship.
 
         Returns True on success, False otherwise.
-        Requires shields to be currently down
-        Requires sufficient energy to power shields (uses config['energy_costs']['shields'])
-        Deducts energy cost when raising shields
-
+        - Requires shields to be currently down
+        - Requires sufficient energy to power shields (uses config['energy_costs']['shields'])
+        - Deducts energy cost when raising shields
         """
+        # Already up
         if ship.get('shields_up', False):
             return False
 
@@ -2152,6 +2151,7 @@ class ProspectorsPiratesEnv(gym.Env):
             return -0.1, False, {'error': 'best asteroid is at current location'}
 
         energy_cost = int(distance * self.config['energy_costs']['jump'])
+
         if ship['energy'] < energy_cost:
             return -0.1, False, None
 
@@ -2170,7 +2170,7 @@ class ProspectorsPiratesEnv(gym.Env):
             return -0.1, False, None
 
         # Find nearest trading post
-        nearest_post = self.get_nearest_entity(ship['x'], ship['y'], self.trading_posts)
+        nearest_post = self._get_nearest_entity(ship['x'], ship['y'], self.trading_posts)
         if nearest_post is None:
             return -0.1, False, None
 
@@ -2179,19 +2179,20 @@ class ProspectorsPiratesEnv(gym.Env):
         # Prevent jumping to same location (distance 0) -- should SELL instead
         if distance == 0:
             return -0.1, False, {'error': 'already at trading post, use SELL instead'}
-    energy_cost = int(distance * self.config['energy_costs']['jump'])
 
-    if ship['energy'] < energy_cost:
-        return -0.1, False, None
+        energy_cost = int(distance * self.config['energy_costs']['jump'])
 
-    # Jump to trading post
-    old_x, old_y = ship['x'], ship['y']
-    ship['x'] = nearest_post['x']
-    ship['y'] = nearest_post['y']
-    ship['energy'] -= energy_cost
+        if ship['energy'] < energy_cost:
+            return -0.1, False, None
 
-    payload = {'from': (old_x, old_y), 'to': (ship['x'], ship['y']), 'distance': distance, 'energy_cost': energy_cost}
-    return -0.01, True, payload
+        # Jump to trading post
+        old_x, old_y = ship['x'], ship['y']
+        ship['x'] = nearest_post['x']
+        ship['y'] = nearest_post['y']
+        ship['energy'] -= energy_cost
+
+        payload = {'from': (old_x, old_y), 'to': (ship['x'], ship['y']), 'distance': distance, 'energy_cost': energy_cost}
+        return -0.01, True, payload
 
     def _action_sell(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
         """Sell nutrinium at a trading post"""
@@ -2199,7 +2200,7 @@ class ProspectorsPiratesEnv(gym.Env):
             return -0.1, False, None
 
         # Check if at trading post
-        trading_post = self.get_entity_at_location(ship['x'], ship['y'], self.trading_posts)
+        trading_post = self._get_entity_at_location(ship['x'], ship['y'], self.trading_posts)
         if trading_post is None:
             return -0.1, False, None
 
@@ -2231,8 +2232,8 @@ class ProspectorsPiratesEnv(gym.Env):
         # Reset ship state
         ship['destroyed'] = False
         ship['health'] = self.config['max_health']
-        ship['energy'] = 0.0  # Start with 0 energy after respawn
-        ship['nutrinium'] = 0.0  # Lose all nutrinium
+        ship['energy'] = 0  # Start with 0 energy after respawn
+        ship['nutrinium'] = 0  # Lose all nutrinium
         ship['shields_up'] = False
         ship['recharging'] = False
         ship['state'] = 'READY'
@@ -2242,7 +2243,7 @@ class ProspectorsPiratesEnv(gym.Env):
         ship['y'] = random.randint(0, self.map_height - 1)
 
         # Increment respawn counter
-        ship['respawn_count'] += 1
+        ship['respawn_count'] = respawn_count + 1
 
         return True
 
@@ -2271,19 +2272,19 @@ class ProspectorsPiratesEnv(gym.Env):
             if not same_zone_targets:
                 return -0.1, False, None
 
-            # Compute raw score for sorting (reuse _calculate_enemy_combat_score with raw=True)
+            # compute raw score for sorting (reuse _calculate_enemy_combat_score with raw=True)
             scored = [(self._calculate_enemy_combat_score(t, raw=True), t) for t in same_zone_targets]
             scored.sort(key=lambda x: x[0])  # ascending -> weakest first
             target = scored[0][1]
-
         else:
             # Opponent attacking: target any ship in the same zone (player or other opponents)
             # Build list of all potential targets in the same zone
             same_zone_targets = []
 
             # Consider the player as a target
-            if not self.player_ship.get('destroyed', False) and self.player_ship['x'] == ship['x']:
-            if self.player_ship['x'] == ship['x']:
+            if (not self.player_ship.get('destroyed', False)
+                    and self.player_ship['x'] == ship['x']
+                    and self.player_ship['y'] == ship['y']):
                 same_zone_targets.append(self.player_ship)
 
             # Consider other opponents as targets
@@ -2299,7 +2300,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 return -0.1, False, None
 
             # Select the weakest target (lowest combat score)
-            scored = [(self.calculate_enemy_combat_score(t, raw=True), t) for t in same_zone_targets]
+            scored = [(self._calculate_enemy_combat_score(t, raw=True), t) for t in same_zone_targets]
             scored.sort(key=lambda x: x[0])  # ascending -> weakest first
             target = scored[0][1]
 
@@ -2326,7 +2327,7 @@ class ProspectorsPiratesEnv(gym.Env):
 
         # Calculate damage (simplified: base damage with some randomness)
         # Base damage is proportional to attack energy
-        base_damage = attack_energy * 2.0  # 2 damage per energy unit
+        base_damage = attack_energy * 2  # 2 damage per energy unit
         damage_roll = base_damage * random.uniform(0.8, 1.2)
         damage = max(1, int(damage_roll))
         damage_before_shields = damage
@@ -2347,15 +2348,15 @@ class ProspectorsPiratesEnv(gym.Env):
             'target': target.get('name', 'Unknown'),
             'damage': damage,
             # Attacker stats
-            'atk_energy': f'{attacker_energy_before}->{ship["energy"]}',
+            'atk_energy': f"{attacker_energy_before}->{ship['energy']}",
             'atk_power': attacker_abilities.get('attack_power', 0),
             'atk_accuracy': attacker_abilities.get('attack_accuracy', 0),
             # Defender stats
-            'def_health': f'{target_health_before}->{target["health"]}',
+            'def_health': f"{target_health_before}->{target['health']}",
             'def_shields': target_shields_up,
             'def_shield_str': target_abilities.get('shield_strength', 0),
             'def_evade': target_abilities.get('evade', 0),
-            'def_energy': f'{target_energy_before}->{target.get("energy", 0)}',
+            'def_energy': f"{target_energy_before}->{target.get('energy', 0)}",
             # Combat calculations
             'base_dmg': base_damage,
             'dmg_roll': round(damage_roll, 1),
@@ -2372,7 +2373,7 @@ class ProspectorsPiratesEnv(gym.Env):
             ship['nutrinium'] += nutrinium_stolen
             target['nutrinium'] = 0
 
-            # Reward for destroying enemy (modest -- economic actions should be primary)
+            # Reward for destroying enemy (modest - economic actions should be primary)
             reward = 0.5 + (nutrinium_stolen * 0.2)  # Reduced base from 2.0 to 0.5
             combat_details['destroyed'] = True
             combat_details['nutrinium_stolen'] = nutrinium_stolen
@@ -2385,74 +2386,73 @@ class ProspectorsPiratesEnv(gym.Env):
             # Combat should be a means to an end (steal nutrinium on kill), not a goal.
             reward = 0.02
 
-        combat_details['destroyed'] = False
-combat_details['target_health'] = target['health']
-return reward, True, combat_details
+            combat_details['destroyed'] = False
+            combat_details['target_health'] = target['health']
 
-def update_combat_states(self):
-    """
-    Update each ship's 'state' based on game state.
-    
-    COMBAT state should only be set when a ship is actively engaged in combat AND there is an enemy in the same zone. Ships attacked from a different zone should not remain in COMBAT state once the turn ends.
+            return reward, True, combat_details
 
-    This is called each step after all actions are executed.
-    """
-    # Build list of all ships (player + opponents)
-    ships = [self.player_ship] + list(self.opponent_ships)
+    def update_combat_states(self):
+        """
+        Update each ship's 'state' based on game state.
 
-    for s in ships:
-        if s is None:
-            continue
+        COMBAT state should only be set when a ship is actively engaged in combat AND there is an enemy in the same zone. Ships attacked from a different zone should not remain in COMBAT state once the turn ends.
 
-        # Do not touch destroyed ships
-        if s.get('destroyed', False):
-            s['state'] = 'DESTROYED'
-            continue
+        This is called each step after all actions are executed.
+        """
+        # Build list of all ships (player + opponents)
+        ships = [self.player_ship] + list(self.opponent_ships)
 
-        # Recharging should remain RECHARGING
-        if s.get('recharging', False):
-            s['state'] = 'RECHARGING'
-            continue
+        for s in ships:
+            if s is None:
+                continue
 
-        # Combat state requires:
-        # 1. The in_combat flag was set (an attack/shield action occurred)
-        # 2. The combat was with an opponent at this ship's zone
-        # 3. An enemy is STILL present in this zone (they may have moved away)
-        combat_positions = s.get('combat_opponent_positions', set())
-        was_same_zone_combat = s.get('in_combat', False) and (s['x'], s['y']) in combat_positions
+            # Do not touch destroyed ships
+            if s.get('destroyed', False):
+                s['state'] = 'DESTROYED'
+                continue
 
-        # Verify an enemy is still actually in the same zone
-        if was_same_zone_combat:
-            if s is self.player_ship:
-                enemies = self.opponent_ships
-            else:
-                enemies = [self.player_ship] + [o for o in self.opponent_ships if o is not s]
+            # Recharging should remain RECHARGING
+            if s.get('recharging', False):
+                s['state'] = 'RECHARGING'
+                continue
+
+            # Combat state requires:
+            # 1. The in_combat flag was set (an attack/shield action occurred)
+            # 2. The combat was with an opponent at this ship's zone
+            # 3. An enemy is STILL present in this zone (they may have moved away)
+            combat_positions = s.get('combat_opponent_positions', set())
+            was_same_zone_combat = s.get('in_combat', False) and (s['x'], s['y']) in combat_positions
+
+            # Verify an enemy is still actually in the same zone
+            if was_same_zone_combat:
+                if s is self.player_ship:
+                    enemies = self.opponent_ships
+                else:
+                    enemies = [self.player_ship] + [o for o in self.opponent_ships if o is not s]
                 enemy_still_here = any(
                     e['x'] == s['x'] and e['y'] == s['y'] and not e.get('destroyed', False)
                     for e in enemies
                 )
-        else:
-            enemy_still_here = False
+            else:
+                enemy_still_here = False
 
-        if was_same_zone_combat and enemy_still_here:
-            s['state'] = 'COMBAT'
-        else:
-            # No same-zone combat this turn -> READY
-            # Reset from any non-READY state (COMBAT, RECHARGING, etc.)
-            if s.get('state', 'READY').upper() != 'READY':
-                s['state'] = 'READY'
-            # Shields automatically go down when not in active same-zone combat
-            if s.get('shields_up', False):
-                s['shields_up'] = False
+            if was_same_zone_combat and enemy_still_here:
+                s['state'] = 'COMBAT'
+            else:
+                # No same-zone combat this turn -> READY
+                # Reset from any non-READY state (COMBAT, RECHARGING, etc.)
+                if s.get('state', 'READY').upper() != 'READY':
+                    s['state'] = 'READY'
+                # Shields automatically go down when not in active same-zone combat
+                if s.get('shields_up', False):
+                    s['shields_up'] = False
 
-        # Always clear combat flags for next turn
-        s['in_combat'] = False
-        s['combat_opponent_positions'] = set()
+            # Always clear combat flags for next turn
+            s['in_combat'] = False
+            s['combat_opponent_positions'] = set()
 
     def _update_passive_effects(self):
-        """
-        Update passive effects like recharging
-        """
+        """Update passive effects like recharging"""
         # Recharge player ship
         if self.player_ship['recharging'] and not self.player_ship['destroyed']:
             self.player_ship['energy'] = min(
@@ -2468,10 +2468,8 @@ def update_combat_states(self):
                     ship['energy'] + self.config['energy_per_recharge']
                 )
 
-    def get_opponent_action(self, ship: dict) -> int:
-        """
-        Dispatch opponent action based on assigned AI type
-        """
+    def _get_opponent_action(self, ship: dict) -> int:
+        """Dispatch opponent action based on assigned AI type"""
         ai_type = ship.get('ai_type', OpponentAIType.HEURISTIC)
 
         if ai_type == OpponentAIType.MODEL:
@@ -2484,49 +2482,48 @@ def update_combat_states(self):
             return self._ai_heuristic(ship)
 
     def _ai_model(self, self, ship: dict) -> int:
-        """
-        Model-based AI: Uses a trained RL model for decision-making.
+        """Model-based AI: Uses a trained RL model for decision-making.
         
         Args:
             ship: Enemy ship dictionary
         
         Returns:
             Action selected by the model (validated with action masking)
-"""
-    model_path = ship.get('model_path')
+        """
+        model_path = ship.get('model_path')
 
-    if not model_path:
-        logger.warning(f"MODEL.AI.type but no model_path specified for ship {ship.get('name')}. Falling back to HEURISTIC.")
-        return self._ai_heuristic(ship)
+        if not model_path:
+            logger.warning(f"MODEL.AI.type but no model_path specified for ship {ship.get('name')}. Falling back to HEURISTIC.")
+            return self._ai_heuristic(ship)
 
-    # Load model (uses cache if already loaded)
-    model = self._load_enemy_model(model_path)
+        # Load model (uses cache if already loaded)
+        model = self._load_enemy_model(model_path)
 
-    if model is None:
-        logger.warning(f"Failed to load model {model_path} for ship {ship.get('name')}. Falling back to HEURISTIC.")
-        return self._ai_heuristic(ship)
+        if model is None:
+            logger.warning(f"Failed to load model {model_path} for ship {ship.get('name')}. Falling back to HEURISTIC.")
+            return self._ai_heuristic(ship)
 
-    try:
-        # Get observation from the enemy's perspective
-        # We need to create an observation as if this enemy was the player
-        # For simplicity, we'll use the same observation space but from enemy's viewpoint
-        obs = self._get_enemy_observation(ship)
+        try:
+            # Get observation from the enemy's perspective
+            # We need to create an observation as if this enemy was the player
+            # For simplicity, we'll use the same observation space but from enemy's viewpoint
+            obs = self._get_enemy_observation(ship)
 
-        # Predict action using the model
-        # Detect what observation format the loaded model expects:
-        # - Old models trained with Box.obs_space -> pass flat ndarray
-        # - New models trained with Dict.obs_space -> pass full dict
-        from gymnasium import spaces as _spaces
-        model_obs_space = getattr(model, 'observation_space', None)
+            # Predict action using the model
+            # Detect what observation format the loaded model expects:
+            # - Old models trained with Box.obs_space -> pass flat ndarray
+            # - New models trained with Dict.obs_space -> pass full dict
+            from gymnasium import spaces as _spaces
+            model_obs_space = getattr(model, 'observation_space', None)
 
-        if isinstance(model_obs_space, _spaces.Dict):
-            # Model expects Dict observation -- pass full dict, truncating obs if needed
-            if (isinstance(obs, dict) and 'observation' in obs and
-                'observation' in model_obs_space.spaces):
-                model_obs_size = model_obs_space['observation'].shape[0]
-                if obs['observation'].shape[0] != model_obs_size:
-                    obs_for_model = dict(obs)
-                    obs_for_model['observation'] = obs['observation'][:model_obs_size]
+            if isinstance(model_obs_space, _spaces.Dict):
+                # Model expects Dict observation -- pass full dict, truncating obs if needed
+                if (isinstance(obs, dict) and 'observation' in obs and
+                    'observation' in model_obs_space.spaces):
+                    model_obs_size = model_obs_space['observation'].shape[0]
+                    if obs['observation'].shape[0] != model_obs_size:
+                        obs_for_model = dict(obs)
+                        obs_for_model['observation'] = obs['observation'][:model_obs_size]
             else:
                 # Model expects flat Box observation -- extract the array
                 if isinstance(obs, dict):
