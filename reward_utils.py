@@ -470,7 +470,7 @@ class EarlyDeathPenaltyReward(RewardComponent):
         """
         Args:
             base_penalty: Base penalty value when destroyed at the very start of episode.
-                        The actual penalty is scaled by the fraction of episode remaining.
+                         The actual penalty is scaled by the fraction of episode remaining.
         """
         self.base_penalty = float(base_penalty)
 
@@ -685,7 +685,7 @@ class PlacementReward(RewardComponent):
 
     Reward structure (for N participants total):
       - 1st place:                +first_place_bonus  (default +20)
-      - Top 3 (podium):           +podium_bonus       (default: +10)
+      - Top 3 (podium):           +podium_bonus       (default +10)
       - Linear placement reward:  +scale * (N - rank) / (N - 1)  in [0, scale]
       - Bottom 3:                 +bottom_penalty     (default -10, additional)
       - Last place:               +last_place_penalty (default -10, additional)
