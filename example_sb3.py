@@ -1,7 +1,8 @@
 """
 Example: Using Stable Baselines3 for training RL agents
 
-This example shows how to use the popular Stable Baselines3 library with the Prospectors n Pirates environment.
+This example shows how to use the popular Stable Baselines3 library
+with the Prospectors n Pirates environment.
 
 Install with: pip install stable-baselines3[extra]
 """
@@ -43,6 +44,7 @@ import platform
 if platform.system() == 'Windows':
     import ctypes
 
+
     def set_console_title(title):
         """Set the console window title on Windows"""
         try:
@@ -54,7 +56,6 @@ else:
         """Placeholder for non-Windows systems"""
         pass
 
-
 from pnp_env import ProspectorsPiratesEnv, RewardConfig
 import gymnasium as gym
 import numpy as np
@@ -63,6 +64,7 @@ import csv
 from datetime import datetime
 from typing import Optional, List
 import random
+
 
 class FlattenDictObsWrapper(gym.ObservationWrapper):
     """Wrapper that flattens a Dict observation space to a flat Box.
@@ -78,11 +80,7 @@ class FlattenDictObsWrapper(gym.ObservationWrapper):
         super().__init__(env)
         # Replace Dict obs space with the inner Box
         assert isinstance(env.observation_space, gym.spaces.Dict), \
-
-class FlattenDictObsWrapper(gym.Wrapper):
-    """FlattenDictObsWrapper requires a Dict observation space"""
-    def __init__(self, env: gym.Env):
-        super().__init__(env)
+            "FlattenDictObsWrapper requires a Dict observation space"
         self.observation_space = env.observation_space['observation']
 
     def observation(self, observation):
@@ -90,16 +88,20 @@ class FlattenDictObsWrapper(gym.Wrapper):
             return observation['observation']
         return observation
 
+
 class DynamicOpponentsWrapper(gym.Wrapper):
     """Wrapper that samples a new opponent count on each episode reset.
+
     This allows the agent to train against varying numbers of opponents,
     learning strategies that generalize across different competition levels.
 
     The wrapper dynamically adjusts the environment's num_opponents and
     recreates the opponent_ships list on each reset.
     """
+
     def __init__(self, env: gym.Env, min_opponents: int, max_opponents: int):
-        """Args:
+        """
+        Args:
            env: The base environment
            min_opponents: Minimum number of opponents (inclusive)
            max_opponents: Maximum number of opponents (inclusive)
@@ -118,6 +120,8 @@ class DynamicOpponentsWrapper(gym.Wrapper):
 
         # Now call the underlying reset which will use the new opponent count
         return self.env.reset(**kwargs)
+
+
 class ActionMaskWrapper(gym.Wrapper):
     """Wrapper that enforces action masking for standard PPO (without sb3-contrib).
 
@@ -132,8 +136,8 @@ class ActionMaskWrapper(gym.Wrapper):
         - The model receives a consistent negative reward for invalid choices.
         - The replacement action is random among valid ones (no bias toward a
          single fallback), so the model can't game the fallback.
-
     """
+
     INVALID_ACTION_PENALTY = 0.0  # No penalty -- action is silently replaced with a valid one
 
     def __init__(self, env: gym.Env):
@@ -156,28 +160,32 @@ class ActionMaskWrapper(gym.Wrapper):
                 valid_actions = [i for i in range(len(mask)) if mask[i] == 1]
                 if valid_actions:
                     action = int(np.random.choice(valid_actions))
-        obs, reward, terminated, truncated, info = self.env.step(action)
-reward += self.INVALID_ACTION_PENALTY
-info['action_mask_enforced'] = True
-else:
-    obs, reward, terminated, truncated, info = self.env.step(action)
-    info['action_mask_enforced'] = False
-else:
-    obs, reward, terminated, truncated, info = self.env.step(action)
-    info['action_mask_enforced'] = False
+                # Apply penalty; will be added after step()
+                obs, reward, terminated, truncated, info = self.env.step(action)
+                reward += self.INVALID_ACTION_PENALTY
+                info['action_mask_enforced'] = True
+            else:
+                obs, reward, terminated, truncated, info = self.env.step(action)
+                info['action_mask_enforced'] = False
+        else:
+            obs, reward, terminated, truncated, info = self.env.step(action)
+            info['action_mask_enforced'] = False
 
-# Update stored mask for next step
-if isinstance(obs, dict) and 'action_mask' in obs:
-    self._last_action_mask = obs['action_mask'].copy()
+        # Update stored mask for next step
+        if isinstance(obs, dict) and 'action_mask' in obs:
+            self._last_action_mask = obs['action_mask'].copy()
 
-return obs, reward, terminated, truncated, info
+        return obs, reward, terminated, truncated, info
+
 
 # Try to import torch for CPU/thread control
 try:
     import torch
+
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
+
 
 def set_cpu_mode(efficiency_mode=False, num_threads=None):
     """
@@ -194,75 +202,77 @@ def set_cpu_mode(efficiency_mode=False, num_threads=None):
 
     # Get CPU count
     cpu_count = os.cpu_count() or 4
-if num_threads is not None:
-    threads = max(1, min(num_threads, cpu_count))
-    settings['mode'] = 'custom'
-elif efficiency_mode:
-    # Efficiency mode: Use 50% of CPUs, minimum 1, maximum 4
-    threads = max(1, min(4, cpu_count // 2))
-    settings['mode'] = 'efficiency'
-else:
-    # Performance mode: Use all available CPUs
-    threads = cpu_count
-    settings['mode'] = 'performance'
 
-settings['threads'] = threads
-settings['cpu_count'] = cpu_count
+    # Determine thread count
+    if num_threads is not None:
+        threads = max(1, min(num_threads, cpu_count))
+        settings['mode'] = 'custom'
+    elif efficiency_mode:
+        # Efficiency mode: Use 50% of CPUs, minimum 1, maximum 4
+        threads = max(1, min(4, cpu_count // 2))
+        settings['mode'] = 'efficiency'
+    else:
+        # Performance mode: Use all available CPUs
+        threads = cpu_count
+        settings['mode'] = 'performance'
 
-# Set thread counts for PyTorch (only if not already set)
-if TORCH_AVAILABLE:
-    try:
-        torch.set_num_threads(threads)
-        torch.set_num_interop_threads(threads)
-        settings['torch_configured'] = True
-    except RuntimeError:
-        # Threads already set, can't change them
+    settings['threads'] = threads
+    settings['cpu_count'] = cpu_count
+
+    # Set thread counts for PyTorch (only if not already set)
+    if TORCH_AVAILABLE:
+        try:
+            torch.set_num_threads(threads)
+            torch.set_num_interop_threads(threads)
+            settings['torch_configured'] = True
+        except RuntimeError:
+            # Threads already set, can't change them
+            settings['torch_configured'] = False
+            settings['torch_note'] = 'already_configured'
+    else:
         settings['torch_configured'] = False
-        settings['torch_note'] = 'already_configured'
-else:
-    settings['torch_configured'] = False
 
-# Set environment variables for other libraries
-os.environ['OMP_NUM_THREADS'] = str(threads)
-os.environ['MKL_NUM_THREADS'] = str(threads)
-os.environ['OPENBLAS_NUM_THREADS'] = str(threads)
-os.environ['NUMEXPR_NUM_THREADS'] = str(threads)
+    # Set environment variables for other libraries
+    os.environ['OMP_NUM_THREADS'] = str(threads)
+    os.environ['MKL_NUM_THREADS'] = str(threads)
+    os.environ['OPENBLAS_NUM_THREADS'] = str(threads)
+    os.environ['NUMEXPR_NUM_THREADS'] = str(threads)
 
-# Windows-specific: Set process priority
-if platform.system() == 'Windows':
-    try:
-        import psutil
-        p = psutil.Process()
-        if efficiency_mode:
-# Below normal priority for efficiency mode
-p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
-settings['process_priority'] = 'below_normal'
-else:
-    # High priority for performance mode
-    p.nice(psutil.HIGH_PRIORITY_CLASS)
-    settings['process_priority'] = 'high'
-    settings['priority_set'] = True
-except ImportError:
-    settings['priority_set'] = False
-except Exception as e:
-    settings['priority_set'] = False
-    settings['priority_error'] = str(e)
-else:
-    # Unix-like systems: use nice values
-    try:
-        import psutil
-        p = psutil.Process()
-        if efficiency_mode:
-            p.nice(10)  # Lower priority (higher nice value)
-            settings['process_priority'] = 'nice_10'
-        else:
-            p.nice(-5)  # Higher priority (lower nice value, requires permissions)
-            settings['process_priority'] = 'nice_-5'
+    # Windows-specific: Set process priority
+    if platform.system() == 'Windows':
+        try:
+            import psutil
+            p = psutil.Process()
+            if efficiency_mode:
+                # Below normal priority for efficiency mode
+                p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+                settings['process_priority'] = 'below_normal'
+            else:
+                # High priority for performance mode
+                p.nice(psutil.HIGH_PRIORITY_CLASS)
+                settings['process_priority'] = 'high'
             settings['priority_set'] = True
-    except:
-        settings['priority_set'] = False
+        except ImportError:
+            settings['priority_set'] = False
+        except Exception as e:
+            settings['priority_set'] = False
+            settings['priority_error'] = str(e)
+    else:
+        # Unix-like systems: use nice values
+        try:
+            import psutil
+            p = psutil.Process()
+            if efficiency_mode:
+                p.nice(10)  # Lower priority (higher nice value)
+                settings['process_priority'] = 'nice_10'
+            else:
+                p.nice(-5)  # Higher priority (lower nice value, requires permissions)
+                settings['process_priority'] = 'nice_-5'
+                settings['priority_set'] = True
+        except:
+            settings['priority_set'] = False
 
-return settings
+    return settings
 
 
 def _ask_to_evaluate(prompt="Press ENTER or SPACE to evaluate the model, or Q to quit: ") -> bool:
