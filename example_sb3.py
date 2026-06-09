@@ -6,6 +6,7 @@ with the Prospectors n Pirates environment.
 
 Install with: pip install stable-baselines3[extra]
 """
+from reward_utils import Exception
 
 try:
     from stable_baselines3 import PPO, DQN, A2C
@@ -911,9 +912,9 @@ def _save_model_attributes_to_csv(model, algorithm, model_path, callback, is_tra
                 new_row = {fn: row.get(fn, '') for fn in union}
                 migrated_rows.append(new_row)
 
-        # Append the new attributes row
-        new_row = {fn: attributes.get(fn, '') for fn in union}
-        migrated_rows.append(new_row)
+            # Append the new attributes row
+            new_row = {fn: attributes.get(fn, '') for fn in union}
+            migrated_rows.append(new_row)
 
             # Write back the file with updated header
             with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
@@ -932,12 +933,13 @@ def _save_model_attributes_to_csv(model, algorithm, model_path, callback, is_tra
             row = {fn: attributes.get(fn, '') for fn in existing_fieldnames}
             writer.writerow(row)
 
-print(f"Model attributes appended to {csv_filename}")
+        print(f"Model attributes appended to {csv_filename}")
 
-except Exception as e:
-print(f"Warning: Could not save model attributes to CSV: {e}")
-import traceback
-traceback.print_exc()
+    except Exception as e:
+        print(f"Warning: Could not save model attributes to CSV: {e}")
+        import traceback
+        traceback.print_exc()
+
 
 def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                     transfer_from=None, freeze_layers=False, fine_tune_lr=None,
@@ -970,423 +972,425 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         efficiency_mode: If True, limit CPU usage for efficiency. If False, maximize CPU usage for faster training
         num_threads: Specific number of CPU threads to use (overrides efficiency_mode if set)
     """
+
     if not SB3_AVAILABLE:
         print("Please install stable-baselines3 first:")
         print("pip install stable-baselines3[extra]")
         return None
-is_transfer = transfer_from is not None
 
-print("=". * 70)
-if is_transfer:
-    print(f"TRANSFER LEARNING: {algorithm} AGENT WITH STABLE BASELINES3")
-    print(f"Loading pre-trained model from: {transfer_from}")
-else:
-    print(f"TRAINING {algorithm} AGENT WITH STABLE BASELINES3")
-print("=". * 70)
+    is_transfer = transfer_from is not None
 
-# Set process title for Task Manager visibility
-if SETPROCTITLE_AVAILABLE:
-    setproctitle("PnP Training")
-# Set console window title (more visible on Windows)
-set_console_title("PnP Training")
+    print("=". * 70)
+    if is_transfer:
+        print(f"TRANSFER LEARNING: {algorithm} AGENT WITH STABLE BASELINES3")
+        print(f"Loading pre-trained model from: {transfer_from}")
+    else:
+        print(f"TRAINING {algorithm} AGENT WITH STABLE BASELINES3")
+    print("=". * 70)
 
-# Configure CPU usage mode
-cpu_settings = set_cpu_mode(efficiency_mode=efficiency_mode, num_threads=num_threads)
-print(f"\nCPU Configuration:")
-print(f"Mode: {cpu_settings['mode']}")
-print(f"Threads: {cpu_settings['threads']} / {cpu_settings['cpu_count']} CPUs")
-if cpu_settings.get('torch_configured'):
-    print(f"PyTorch: Configured for {cpu_settings['threads']} threads")
-if cpu_settings.get('priority_set'):
-    print(f"Process Priority: {cpu_settings.get('process_priority', 'default')}")
-if efficiency_mode:
-    print(f"Efficiency Mode: Balanced CPU usage for background training")
-else:
-    print(f"Performance Mode: Maximum CPU usage for fastest training")
-print()
+    # Set process title for Task Manager visibility
+    if SETPROCTITLE_AVAILABLE:
+        setproctitle("PnP Training")
+    # Set console window title (more visible on Windows)
+    set_console_title("PnP Training")
 
-# Create environment
-# Build reward config to pass into the environment
-reward_cfg = RewardConfig()
-reward_cfg.use_composite = bool(use_composite)
-reward_cfg.composite_components = composite_components
+    # Configure CPU usage mode
+    cpu_settings = set_cpu_mode(efficiency_mode=efficiency_mode, num_threads=num_threads)
+    print(f"\nCPU Configuration:")
+    print(f"Mode: {cpu_settings['mode']}")
+    print(f"Threads: {cpu_settings['threads']} / {cpu_settings['cpu_count']} CPUs")
+    if cpu_settings.get('torch_configured'):
+        print(f"PyTorch: Configured for {cpu_settings['threads']} threads")
+    if cpu_settings.get('priority_set'):
+        print(f"Process Priority: {cpu_settings.get('process_priority', 'default')}")
+    if efficiency_mode:
+        print(f"Efficiency Mode: Balanced CPU usage for background training")
+    else:
+        print(f"Performance Mode: Maximum CPU usage for fastest training")
+    print()
 
-# Determine opponent handling strategy
-use_dynamic_opponents = (min_opponents != max_opponents)
-if use_dynamic_opponents:
-    # Start with mid-range opponent count for initial env creation
-    initial_num_opponents = (min_opponents + max_opponents) // 2
-    print(f"\nOpponent Configuration:")
-    print(f"Dynamic per-episode sampling: {min_opponents} to {max_opponents} opponents")
-    print(f"Initial env uses: {initial_num_opponents} opponents")
-else:
-    # Fixed opponent count
-    initial_num_opponents = min_opponents
-    print(f"\nOpponent Configuration:")
-    print(f"Fixed count: {initial_num_opponents} opponents per episode")
+    # Create environment
+    # Build reward config to pass into the environment
+    reward_cfg = RewardConfig()
+    reward_cfg.use_composite = bool(use_composite)
+    reward_cfg.composite_components = composite_components
 
-env = ProspectorsPiratesEnv(
-    map_width=map_width,
-    map_height=map_height,
-    num_opponents=initial_num_opponents,
-    max_steps=max_steps,
-    use_predefined_asteroids=use_predefined_asteroids,
-    asteroid_config_path=asteroid_config_path,
-    use_predefined_start=use_predefined_start,
-    start_position_config_path=start_position_config_path,
-    reward_config=reward_cfg
-)
+    # Determine opponent handling strategy
+    use_dynamic_opponents = (min_opponents != max_opponents)
+    if use_dynamic_opponents:
+        # Start with mid-range opponent count for initial env creation
+        initial_num_opponents = (min_opponents + max_opponents) // 2
+        print(f"\nOpponent Configuration:")
+        print(f"Dynamic per-episode sampling: {min_opponents} to {max_opponents} opponents")
+        print(f"Initial env uses: {initial_num_opponents} opponents")
+    else:
+        # Fixed opponent count
+        initial_num_opponents = min_opponents
+        print(f"\nOpponent Configuration:")
+        print(f"Fixed count: {initial_num_opponents} opponents per episode")
 
-# Apply dynamic opponents wrapper if using variable opponent counts
-if use_dynamic_opponents:
-    env = DynamicOpponentsWrapper(env, min_opponents, max_opponents)
+    env = ProspectorsPiratesEnv(
+        map_width=map_width,
+        map_height=map_height,
+        num_opponents=initial_num_opponents,
+        max_steps=max_steps,
+        use_predefined_asteroids=use_predefined_asteroids,
+        asteroid_config_path=asteroid_config_path,
+        use_predefined_start=use_predefined_start,
+        start_position_config_path=start_position_config_path,
+        reward_config=reward_cfg
+    )
 
-# Apply action mask wrapper for standard PPO (when sb3-contrib is unavailable).
-# This intercepts invalid actions, replaces them with a random valid action,
-# and applies a penalty so the model learns to respect the mask.
-if not SB3_CONTRIB_AVAILABLE:
-    env = ActionMaskWrapper(env)
-    print("Action masking: penalty-based enforcement (sb3-contrib not available)")
-else:
-    print("Action masking: native MaskablePPO support")
+    # Apply dynamic opponents wrapper if using variable opponent counts
+    if use_dynamic_opponents:
+        env = DynamicOpponentsWrapper(env, min_opponents, max_opponents)
 
-# Wrap environment with Monitor for logging
-env = Monitor(env)
+    # Apply action mask wrapper for standard PPO (when sb3-contrib is unavailable).
+    # This intercepts invalid actions, replaces them with a random valid action,
+    # and applies a penalty so the model learns to respect the mask.
+    if not SB3_CONTRIB_AVAILABLE:
+        env = ActionMaskWrapper(env)
+        print("Action masking: penalty-based enforcement (sb3-contrib not available)")
+    else:
+        print("Action masking: native MaskablePPO support")
 
-# Check environment
-print("\nChecking environment compatibility...")
-try:
-    check_env(env, warn=True)
-    print("Environment check passed!")
-except Exception as e:
-    print(f"Environment check failed: {e}")
-    return None
+    # Wrap environment with Monitor for logging
+    env = Monitor(env)
 
-os.makedirs(save_path, exist_ok=True)
-
-# Initialize model variable
-model = None
-original_env = env  # Keep reference in case transfer loading modifies env
-
-# Transfer Learning: Load existing model
-if is_transfer:
-    print(f"\nLoading pre-trained {algorithm} model for transfer learning...")
-    print(f"Model path: {transfer_from}")
-
-    # Check if model file exists
-    model_path_with_zip = transfer_from if transfer_from.endswith('.zip') else f"{transfer_from}.zip"
-    if not os.path.exists(model_path_with_zip):
-        print(f"Model file not found: {model_path_with_zip}")
-        print("Available models:")
-        if os.path.exists('models'):
-            for f in os.listdir('models'):
-                if f.endswith('.zip'):
-                    print(f"  - models/{f.replace('.zip', '')}")
-    print("Falling back to training from scratch...")
-    is_transfer = False
-else:
+    # Check environment
+    print("\nChecking environment compatibility...")
     try:
-        print(f"Loading from: {model_path_with_zip}")
+        check_env(env, warn=True)
+        print("Environment check passed!")
+    except Exception as e:
+        print(f"Environment check failed: {e}")
+        return None
+
+    os.makedirs(save_path, exist_ok=True)
+
+    # Initialize model variable
+    model = None
+    original_env = env  # Keep reference in case transfer loading modifies env
+
+    # Transfer Learning: Load existing model
+    if is_transfer:
+        print(f"\nLoading pre-trained {algorithm} model for transfer learning...")
+        print(f"Model path: {transfer_from}")
+
+        # Check if model file exists
+        model_path_with_zip = transfer_from if transfer_from.endswith('.zip') else f"{transfer_from}.zip"
+        if not os.path.exists(model_path_with_zip):
+            print(f"Model file not found: {model_path_with_zip}")
+            print("Available models:")
+            if os.path.exists('models'):
+                for f in os.listdir('models'):
+                    if f.endswith('.zip'):
+                        print(f"  - models/{f.replace('.zip', '')}")
+            print("Falling back to training from scratch...")
+            is_transfer = False
+        else:
+            try:
+                print(f"Loading from: {model_path_with_zip}")
+
+                if algorithm == 'PPO':
+                    # Try to load as MaskablePPO first, fall back to regular PPO
+                    if SB3_CONTRIB_AVAILABLE:
+                        try:
+                            model = MaskablePPO.load(transfer_from, env=env)
+                            print("  √ Loaded as MaskablePPO")
+                        except Exception as mask_err:
+                            print(f"Warning: Could not load as MaskablePPO: {mask_err}")
+                            model = None
+                    if model is None:
+                        # Fall back to regular PPO.
+                        # The env uses a Dict obs space ({'observation', 'action_mask'}).
+                        # Regular PPO with MultiInputPolicy can handle Dict observations.
+                        # Action masking won't be applied, but training will still work.
+                        model = PPO.load(transfer_from, env=env)
+                        print("✓ Loaded as regular PPO (no action masking)")
+                        print("(action mask in observations will be ignored during training)")
+                elif algorithm == 'DQN':
+                    model = DQN.load(transfer_from, env=env)
+                elif algorithm == 'A2C':
+                    model = A2C.load(transfer_from, env=env)
+                else:
+                    print(f"Unknown algorithm: {algorithm}")
+                    return None
+                model.verbose = 0  # Disable verbose output during evaluation
+
+                # Fix clip_range schedule corruption:
+                # When SB3 saves a model whose clip_range is a schedule (lambda),
+                # loading it can double-wrap the schedule, producing a nested lambda
+                # that crashes with "float expected at most 1 argument, got 2".
+                # Conversely, if the schedule is unwrapped to a bare float, PPO.train()
+                # crashes with "'float' object is not callable".
+                # Fix: evaluate the current schedule to get the float value, then
+                # re-wrap via get_schedule_fn so it's a proper single-layer callable.
+                if algorithm in ('PPO',):
+                    from stable_baselines3.common.utils import get_schedule_fn
+                    if hasattr(model, 'clip_range'):
+                        try:
+                            val = float(model.clip_range(1.0)) if callable(model.clip_range) else float(
+                                model.clip_range)
+                        except Exception:
+                            val = 0.2  # PPO default
+                        model.clip_range = get_schedule_fn(val)
+                    if hasattr(model, 'clip_range_vf') and model.clip_range_vf is not None:
+                        try:
+                            val = float(model.clip_range_vf(1.0)) if callable(model.clip_range_vf) else float(
+                                model.clip_range_vf)
+                        except Exception:
+                            val = None
+                        model.clip_range_vf = get_schedule_fn(val) if val is not None else None
+
+                print(f"✓ Successfully loaded model from {transfer_from}")
+                print(f"Model has {model.num_timesteps} training timesteps")
+
+                # Set fine-tuning learning rate for transfer learning.
+                # IMPORTANT: Always use a fixed (non-schedule) learning rate.
+                # Inheriting a decaying schedule from the saved model causes the lr
+                # to collapse toward zero after repeated transfers, producing
+                # "dead" models that can no longer learn.
+                _default_finetune_lr = {'PPO': 3e-5, 'DQN': 1e-5, 'A2C': 7e-5}
+                _min_lr = 1e-6 # Floor: never go below this
+
+                if fine_tune_lr is not None:
+                    # User explicitly provided a learning rate - use it as-is
+                    model.learning_rate = fine_tune_lr
+                    print(f"Using custom learning rate: {fine_tune_lr}")
+                else:
+                    original_lr = model.learning_rate
+                    default_ft = _default_finetune_lr.get(algorithm, 3e-5)
+
+                    if callable(original_lr):
+                        # Learning rate is a schedule function from the saved model.
+                        # Replace with a fixed rate to prevent decay across transfers.
+                        model.learning_rate = default_ft
+                        print(f"Replaced learning rate schedule with fixed rate: {default_ft:.2e}")
+                    else:
+                        # Use the larger of: stored_lr / 10, or the default fine-tune rate
+                        # (both floored at _min_lr). If the stored LR was already very
+                        # small (from repeated transfers), fall back to the algorithm's
+                        # standard fine-tuning rate.
+                        candidate = max(original_lr / 10, _min_lr)
+                        if candidate < default_ft:
+                            model.learning_rate = default_ft
+                            print(
+                                f"Learning rate was too small ({original_lr:.2e}), using default fine-tuning rate: {default_ft:.2e}")
+                        else:
+                            model.learning_rate = candidate
+                            print(
+                                f"Reduced learning rate for fine-tuning: {original_lr:.2e} -> {model.learning_rate:.2e}")
+                # Optionally freeze early layers
+                if freeze_layers:
+                    print("Freezing early network layers...")
+                    _freeze_early_layers(model, algorithm)
+                    print("✓ Early layers frozen")
+
+            except Exception as e:
+                print(f"❌ Failed to load model: {e}")
+                import traceback
+                traceback.print_exc()
+                print("Falling back to training from scratch...")
+                is_transfer = False
+                model = None
+                env = original_env  # Restore original env for fresh model creation
+
+    # Create new model if not transfer learning
+    if not is_transfer:
+        print(f"\nCreating new {algorithm} model...")
 
         if algorithm == 'PPO':
-            # Try to load as MaskablePPO first, fall back to regular PPO
+            # Use MaskablePPO for action masking if available
             if SB3_CONTRIB_AVAILABLE:
-                try:
-                    model = MaskablePPO.load(transfer_from, env=env)
-                    print("  √ Loaded as MaskablePPO")
-                except Exception as mask_err:
-print(f"Warning: Could not load as MaskablePPO: {mask_err}")
-model = None
-if model is None:
-    # Fall back to regular PPO.
-    # The env uses a Dict obs space ({'observation', 'action_mask'}).
-    # Regular PPO with MultiInputPolicy can handle Dict observations.
-    # Action masking won't be applied, but training will still work.
-    model = PPO.load(transfer_from, env=env)
-    print("✓ Loaded as regular PPO (no action masking)")
-    print("(action mask in observations will be ignored during training)")
-elif algorithm == 'DQN':
-    model = DQN.load(transfer_from, env=env)
-elif algorithm == 'A2C':
-    model = A2C.load(transfer_from, env=env)
-else:
-    print(f"Unknown algorithm: {algorithm}")
-    return None
-model.verbose = 0  # Disable verbose output during evaluation
-
-# Fix clip_range schedule corruption:
-# When SB3 saves a model whose clip_range is a schedule (lambda),
-# loading it can double-wrap the schedule, producing a nested lambda
-# that crashes with "float expected at most 1 argument, got 2".
-# Conversely, if the schedule is unwrapped to a bare float, PPO.train()
-# crashes with "'float' object is not callable".
-# Fix: evaluate the current schedule to get the float value, then
-# re-wrap via get_schedule_fn so it's a proper single-layer callable.
-if algorithm in ('PPO',):
-    from stable_baselines3.common.utils import get_schedule_fn
-    if hasattr(model, 'clip_range'):
-        try:
-            val = float(model.clip_range(1.0)) if callable(model.clip_range) else float(
-                model.clip_range)
-        except Exception:
-            val = 0.2  # PPO default
-        model.clip_range = get_schedule_fn(val)
-    if hasattr(model, 'clip_range_vf') and model.clip_range_vf is not None:
-        try:
-            val = float(model.clip_range_vf(1.0)) if callable(model.clip_range_vf) else float(
-                model.clip_range_vf)
-val = None
-
-model.clip_range_vf = get_schedule_fn(val) if val is not None else None
-
-print(f"✓ Successfully loaded model from {transfer_from}")
-print(f"Model has {model.num_timesteps} training timesteps")
-
-# Set fine-tuning learning rate for transfer learning.
-# IMPORTANT: Always use a fixed (non-schedule) learning rate.
-# Inheriting a decaying schedule from the saved model causes the lr
-# to collapse toward zero after repeated transfers, producing
-# "dead" models that can no longer learn.
-_default_finetune_lr = {'PPO': 3e-5, 'DQN': 1e-5, 'A2C': 7e-5}
-_min_lr = 1e-6 # Floor: never go below this
-
-if fine_tune_lr is not None:
-    # User explicitly provided a learning rate - use it as-is
-    model.learning_rate = fine_tune_lr
-    print(f"Using custom learning rate: {fine_tune_lr}")
-else:
-    original_lr = model.learning_rate
-    default_ft = _default_finetune_lr.get(algorithm, 3e-5)
-
-    if callable(original_lr):
-        # Learning rate is a schedule function from the saved model.
-        # Replace with a fixed rate to prevent decay across transfers.
-        model.learning_rate = default_ft
-        print(f"Replaced learning rate schedule with fixed rate: {default_ft:.2e}")
-    else:
-        # Use the larger of: stored_lr / 10, or the default fine-tune rate
-        # (both floored at _min_lr). If the stored LR was already very
-        # small (from repeated transfers), fall back to the algorithm's
-        # standard fine-tuning rate.
-        candidate = max(original_lr / 10, _min_lr)
-        if candidate < default_ft:
-            model.learning_rate = default_ft
-            print(
-                f"Learning rate was too small ({original_lr:.2e}), using default fine-tuning rate: {default_ft:.2e}")
-        else:
-            model.learning_rate = candidate
-            print(
-                f"Reduced learning rate for fine-tuning: {original_lr:.2e} -> {model.learning_rate:.2e}")
-# Optionally freeze early layers
-if freeze_layers:
-    print("Freezing early network layers...")
-    _freeze_early_layers(model, algorithm)
-    print("✓ Early layers frozen")
-
-except Exception as e:
-    print(f"❌ Failed to load model: {e}")
-    import traceback
-    traceback.print_exc()
-    print("Falling back to training from scratch...")
-    is_transfer = False
-    model = None
-    env = original_env  # Restore original env for fresh model creation
-
-# Create new model if not transfer learning
-if not is_transfer:
-    print(f"\nCreating new {algorithm} model...")
-
-    if algorithm == 'PPO':
-        # Use MaskablePPO for action masking if available
-        if SB3_CONTRIB_AVAILABLE:
-            print("Using MaskablePPO with action masking support")
-            model = MaskablePPO(
-                MaskableActorCriticPolicy,
+                print("Using MaskablePPO with action masking support")
+                model = MaskablePPO(
+                    MaskableActorCriticPolicy,
+                    env,
+                    verbose=0,
+                    learning_rate=3e-4,
+                    n_steps=2048,  # 2048 steps ≈ 6-7 episodes per rollout (optimized for 300-step episodes)
+                    batch_size=256,  # 256 samples per gradient update for stable learning
+                    n_epochs=10,  # Standard PPO value for better sample efficiency
+                    gamma=0.99,  # Standard discount factor
+                    gae_lambda=0.95,
+                    clip_range=0.2,
+                    ent_coef=0.01,  # Entropy bonus for exploration
+                    vf_coef=0.5,  # Value function coefficient
+                    max_grad_norm=0.5,  # Gradient clipping for stability
+                    policy_kwargs=dict(
+                        net_arch=dict(pi=[512, 256, 128], vf=[512, 256, 128]),
+                        # Larger network for expanded sensor range (11x11 grid)
+                    ),
+                    tensorboard_log=f"./tensorboard_logs/maskable_ppo/"
+                )
+            else:
+                print(". Warning: sb3-contrib not available, using standard PPO")
+                print(". Action masking will not be used -- install sb3-contrib for better performance")
+                model = PPO(
+                    'MultiInputPolicy',
+                    env,
+                    verbose=0,
+                    learning_rate=3e-4,
+                    n_steps=2048,  # 2048 steps ~ 6-7 episodes per rollout (optimized for 300-step episodes)
+                    batch_size=256,  # 256 samples per gradient update for stable learning
+                    n_epochs=10,  # Increased to 10 for better sample efficiency (standard PPO)
+                    gamma=0.99,  # Standard discount factor (0.99 works well for 300-step horizon)
+                    gae_lambda=0.95,
+                    clip_range=0.2,
+                    ent_coef=0.01,  # Entropy bonus to encourage exploration
+                    vf_coef=0.5,  # Value function coefficient
+                    max_grad_norm=0.5,  # Gradient clipping for stability
+                    policy_kwargs=dict(
+                        net_arch=dict(pi=[512, 256, 128], vf=[512, 256, 128]),
+                        # Larger network for expanded sensor range (11x11 grid)
+                    ),
+                    tensorboard_log=f"./tensorboard_logs/ppo/"
+                )
+        elif algorithm == 'DQN':
+            model = DQN(
+                'MultiInputPolicy',
                 env,
-                verbose=0,
-                learning_rate=3e-4,
-                n_steps=2048,  # 2048 steps ≈ 6-7 episodes per rollout (optimized for 300-step episodes)
-                batch_size=256,  # 256 samples per gradient update for stable learning
-                n_epochs=10,  # Standard PPO value for better sample efficiency
-                gamma=0.99,  # Standard discount factor
-                gae_lambda=0.95,
-                clip_range=0.2,
-                ent_coef=0.01,  # Entropy bonus for exploration
-                vf_coef=0.5,  # Value function coefficient
-                max_grad_norm=0.5,  # Gradient clipping for stability
-                policy_kwargs=dict(
-                    net_arch=dict(pi=[512, 256, 128], vf=[512, 256, 128]),
-                    # Larger network for expanded sensor range (11x11 grid)
-),
-    tensorboard_log=f"./tensorboard_logs/maskable_ppo/"
-)
-else:
-    print(". Warning: sb3-contrib not available, using standard PPO")
-    print(". Action masking will not be used -- install sb3-contrib for better performance")
-model = PPO(
-    'MultiInputPolicy',
-    env,
-    verbose=0,
-    learning_rate=3e-4,
-    n_steps=2048,  # 2048 steps ~ 6-7 episodes per rollout (optimized for 300-step episodes)
-    batch_size=256,  # 256 samples per gradient update for stable learning
-    n_epochs=10,  # Increased to 10 for better sample efficiency (standard PPO)
-    gamma=0.99,  # Standard discount factor (0.99 works well for 300-step horizon)
-    gae_lambda=0.95,
-    clip_range=0.2,
-    ent_coef=0.01,  # Entropy bonus to encourage exploration
-    vf_coef=0.5,  # Value function coefficient
-    max_grad_norm=0.5,  # Gradient clipping for stability
-    policy_kwargs=dict(
-        net_arch=dict(pi=[512, 256, 128], vf=[512, 256, 128]),
-        # Larger network for expanded sensor range (11x11 grid)
-    ),
-    tensorboard_log=f"./tensorboard_logs/ppo/"
-)
-elif algorithm == 'DQN':
-    model = DQN(
-        'MultiInputPolicy',
-        env,
-        verbose=1,
-        learning_rate=1e-4,
-        buffer_size=50000,
-        learning_starts=1000,
-        batch_size=32,
-        gamma=0.99,
-        train_freq=4,
-        target_update_interval=1000,
-        exploration_fraction=0.1,
-        exploration_initial_eps=1.0,
-        exploration_final_eps=0.05,
-tensorboard_log=f"./tensorboard_logs/dqn/"
-)
-elif algorithm == 'A2C':
-    model = A2C(
-        'MultiInputPolicy',
-        env,
-        verbose=1,
-        learning_rate=7e-4,
-        n_steps=5,
-        gamma=0.99,
-        gae_lambda=1.0,
-        tensorboard_log=f"./tensorboard_logs/a2c/"
-    )
-else:
-    print(f"Unknown algorithm: {algorithm}")
-    return None
+                verbose=1,
+                learning_rate=1e-4,
+                buffer_size=50000,
+                learning_starts=1000,
+                batch_size=32,
+                gamma=0.99,
+                train_freq=4,
+                target_update_interval=1000,
+                exploration_fraction=0.1,
+                exploration_initial_eps=1.0,
+                exploration_final_eps=0.05,
+        tensorboard_log=f"./tensorboard_logs/dqn/"
+        )
+        elif algorithm == 'A2C':
+            model = A2C(
+                'MultiInputPolicy',
+                env,
+                verbose=1,
+                learning_rate=7e-4,
+                n_steps=5,
+                gamma=0.99,
+                gae_lambda=1.0,
+                tensorboard_log=f"./tensorboard_logs/a2c/"
+            )
+        else:
+            print(f"Unknown algorithm: {algorithm}")
+            return None
 
-# Create callback
-callback = TrainingCallback(verbose=1, total_timesteps=total_timesteps)
+    # Create callback
+    callback = TrainingCallback(verbose=1, total_timesteps=total_timesteps)
 
-# Add checkpoint callback if training for more than 1M timesteps
-callbacks = [callback]
-if total_timesteps > 1_000_000:
-    checkpoint_callback = CheckpointCallback(
-        save_freq=1_000_000,  # Save every 1 million timesteps
-        save_path=save_path,
+    # Add checkpoint callback if training for more than 1M timesteps
+    callbacks = [callback]
+    if total_timesteps > 1_000_000:
+        checkpoint_callback = CheckpointCallback(
+            save_freq=1_000_000,  # Save every 1 million timesteps
+            save_path=save_path,
+            algorithm=algorithm,
+            name_prefix='checkpoint',
+            verbose=1
+        )
+        callbacks.append(checkpoint_callback)
+        print(f"\n✓ Checkpoint saving enabled: every 1M timesteps")
+        print(f"✓ Expected checkpoints: {total_timesteps // 1_000_000}")
+
+    # Ensure model was created successfully
+    if model is None:
+        print("✗ Failed to create or load model. Aborting training.")
+        return None
+
+    # Train model
+    training_type = "fine-tuning" if is_transfer else "training"
+    print(f"\n{training_type.capitalize()} for {total_timesteps:,} timesteps...")
+
+    try:
+        # Always reset timestep counter so that total_timesteps means
+        # "train for N additional steps" (not "train until N total").
+        # Without this, transfer-learning from a 30M-step model with
+        # --timesteps 100000 would immediately finish (30M > 100K).
+        model.learn(
+            total_timesteps=total_timesteps,
+            callback=callbacks,
+            progress_bar=True,
+            reset_num_timesteps=True
+        )
+        print("\nTraining completed successfully!")
+    except KeyboardInterrupt:
+        print("\n\nTraining interrupted by user. Saving current model...")
+    except Exception as e:
+        print(f"\n\nError during training: {e}")
+        import traceback
+        traceback.print_exc()
+        print("\nAttempting to save current model state...")
+
+    # Save model
+    # Get version number
+    version = _get_next_version_number(algorithm, save_path, is_transfer)
+
+    model_path = os.path.join(save_path, f'{algorithm.lower()}_pnp_model_v{version}')
+
+    # Save model FIRST so it can be loaded for performance testing
+    _safe_model_save(model, model_path)
+    print(f"\nModel saved to {model_path} (version {version})")
+
+    # Run performance test against existing models
+    performance_results = _test_model_performance(
+        model_path=model_path,
         algorithm=algorithm,
-        name_prefix='checkpoint',
-        verbose=1
+        num_episodes=100
     )
-    callbacks.append(checkpoint_callback)
-    print(f"\n✓ Checkpoint saving enabled: every 1M timesteps")
-    print(f"✓ Expected checkpoints: {total_timesteps // 1_000_000}")
 
-# Ensure model was created successfully
-if model is None:
-    print("✗ Failed to create or load model. Aborting training.")
-    return None
-
-# Train model
-training_type = "fine-tuning" if is_transfer else "training"
-print(f"\n{training_type.capitalize()} for {total_timesteps:,} timesteps...")
-
-try:
-    # Always reset timestep counter so that total_timesteps means
-    # "train for N additional steps" (not "train until N total").
-    # Without this, transfer-learning from a 30M-step model with
-    # --timesteps 100000 would immediately finish (30M > 100K).
-    model.learn(
+    # Save model attributes to CSV for tracking (including performance results)
+    _save_model_attributes_to_csv(
+        model=model,
+        algorithm=algorithm,
+        model_path=model_path,
+        callback=callback,
+        is_transfer=is_transfer,
         total_timesteps=total_timesteps,
-        callback=callbacks,
-        progress_bar=True,
-        reset_num_timesteps=True
+        version=version,
+        reward_config=reward_cfg,
+        csv_filename='model_tracking.csv',
+        performance_results=performance_results
     )
-    print("\nTraining completed successfully!")
-except KeyboardInterrupt:
-    print("\n\nTraining interrupted by user. Saving current model...")
-except Exception as e:
-    print(f"\n\nError during training: {e}")
-    import traceback
-    traceback.print_exc()
-    print("\nAttempting to save current model state...")
 
-# Save model
-# Get version number
-version = _get_next_version_number(algorithm, save_path, is_transfer)
+    # Plot training progress
+    if callback.episode_credits:
+        plt.figure(figsize=(12, 4))
 
-model_path = os.path.join(save_path, f'{algorithm.lower()}_pnp_model_v{version}')
+        plt.subplot(1, 2, 1)
+        plt.plot(callback.episode_credits)
+        plt.title('Episode Credits')
+        plt.xlabel('Episode')
+        plt.ylabel('Credits Earned')
+        plt.grid(True)
 
-# Save model FIRST so it can be loaded for performance testing
-_safe_model_save(model, model_path)
-print(f"\nModel saved to {model_path} (version {version})")
+        # Moving average
+        window = 10
+        if len(callback.episode_credits) > window:
+            moving_avg = np.convolve(callback.episode_credits,
+                                     np.ones(window) / window, mode='valid')
+            plt.plot(range(window - 1, len(callback.episode_credits)),
+                     moving_avg, 'r-', linewidth=2, label=f'{window}-episode MA')
+        plt.legend()
 
-# Run performance test against existing models
-performance_results = _test_model_performance(
-    model_path=model_path,
-    algorithm=algorithm,
-    num_episodes=100
-)
+        plt.subplot(1, 2, 2)
+        plt.hist(callback.episode_credits, bins=20, edgecolor='black')
+        plt.title('Credits Distribution')
+        plt.xlabel('Credits')
+        plt.ylabel('Frequency')
+        plt.grid(True, alpha=0.3)
 
-# Save model attributes to CSV for tracking (including performance results)
-_save_model_attributes_to_csv(
-    model=model,
-    algorithm=algorithm,
-    model_path=model_path,
-    callback=callback,
-    is_transfer=is_transfer,
-    total_timesteps=total_timesteps,
-    version=version,
-    reward_config=reward_cfg,
-    csv_filename='model_tracking.csv',
-    performance_results=performance_results
-)
+    plt.tight_layout()
+    plot_filename = f'output/training_progress/{algorithm.lower()}_{version}_training_progress.png'
+    plt.savefig(plot_filename)
+    print(f"Training plots saved to {plot_filename}")
+    plt.close()
 
-# Plot training progress
-if callback.episode_credits:
-    plt.figure(figsize=(12, 4))
-
-    plt.subplot(1, 2, 1)
-    plt.plot(callback.episode_credits)
-    plt.title('Episode Credits')
-    plt.xlabel('Episode')
-    plt.ylabel('Credits Earned')
-    plt.grid(True)
-
-    # Moving average
-    window = 10
-    if len(callback.episode_credits) > window:
-        moving_avg = np.convolve(callback.episode_credits,
-                                 np.ones(window) / window, mode='valid')
-        plt.plot(range(window - 1, len(callback.episode_credits)),
-                 moving_avg, 'r-', linewidth=2, label=f'{window}-episode MA')
-    plt.legend()
-
-    plt.subplot(1, 2, 2)
-    plt.hist(callback.episode_credits, bins=20, edgecolor='black')
-    plt.title('Credits Distribution')
-    plt.xlabel('Credits')
-    plt.ylabel('Frequency')
-    plt.grid(True, alpha=0.3)
-
-plt.tight_layout()
-plot_filename = f'output/training_progress/{algorithm.lower()}_{version}_training_progress.png'
-plt.savefig(plot_filename)
-print(f"Training plots saved to {plot_filename}")
-plt.close()
-
-env.close()
-return model
+    env.close()
+    return model
 
 def evaluate_model(model, num_episodes=10, render=False, min_opponents=2, max_opponents=2):
     """Evaluate trained model"""
