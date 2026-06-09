@@ -14,6 +14,8 @@ import os
 import logging
 from enum import IntEnum
 
+from sympy.codegen.ast import continue_
+
 # Import stable-baselines3 models for enemy AI
 try:
     from stable_baselines3 import PPO, DQN, A2C
@@ -389,7 +391,7 @@ class ProspectorsPiratesEnv(gym.Env):
         #   - Abilities: 12 ability values
         #   - Action counter: actions taken this episode (1)
         # Total ship state: 24 values
-
+        #
         # + Strategic context (high-signal features): 8 values
         #   - at_asteroid: 1 if on asteroid with nutrinium, 0 otherwise
         #   - at_trading_post: 1 if on trading post, 0 otherwise
@@ -692,7 +694,7 @@ class ProspectorsPiratesEnv(gym.Env):
 
                     # Step 3: Assign raw nutrinium = floor(concentration ✕ mass).
                     # This gives each asteroid its "natural" deposit based on the
-                    # drawn concentration. Rich asteroids (high Beta draw) get a
+                    # drawn concentration.  Rich asteroids (high Beta draw) get a
                     # large share of their mass as nutrinium; poor ones get little.
                     raw_nutr = [
                         int(c * a['mass']) for c, a in zip(target_concentrations, self.asteroids)
@@ -860,6 +862,7 @@ class ProspectorsPiratesEnv(gym.Env):
                                     self.trading_posts.append({'x': xx, 'y': yy})
                                     placed_posts.add((xx, yy))
                                     found = True
+                                    break
                             if found:
                                 break
                         if not found:
@@ -868,7 +871,7 @@ class ProspectorsPiratesEnv(gym.Env):
         # Build spatial lookup cache for fast entity-at-location queries
         self._rebuild_location_cache()
 
-        observation = self.get_observation()
+        observation = self._get_observation()
         info = self._get_info()
 
         return observation, info
@@ -880,10 +883,12 @@ class ProspectorsPiratesEnv(gym.Env):
         Config file format (JSON):
         {
             "10x10": [
-                {"x": 2, "y": -3, "mass": .30, "nutrinium": .20},
-                {"x": 5, "y": -7, "mass": .45, "nutrinium": .35},
+                {"x": 2, "y": -3, "mass": 30, "nutrinium": 20},
+                {"x": 5, "y": -7, "mass": 45, "nutrinium": 35},
+                ...
             ],
             "15x15": [...],
+            ...
         }
 
         Returns:
@@ -900,7 +905,7 @@ class ProspectorsPiratesEnv(gym.Env):
         try:
             if not os.path.exists(self.asteroid_config_path):
                 logger.warning(f"Asteroid config file not found: {self.asteroid_config_path}")
-                logger.warning(f" Falling back to random asteroid generation.")
+                logger.warning(f"  Falling back to random asteroid generation.")
                 return None
 
             with open(self.asteroid_config_path, 'r', encoding='utf-8') as f:
@@ -908,8 +913,8 @@ class ProspectorsPiratesEnv(gym.Env):
 
             if dimension_key not in config:
                 logger.warning(f"No asteroid configuration found for dimension '{dimension_key}' in {self.asteroid_config_path}")
-                logger.warning(f" Available dimensions: {list(config.keys())}")
-                logger.warning(f" Falling back to random asteroid generation.")
+                logger.warning(f"  Available dimensions: {list(config.keys())}")
+                logger.warning(f"  Falling back to random asteroid generation.")
                 return None
 
             dimension_config = config[dimension_key]
@@ -923,11 +928,11 @@ class ProspectorsPiratesEnv(gym.Env):
                 asteroids_data = dimension_config['asteroids']
             else:
                 logger.warning(f"Invalid asteroid config format for dimension '{dimension_key}'!")
-                logger.warning(f" Expected list or dict with 'asteroids' key")
-                logger.warning(f" Falling back to random asteroid generation.")
+                logger.warning(f"  Expected list or dict with 'asteroids' key")
+                logger.warning(f"  Falling back to random asteroid generation.")
                 return None
 
-            # Validate asteroid data and deduplicate by (x, y)
+            # Validate asteroid data and deduplicate by (x,y)
             asteroids = []
             seen = set()
             for i, asteroid_data in enumerate(asteroids_data):
@@ -935,12 +940,86 @@ class ProspectorsPiratesEnv(gym.Env):
                     logger.warning(f"Invalid asteroid data at index {i}: {asteroid_data}")
                     continue
 
-        # Validate coordinates
-        ax = int(asteroid_data['x'])
-        ay = int(asteroid_data['y'])
-        if not (0 <= ax < self.map_width and 0 <= ay < self.map_height):
-            logger.warning(f"Asteroid at index {i} has out-of-bounds coordinates: ({ast
-                continue
+                # Validate coordinates
+                ax = int(asteroid_data['x'])
+                ay = int(asteroid_data['y'])
+                if not (0 <= ax < self.map_width and 0 <= ay < self.map_height):
+                    logger.warning(f"Asteroid at index {i} has out-of-bounds coordinates: ({asteroid_data['x']}, {asteroid_data['y']})")
+                    continue
+
+                # Ensure nutrinium doesn't exceed mass
+                mass = int(asteroid_data['mass'])
+                nutrinium = int(min(asteroid_data['nutrinium'], mass))
+
+                key = (ax, ay)
+                if key in seen:
+                    logger.warning(f"Duplicate asteroid position at index {i} ignored: ({ax},{ay})")
+                    continue
+
+                seen.add(key)
+                asteroids.append({
+                    'x': ax,
+                    'y': ay,
+                    'mass': mass,
+                    'nutrinium': nutrinium
+                })
+
+            if not asteroids:
+                logger.warning(f"No valid asteroids found in config for dimension '{dimension_key}'")
+                logger.warning(f"   Fallin back to random asteroid generation.")
+                return None
+
+            # Cache the loaded data
+            self._predefined_asteroids_cache = asteroids
+            logger.info(f"Loaded {len(asteroids)} predefined asteroids from {self.asteroid_config_path} for dimension {dimension_key}")
+
+            return asteroids
+
+        except json.JSONDecodeError as e:
+            return None
+        except Exception as e:
+            return None
+
+    def _load_predefined_trading_posts(self) -> Optional[List[dict]]:
+
+        import json
+
+        # Don't cache trading posts separately - they come from same config as asteroids
+        dimension_key = f"{self.map_width}x{self.map_height}"
+
+        try:
+            if not os.path.exists(self.asteroid_config_path):
+                logger.info(f"No predefined trading posts (config file not found)")
+                return None
+
+            with open(self.asteroid_config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+
+            if dimension_key not in config:
+                logger.info(f"No predefined trading posts for dimension '{dimension_key}")
+                return None
+
+            dimension_config = config[dimension_key]
+
+            # Support both old format (list) and new format (dict with asteroids/trading_posts)
+            if isinstance(dimension_config, list):
+                # Old format - just asteroids, no trading posts defined
+                logger.info(f"Config uses old format (list), no predefined trading posts")
+                return None
+
+            if 'trading_posts' not in dimension_config:
+                logger.info(f" No 'trading_posts' key in config for dimension '{dimension_key}'")
+                return None
+
+            posts_data = dimension_config['trading_posts']
+
+            # Validate trading post data
+            posts = []
+            seen = set()
+            for i, post_data in enumerate(posts_data):
+                if not all(k in posts_data for k in ['x', 'y']):
+                    logger.warning(f"Invalid trading post data at index {i}: {post_data}")
+                    continue
 
                 tx = int(post_data['x'])
                 ty = int(post_data['y'])
