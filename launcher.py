@@ -109,9 +109,9 @@ def main():
             print("Documentation")
             print("=" * 70)
             print("\nAvailable documentation files:")
-            print("1. README.md - Complete documentation")
-            print("2. GETTING_STARTED.md - Beginner tutorial")
-            print("3. PROJECT_SUMMARY.md - Project overview")
+            print("  1. README.md - Complete documentation")
+            print("  2. GETTING_STARTED.md - Beginner tutorial")
+            print("  3. PROJECT_SUMMARY.md - Project overview")
             print("\nWhich would you like to view?")
             doc_choice = input("Enter 1, 2, or 3 (or press Enter to skip): ").strip()
 
@@ -127,7 +127,7 @@ def main():
 
         elif choice == '0':
             print("\n" + "=" * 70)
-            print("Thanks for using Prospectors Pirates!")
+            print("Thanks for using Prospectors n Pirates!")
             print("=" * 70)
             print()
             sys.exit(0)
