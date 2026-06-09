@@ -735,7 +735,7 @@ class GameSimulator:
                     player_flags.append('SHIELDS')
                 if p.get('recharging'):
                     player_flags.append('RECHARGING')
-                player_flags_str = f"[{''.join(player_flags)}]" if player_flags else ''
+                player_flags_str = f"[{','.join(player_flags)}]" if player_flags else ''
 
                 predicted_action_name = self.ACTION_NAMES[action] if action < len(self.ACTION_NAMES) else f"ACTION_{action}"
 
@@ -869,19 +869,19 @@ class GameSimulator:
                 # DEBUG: Verify action value before name lookup
                 if debug_enabled and step == 0:
                     print(f"\n[DEBUG] Action name lookup:")
-                    print(f"... Predicted action = {action}")
-                    print(f"... action < len(ACTION_NAMES) = {action < len(self.ACTION_NAMES)}")
-                    print(f"... len(ACTION_NAMES) = {len(self.ACTION_NAMES)}")
+                    print(f"  Predicted action = {action}")
+                    print(f"  action < len(ACTION_NAMES) = {action < len(self.ACTION_NAMES)}")
+                    print(f"  len(ACTION_NAMES) = {len(self.ACTION_NAMES)}")
 
                 # Pause if requested (before action execution)
                 if pause_each_step and not control['skip'] and not control['quit']:
-                    rv = self.wait_for_spacebar()
+                    rv = self._wait_for_spacebar()
                     if rv == 'skip':
                         control['skip'] = True
                     elif rv == 'quit':
                         control['quit'] = True
-                    # Set done to True to break out and finish this episode early
-                    done = True
+                        # Set done to True to break out and finish this episode early
+                        done = True
 
             # 4. EXECUTE THE ACTION
             observation, reward, terminated, truncated, info = env.step(action)
@@ -907,7 +907,7 @@ class GameSimulator:
                 payload = info.get('payload')
 
                 result_str = 'OK' if success is True else ('FAIL' if success is False else '-')
-                reward_str = f"({raw_r:.2f}/{scaled_r:.2f})" if raw_r is not None and scaled_r is not None else '-'
+                reward_str = f"{raw_r:+.2f}/{scaled_r:+.2f}" if raw_r is not None and scaled_r is not None else '-'
 
                 # Format payload - use special formatting for ATTACK and MINE actions
                 if act_name == 'ATTACK' and payload and isinstance(payload, dict) and 'target' in payload:
@@ -963,7 +963,7 @@ class GameSimulator:
                         'name': opp.get('name', f'E{i+1}'),
                         'action': opp_action_name,
                         'result': opp_result_str,
-                        'reward': '', # Don't show enemy rewards
+                        'reward': '-',  # Don't show enemy rewards
                         'details': opp_payload_str,
                         'is_player': False
                     })
@@ -981,8 +981,8 @@ class GameSimulator:
                     widths[4] = max(widths[4], len(ar['details']))
 
                 # Print header
-                header_line = '...'.join(h.ljust(w) for h, w in zip(headers, widths))
-                sep_line = '...'.join('-' * w for w in widths)
+                header_line = '  '.join(h.ljust(w) for h, w in zip(headers, widths))
+                sep_line = '  '.join('-' * w for w in widths)
                 self._log_episode_detail('\n' + header_line, render)
                 self._log_episode_detail(sep_line, render)
 
@@ -995,22 +995,24 @@ class GameSimulator:
                         ar['reward'].ljust(widths[3]),
                         ar['details'].ljust(widths[4])
                     ]
-                    line = '...'.join(row)
+                    line = '  '.join(row)
+                    # Highlight player row
                     if ar['is_player']:
                         self._log_episode_detail(f"? {line}", render)
                     else:
-                        self._log_episode_detail(f"•{line}", render)
+                        self._log_episode_detail(f"  {line}", render)
 
                 # Show total reward for player
                 self._log_episode_detail(f"\nPlayer Total Reward: {total_reward:.3f}", render)
 
                 # Show state validation warning if needed
                 if not state_valid_flag:
-                    self._log_episode_detail(f"WARN Warning: Action state invalid - {info.get('state_invalid_reason', '')}", render)
+                    self._log_episode_detail(f"WARN Warning: Action state invalid - {info.get('state_invalid_reason','')}", render)
 
                 # DEBUG: Show action distribution periodically
                 if debug_enabled and step % (render_interval * 5) == 0:
                     print(f"[DEBUG] Action distribution so far: {action_counts}")
+
 
             step += 1
 
@@ -1020,7 +1022,7 @@ class GameSimulator:
             for act, count in sorted(action_counts.items()):
                 act_name = self.ACTION_NAMES[act] if act < len(self.ACTION_NAMES) else f"ACTION_{act}"
                 percentage = (count / step) * 100 if step > 0 else 0
-                print(f"• {act_name:15} (Action {act}): {count:4} times ({percentage:.1f}%)")
+                print(f"  {act_name:15} (Action {act}): {count:4} times ({percentage:5.1f}%)")
 
 
         # Final render
@@ -1028,7 +1030,7 @@ class GameSimulator:
             env.render()
             if pause_each_step and not control['skip']:
                 print("\n[Episode Complete - Press SPACE to continue or ESC to quit...]")
-                rv = self.wait_for_spacebar()
+                rv = self._wait_for_spacebar()
                 if rv == 'skip':
                     control['skip'] = True
                 elif rv == 'quit':
@@ -1269,7 +1271,7 @@ class GameSimulator:
             })
 
         # Sort by credits (descending), then by nutrinium (descending)
-        participants.sort(key=lambda p: (-p['credits'], p['nutrinium']), reverse=True)
+        participants.sort(key=lambda p: (p['credits'], p['nutrinium']), reverse=True)
 
         # Find player's placement (1-based)
         for i, p in enumerate(participants):
@@ -1279,6 +1281,7 @@ class GameSimulator:
                 if placement <= 3:
                     self.player_placements[placement] += 1
                 break
+
 
     def print_episode_table(self, stats: Dict):
         """Print a compact table summarizing the episode results: player and enemies.
@@ -1338,7 +1341,7 @@ class GameSimulator:
     def print_summary(self):
         """Print summary statistics across all episodes."""
         if not self.episode_stats:
-            self.print("No episodes run yet.", to_episode=False)
+            self._print("No episodes run yet.", to_episode=False)
             return
 
         # Aggregate statistics
@@ -1348,18 +1351,17 @@ class GameSimulator:
         destroyed = [s['player_destroyed'] for s in self.episode_stats]
         enemies_destroyed = [s['enemies_destroyed'] for s in self.episode_stats]
 
-        self._print("\n" + "=" * .70, to_episode=False)
+        self._print("\n" + "=" * 70, to_episode=False)
         self._print("SIMULATION SUMMARY", to_episode=False)
-        self._print("=" * .70, to_episode=False)
+        self._print("=" * 70, to_episode=False)
         self._print(f"Episodes Completed: {len(self.episode_stats)}", to_episode=False)
-        self._print(f"Average Reward: {np.mean(rewards):.2f} +/-{np.std(rewards):.2f)}", to_episode=False)
-        self._print(f"Average Credits: {np.mean(credits):.1f}+/-{np.std(credits):.1f}", to_episode=False)
+        self._print(f"Average Reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f)}", to_episode=False)
+        self._print(f"Average Credits: {np.mean(credits):.1f} +/- {np.std(credits):.1f}", to_episode=False)
         self._print(f"Average Steps: {np.mean(steps):.1f}", to_episode=False)
         self._print(f"Max Credits: {max(credits)}", to_episode=False)
         self._print(f"Player Survival Rate: {(1 - np.mean(destroyed)) * 100:.1f}%", to_episode=False)
         self._print(f"Avg Enemies Destroyed: {np.mean(enemies_destroyed):.2f}", to_episode=False)
         self._print(f"Total Enemies Destroyed: {sum(enemies_destroyed)}", to_episode=False)
-
         # Print the player's model information used for the simulation
         try:
             model_display = os.path.basename(self.model_path) if self.model_path else 'unknown'
@@ -1456,7 +1458,6 @@ class GameSimulator:
                     e['survived'] += 1
                 e['total_nutrinium'] += enemy.get('nutrinium', 0) or 0
                 e['total_health'] += enemy.get('health', 0) or 0
-
                 # Track placement
                 placement = placements.get(e_name, 0)
                 e['placements'][placement] = e['placements'].get(placement, 0) + 1
@@ -1494,11 +1495,11 @@ class GameSimulator:
 
         # Sort by: 1st place (desc), 2nd place (desc), 3rd place (desc), avg credits (desc), avg nutr (desc)
         rows.sort(key=lambda r: (
-            -r['first_place'],     # Most 1st place wins first
-            -r['second_place'],    # Then most 2nd place
-            -r['third_place'],     # Then most 3rd place
-            -r['avg_credits'],     # Then highest avg credits
-            -r['avg_nutr']         # Then highest avg nutrinium
+            -r['first_place'],      # Most 1st place wins first
+            -r['second_place'],     # Then most 2nd place
+            -r['third_place'],      # Then most 3rd place
+            -r['avg_credits'],      # Then highest avg credits
+            -r['avg_nutr']          # Then highest avg nutrinium
         ))
 
         # Add rank and format for display
@@ -1525,7 +1526,7 @@ class GameSimulator:
                    "1st", "2nd", "3rd", "Podium%"]
         all_rows = [headers] + ranked_rows
         cols = list(zip(*all_rows))
-        widths = [max(len(str(cell))) for cell in col for col in cols]
+        widths = [max(len(str(cell)) for cell in col) for col in cols]
 
         self._print("\n" + "=" * 70, to_episode=False)
         self._print("PARTICIPANT STATS", to_episode=False)
@@ -1582,46 +1583,46 @@ def main():
 
     parser = argparse.ArgumentParser(description='Simulate Prospectors n Pirates with trained model')
     parser.add_argument('--model-path', type=str, default='models/ppo_pnp_model',
-                        help='Path to trained model')
+                         help='Path to trained model')
     parser.add_argument('--algorithm', type=str, default='PPO',
-                        choices=['PPO', 'DQN', 'A2C'],
-                        help='Algorithm used for the trained model')
+                         choices=['PPO', 'DQN', 'A2C'],
+                         help='Algorithm used for the trained model')
     parser.add_argument('--episodes', type=int, default=5,
-                        help='Number of episodes to run')
+                         help='Number of episodes to run')
     parser.add_argument('--min-opponents', type=int, default=1,
-                        help='Minimum number of opponents')
+                         help='Minimum number of opponents')
     parser.add_argument('--max-opponents', type=int, default=5,
-                        help='Maximum number of opponents')
+                         help='Maximum number of opponents')
     parser.add_argument('--no-render', action='store_true',
-                        help='Disable rendering')
+                         help='Disable rendering')
     parser.add_argument('--render-interval', type=int, default=20,
-                        help='Steps between renders')
+                         help='Steps between renders')
     parser.add_argument('--pause', action='store_true',
-                        help='Pause after each render step (press SPACE to continue)')
+                         help='Pause after each render step (press SPACE to continue)')
     parser.add_argument('--map-width', type=int, default=10,
-                        help='Map width')
+                         help='Map width')
     parser.add_argument('--map-height', type=int, default=10,
-                        help='Map height')
+                         help='Map height')
     parser.add_argument('--max-steps', type=int, default=300,
-                        help='Maximum steps per episode')
+                         help='Maximum steps per episode')
     parser.add_argument('--predefined-asteroids', action='store_true',
-                        help='Use predefined asteroids from config file')
+                         help='Use predefined asteroids from config file')
     parser.add_argument('--asteroid-config', type=str, default='asteroids_with_trading_posts.config',
-                        help='Path to asteroid configuration file')
+                         help='Path to asteroid configuration file')
     parser.add_argument('--predefined-start', action='store_true',
-                        help='Use predefined starting positions from config file')
+                         help='Use predefined starting positions from config file')
     parser.add_argument('--start-position-config', type=str, default='start_positions.config',
-                        help='Path to starting position configuration file')
+                         help='Path to starting position configuration file')
     parser.add_argument('--cell-width', type=int, default=None,
-                        help='Cell width for rendering (default: None)')
+                         help='Cell width for rendering (default: None)')
     parser.add_argument('--minimap', action='store_true',
-                        help='Enable minimap rendering')
+                         help='Enable minimap rendering')
     parser.add_argument('--minimap-radius', type=int, default=3,
-                        help='Minimap radius (default: 3)')
+                         help='Minimap radius (default: 3)')
     parser.add_argument('--print-each-step', action='store_true',
-                        help='Print detailed info for each step during simulation')
+                         help='Print detailed info for each step during simulation')
     parser.add_argument('--opponents', type=str, default=None,
-                        help='Comma-separated list of exact opponents (e.g. HEURISTIC,PIRATE,PROSPECTOR,models/ppo_pnp_model_v29). Overrides --min-opponents and --max-opponents.')
+                         help='Comma-separated list of exact opponents (e.g. HEURISTIC,PIRATE,PROSPECTOR,models/ppo_pnp_model_v29). Overrides --min-opponents and --max-opponents.')
 
     args = parser.parse_args()
 
