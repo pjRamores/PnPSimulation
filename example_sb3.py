@@ -268,7 +268,7 @@ def set_cpu_mode(efficiency_mode=False, num_threads=None):
             else:
                 p.nice(-5)  # Higher priority (lower nice value, requires permissions)
                 settings['process_priority'] = 'nice_-5'
-                settings['priority_set'] = True
+            settings['priority_set'] = True
         except:
             settings['priority_set'] = False
 
@@ -277,7 +277,7 @@ def set_cpu_mode(efficiency_mode=False, num_threads=None):
 
 def _ask_to_evaluate(prompt="Press ENTER or SPACE to evaluate the model, or Q to quit: ") -> bool:
     """Prompt the user to continue to evaluation or quit.
-    
+
     Returns True to continue (evaluate), False to quit.
     Accepts ENTER or SPACE to continue, 'q' or 'Q' to quit. Works on Windows and falls back to input() on other platforms.
     """
@@ -285,17 +285,17 @@ def _ask_to_evaluate(prompt="Press ENTER or SPACE to evaluate the model, or Q to
         # Prefer msvcrt on Windows for single-key response
         import msvcrt
         print(prompt, end='', flush=True)
-while True:
-    if msvcrt.kbhit():
-        key = msvcrt.getch()
-        # Enter (CR or LF) or Space
-        if key in (b'\r', b'\n', b' '):
-            print('')
-            return True
-        if key.lower() == b'q':
-            print('')
-            return False
-        # Ignore other keys
+        while True:
+            if msvcrt.kbhit():
+                key = msvcrt.getch()
+                # Enter (CR or LF) or Space
+                if key in (b'\r', b'\n', b' '):
+                    print('')
+                    return True
+                if key.lower() == b'q':
+                    print('')
+                    return False
+                # Ignore other keys
         # unreachable
     except Exception:
         # Fallback: use input(); empty line or single space continues, 'q' quits
@@ -306,7 +306,8 @@ while True:
             return True
         if resp.strip().lower() == 'q':
             return False
-    return True
+        return True
+
 
 class TrainingCallback(BaseCallback):
     """Custom callback for tracking training progress"""
@@ -325,50 +326,48 @@ class TrainingCallback(BaseCallback):
             # Report progress at 10% intervals based on timesteps
             current_progress = (self.num_timesteps / self.total_timesteps) * 100
             progress_milestone = int(current_progress / 10) * 10
-def _on_step(self) -> bool:
-    try:
-        # Report progress at 10% intervals based on timesteps
-        current_progress = (self.num_timesteps / self.total_timesteps) * 100
-        progress_milestone = int(current_progress / 10) * 10
 
-        if progress_milestone > self.last_reported_progress and progress_milestone % 10 == 0:
-            self.last_reported_progress = progress_milestone
-            avg_credits = np.mean(self.episode_rewards[-10:]) \
-                if len(self.episode_rewards) >= 10 else (
-                np.mean(self.episode_rewards) if self.episode_rewards else 0)
-            print(f"\n[{progress_milestone}%] Progress: {self.num_timesteps}/{self.total_timesteps} timesteps | "
-                  f"Episodes: {len(self.episode_rewards)} | Avg Credits (last 10): {avg_credits:.1f}")
+            if progress_milestone > self.last_reported_progress and progress_milestone % 10 == 0:
+                self.last_reported_progress = progress_milestone
+                avg_credits = np.mean(self.episode_credits[-10:]) \
+                    if len(self.episode_credits) >= 10 else (
+                    np.mean(self.episode_credits) if self.episode_credits else 0)
+                print(f"\n[{progress_milestone}%] Progress: {self.num_timesteps}/{self.total_timesteps} timesteps | "
+                      f"Episodes: {len(self.episode_credits)} | Avg Credits (last 10): {avg_credits:.1f}")
 
-        # Check if episode is done
-        dones = self.locals.get('dones')
-        if dones is not None and len(dones) > 0 and dones[0]:
-            infos = self.locals.get('infos')
-            if infos is not None and len(infos) > 0:
-                info = infos[0]
-                rewards = self.locals.get('rewards')
+            # Check if episode is done
+            dones = self.locals.get('dones')
+            if dones is not None and len(dones) > 0 and dones[0]:
+                infos = self.locals.get('infos')
+                if infos is not None and len(infos) > 0:
+                    info = infos[0]
+                    rewards = self.locals.get('rewards')
 
-                # Safely get reward
-                reward = rewards[0] if rewards is not None and len(rewards) > 0 else 0
+                    # Safely get reward
+                    reward = rewards[0] if rewards is not None and len(rewards) > 0 else 0
 
-                self.episode_rewards.append(reward)
-                self.episode_credits.append(info.get('player_credits', 0))
+                    self.episode_rewards.append(reward)
+                    self.episode_credits.append(info.get('player_credits', 0))
 
-        # Limit memory usage by keeping only recent episodes
-        if len(self.episode_credits) > self.max_episodes_to_track:
-            self.episode_rewards = self.episode_rewards[-self.max_episodes_to_track:]
-            self.episode_credits = self.episode_credits[-self.max_episodes_to_track:]
+                    # Limit memory usage by keeping only recent episodes
+                    if len(self.episode_credits) > self.max_episodes_to_track:
+                        self.episode_rewards = self.episode_rewards[-self.max_episodes_to_track:]
+                        self.episode_credits = self.episode_credits[-self.max_episodes_to_track:]
+        except Exception as e:
+            # Don't crash training on callback error
+            if self.verbose > 0:
+                print(f"Warning in callback: {e}")
 
-    except Exception as e:
-        # Don't crash training on callback error
-        if self.verbose > 0:
-            print(f"Warning in callback: {e}")
+        return True
 
-    return True
+
 def _safe_model_save(model, path):
     """Save a model, working around platform.platform() crash in restricted environments.
+
     SB3's model.save() internally calls platform.platform() to log system info.
     On some corporate/restricted Windows environments this subprocess call fails.
-    We monkey-patch platform.platform temporarily to return a safe string."""
+    We monkey-patch platform.platform temporarily to return a safe string.
+    """
     import platform as _platform
     _original = _platform.platform
     try:
@@ -377,16 +376,20 @@ def _safe_model_save(model, path):
     finally:
         _platform.platform = _original
 
+
 class CheckpointCallback(BaseCallback):
     """Callback for saving model checkpoints at regular timestep intervals"""
 
-    def __init__(self, save_freq: int, save_path: str, algorithm: str, name_prefix: str='checkpoint', verbose: int=0):
-        """Args:
+    def __init__(self, save_freq: int, save_path: str, algorithm: str, name_prefix: str='checkpoint',
+                 verbose: int=0):
+        """
+        Args:
            save_freq: Save checkpoint every save_freq timesteps (e.g., 10_000_000 for 10M)
            save_path: Directory to save checkpoints
            algorithm: Algorithm name (for version numbering)
            name_prefix: Prefix for checkpoint files
-           verbose: Verbosity level"""
+           verbose: Verbosity level
+       """
         super(CheckpointCallback, self).__init__(verbose)
         self.save_freq = save_freq
         self.save_path = save_path
@@ -395,33 +398,34 @@ class CheckpointCallback(BaseCallback):
         self.last_save_timestep = 0
 
     def _on_step(self) -> bool:
-        """Check if we've reached a checkpoint
-           if self.num_timesteps - self.last_save_timestep >= self.save_freq:
+        #Check if we've reached a checkpoint
+       if self.num_timesteps - self.last_save_timestep >= self.save_freq:
            # Calculate checkpoint number (e.g., timestep 10M -> checkpoint 1, 20M -> checkpoint 2)
            checkpoint_num = self.num_timesteps // self.save_freq
-# Get version number for this checkpoint
-version = _get_next_version_number(self.algorithm, self.save_path, is_transfer=False)
 
-# Create checkpoint path
-checkpoint_path = os.path.join(
-    self.save_path,
-    f'{self.algorithm.lower()}_{self.name_prefix}_{checkpoint_num * self.save_freq // 1_000_000}M_v{version}'
-)
+            # Get version number for this checkpoint
+            version = _get_next_version_number(self.algorithm, self.save_path, is_transfer=False)
 
-# Save the model
-_safe_model_save(self.model, checkpoint_path)
+            # Create checkpoint path
+            checkpoint_path = os.path.join(
+                self.save_path,
+                f'{self.algorithm.lower()}_{self.name_prefix}_{checkpoint_num * self.save_freq // 1_000_000}M_v{version}'
+            )
 
-if self.verbose > 0:
-    print(f"\n{'='*70}")
-    print(f"CHECKPOINT SAVED")
-    print(f"Timesteps: {self.num_timesteps},")
-    print(f"Path: {checkpoint_path}")
-    print(f"Checkpoint: {checkpoint_num * self.save_freq // 1_000_000}M timesteps")
-    print(f"{ '='*70}\n")
+            # Save the model
+            _safe_model_save(self.model, checkpoint_path)
 
-self.last_save_timestep = self.num_timesteps
+            if self.verbose > 0:
+                print(f"\n{'='*70}")
+                print(f"CHECKPOINT SAVED")
+                print(f"Timesteps: {self.num_timesteps},")
+                print(f"Path: {checkpoint_path}")
+                print(f"Checkpoint: {checkpoint_num * self.save_freq // 1_000_000}M timesteps")
+                print(f"{ '='*70}\n")
 
-return True
+            self.last_save_timestep = self.num_timesteps
+
+        return True
 
 
 def _get_next_version_number(algorithm, save_path='models/', is_transfer=False):
