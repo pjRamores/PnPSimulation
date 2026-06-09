@@ -2645,7 +2645,7 @@ class ProspectorsPiratesEnv(gym.Env):
 
     def _ai_prospector(self, ship: dict) -> int:
         """Prospector AI: Optimised mining-selling loop with efficient travel.
-    
+
         Key principles:
         - Maximise the number of mine->sell cycles completed per episode
         - Minimise travel time by choosing asteroids near trading posts
@@ -2660,7 +2660,7 @@ class ProspectorsPiratesEnv(gym.Env):
             if ship['energy'] >= 60:
                 return ActionType.RECHARGE_END
             return ActionType.WAIT
-    
+
         # Recharge only when truly low -- every recharge turn is a lost mining turn
         if ship['energy'] < 15 and not ship.get('just_recharged', False):
             return ActionType.RECHARGE
@@ -2701,34 +2701,34 @@ class ProspectorsPiratesEnv(gym.Env):
         for ast in self.asteroids:
             if ast['nutrinium'] <= 0:
                 continue
-    
+
             dist_to_ast = self._calculate_distance(ship['x'], ship['y'], ast['x'], ast['y'])
-    
+
             # Factor in distance from asteroid to nearest trading post
             nearest_post = self._get_nearest_entity(ast['x'], ast['y'], self.trading_posts)
             dist_to_post = 10.0
             if nearest_post:
                 dist_to_post = self._calculate_distance(
                     ast['x'], ast['y'], nearest_post['x'], nearest_post['y'])
-    
+
             # Round-trip cost: getting there + getting to trading post after
             round_trip = dist_to_ast + dist_to_post * 0.6
-    
+
             # Score: favour rich asteroids (nutrinium^1.3), penalise by round-trip distance
             score = (ast['nutrinium'] ** 1.3) / (round_trip + 1)
             if score > best_score:
                 best_score = score
                 best_asteroid = ast
-    
+
         if best_asteroid:
             dist = self.calculate_distance(ship['x'], ship['y'],
-                                          best_asteroid['x'], best_asteroid['y'])
+                                           best_asteroid['x'], best_asteroid['y'])
             jump_cost = int(dist * self.config['energy_costs']['jump'])
-    
+
             # Jump aggressively -- walking wastes turns
             if dist > 2 and ship['energy'] >= jump_cost + 10:
                 return ActionType.JUMP_TO_ASTEROID
-    
+
             # Walk towards asteroid
             dx = best_asteroid['x'] - ship['x']
             dy = best_asteroid['y'] - ship['y']
@@ -2736,12 +2736,12 @@ class ProspectorsPiratesEnv(gym.Env):
                 return ActionType.MOVE_EAST if dx > 0 else ActionType.MOVE_WEST
             else:
                 return ActionType.MOVE_SOUTH if dy > 0 else ActionType.MOVE_NORTH
-    
+
         # === 6. SELL remaining cargo if nothing to mine ===
         if ship['nutrinium'] > 0:
             nearest_post = self._get_nearest_entity(ship['x'], ship['y'], self.trading_posts)
             if nearest_post:
-                dist = self.calculate_distance(ship['x'], ship['y'],
+                dist = self._calculate_distance(ship['x'], ship['y'],
                                                 nearest_post['x'], nearest_post['y'])
                 jump_cost = int(dist * self.config['energy_costs']['jump'])
                 if dist > 1 and ship['energy'] >= jump_cost + 5:
@@ -2752,11 +2752,11 @@ class ProspectorsPiratesEnv(gym.Env):
                     return ActionType.MOVE_EAST if dx > 0 else ActionType.MOVE_WEST
                 else:
                     return ActionType.MOVE_SOUTH if dy > 0 else ActionType.MOVE_NORTH
-    
+
         return ActionType.WAIT
 
     def _ai_pirate(self, ship: dict) -> int:
-        """Pirate AI: Economy-first raider --- mines efficiently, only strikes opportunistically.
+        """Pirate AI: Economy-first raider -- mines efficiently, only strikes opportunistically.
 
         The game's combat deals ~2 damage per attack (cost: 1 energy). Killing a 100HP
         target takes ~50 attacks = 50 turns of mutual damage. Pure combat is suicide.
@@ -2806,21 +2806,21 @@ class ProspectorsPiratesEnv(gym.Env):
                 t_nutr = t.get('nutrinium', 0)
                 t_health = t.get('health', 100)
                 # Attack priority (more aggressive than before):
-                # 1) Target at low health (finishable) -- always attack
+                # 1) Target at low health (finishable) - always attack
                 # 2) Target with valuable cargo even if healthy
                 # 3) Weaken any target in zone if we're strong
                 if t_health <= 10:
                     # Can kill in 5 attacks or less -- finish them off
                     value = 60 + t_nutr * 3
                 elif t_health <= 25:
-                    # Can kill in ~12 attacks -- worth it if they have cargo
+                    # Can kill in ~12 attacks - worth it if they have cargo
                     value = 40 + t_nutr * 2
                 elif t_nutr >= 15:
-                    # They have valuable cargo -- attack even if healthy
+                    # They have valuable cargo - attack even if healthy
                     # (weaken them so we can finish later or steal if they run)
                     value = 25 + t_nutr * 1.5
                 elif t_nutr >= 8 and t_health <= 60:
-                    # Moderate cargo, weakened -- opportunistic strike
+                    # Moderate cargo, weakened - opportunistic strike
                     value = 15 + t_nutr
                 elif t_health <= 40:
                     # Weaken any target below 40% health
@@ -2831,7 +2831,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 if value > best_value:
                     best_value = value
                     best_target_health = t_health
-    
+
             # Attack if target is valuable AND we're healthy enough
             # More willing to fight if target is already weakened
             health_threshold = 30 if best_target_health > 50 else 20  # Lower bar for attacking weak targets
@@ -2859,13 +2859,13 @@ class ProspectorsPiratesEnv(gym.Env):
                 return ActionType.MOVE_EAST if dx > 0 else ActionType.MOVE_WEST
             else:
                 return ActionType.MOVE_SOUTH if dy > 0 else ActionType.MOVE_NORTH
-    
+
         # === 5. PRIMARY ECONOMY: Mine and sell efficiently ===
         # If on asteroid with nutrinium, mine it
         asteroid = self._get_entity_at_location(ship['x'], ship['y'], self.asteroids)
         if asteroid and asteroid['nutrinium'] > 0 and ship['energy'] >= self.config['energy_costs']['mine']:
             return ActionType.MINE
-    
+
         # === 6. HEAD TO TRADING POST when carrying cargo ===
         if ship['nutrinium'] >= 12:
             nearest_post = self._get_nearest_entity(ship['x'], ship['y'], self.trading_posts)
@@ -2875,14 +2875,14 @@ class ProspectorsPiratesEnv(gym.Env):
 
                 if dist > 1 and ship['energy'] >= jump_cost + 5:
                     return ActionType.JUMP_TO_TRADING_POST
-    
+
                 dx = nearest_post['x'] - ship['x']
                 dy = nearest_post['y'] - ship['y']
                 if abs(dx) > abs(dy):
                     return ActionType.MOVE_EAST if dx > 0 else ActionType.MOVE_WEST
                 else:
                     return ActionType.MOVE_SOUTH if dy > 0 else ActionType.MOVE_NORTH
-    
+
         # === 7. FIND BEST ASTEROID (prefer rich ones near trading posts) ===
         best_asteroid = None
         best_ast_score = -1
@@ -2890,9 +2890,9 @@ class ProspectorsPiratesEnv(gym.Env):
             if ast['nutrinium'] <= 0:
                 continue
             dist_to_ast = self._calculate_distance(ship['x'], ship['y'], ast['x'], ast['y'])
-    
+
             # Factor in proximity to nearest trading post (round-trip efficiency)
-            nearest_post = self.get_nearest_entity(ast['x'], ast['y'], self.trading_posts)
+            nearest_post = self._get_nearest_entity(ast['x'], ast['y'], self.trading_posts)
             dist_ast_to_post = 10.0
             if nearest_post:
                 dist_ast_to_post = self._calculate_distance(ast['x'], ast['y'], nearest_post['x'], nearest_post['y'])
@@ -2917,11 +2917,11 @@ class ProspectorsPiratesEnv(gym.Env):
                 return ActionType.MOVE_EAST if dx > 0 else ActionType.MOVE_WEST
             else:
                 return ActionType.MOVE_SOUTH if dy > 0 else ActionType.MOVE_NORTH
-    
+
         return ActionType.WAIT
 
     def _ai_heuristic(self, ship: dict) -> int:
-        """Heuristic AI Balanced approach with smart decision-making.
+        """Heuristic AI: Balanced approach with smart decision-making.
 
         Strategy:
         - Balance between mining and combat
@@ -2990,7 +2990,7 @@ class ProspectorsPiratesEnv(gym.Env):
                     return ActionType.MOVE_EAST if dx > 0 else ActionType.MOVE_WEST
                 else:
                     return ActionType.MOVE_SOUTH if dy > 0 else ActionType.MOVE_NORTH
-    
+
         # If we have nutrinium and energy, head towards trading post
         if ship['nutrinium'] > 15 and ship['energy'] > 25:
             nearest_post = self._get_nearest_entity(ship['x'], ship['y'], self.trading_posts)
@@ -3015,9 +3015,9 @@ class ProspectorsPiratesEnv(gym.Env):
         ship = self.player_ship
         abilities = ship.get('abilities', {})
         max_abilities = self.config.get('abilities', {})
-    
+
         # === ENHANCED SHIP STATE (24 values) ===
-        # Basic stats: (6 values)
+        # Basic stats (6 values)
         obs.extend([
             ship['x'] / max(1, self.map_width),
             ship['y'] / max(1, self.map_height),
@@ -3026,21 +3026,21 @@ class ProspectorsPiratesEnv(gym.Env):
             min(ship['nutrinium'], self.config['max_nutrinium_cargo']) / max(1, self.config['max_nutrinium_cargo']),
             min(ship['credits'], self.config['max_credits']) / max(1, self.config['max_credits']),
         ])
-    
-        # State flags: (3 values)
+
+        # State flags (3 values)
         obs.extend([
             1.0 if ship.get('recharging', False) else 0.0,
             1.0 if ship.get('shields_up', False) else 0.0,
             1.0 if ship.get('state', 'READY') == 'READY' else 0.0,
         ])
-    
-        # Skill points: (2 values)
+
+        # Skill points (2 values)
         obs.extend([
             ship.get('skill_points_total', 5) / max(1, self.config.get('max_skill_points', 20)),
             ship.get('skill_points_spent', 0) / max(1, self.config.get('max_skill_points', 20)),
         ])
-    
-        # Abilities: (12 values)
+
+        # Abilities (12 values)
         obs.extend([
             abilities.get('energy_max', -5) / max(1, max_abilities.get('energy_max', 10)),
             abilities.get('recharge_energy', 0) / max(1, max_abilities.get('recharge_energy', 10)),
@@ -3055,32 +3055,32 @@ class ProspectorsPiratesEnv(gym.Env):
             abilities.get('shield_strength', 0) / max(1, max_abilities.get('shield_strength', 10)),
             abilities.get('jump_distance', 0) / max(1, max_abilities.get('jump_distance', 10)),
         ])
-    
+
         # Action counter: (1 value) -- normalized by max_steps. (typical ~300)
         obs.append(self.action_counter / max(1, self.max_steps))
-    
+
         # === STRATEGIC CONTEXT: (8 values) ===
         # These high-signal features directly encode actionable state
-        map_diag = max(1.0, math.sqrt(self.map_width**2 + self.map_height**2))
-    
+        map_diag = max(1.0, math.sqrt(self.map_width ** 2 + self.map_height ** 2))
+
         # 1. At asteroid with nutrinium?
         ast_here = self._get_entity_at_location(ship['x'], ship['y'], self.asteroids)
         obs.append(1.0 if (ast_here and ast_here.get('nutrinium', 0) > 0) else 0.0)
-    
+
         # 2. At trading post?
         tp_here = self._get_entity_at_location(ship['x'], ship['y'], self.trading_posts)
         obs.append(1.0 if tp_here else 0.0)
-    
+
         # 3. Cargo fullness (nutrinium as fraction of a "sell-worthy" amount ~25)
         obs.append(min(1.0, ship.get('nutrinium', 0) / 25.0))
-    
+
         # 4. Enemy in same zone?
         enemy_here = any(
             e['x'] == ship['x'] and e['y'] == ship['y'] and not e.get('destroyed', False)
             for e in self.opponent_ships
         )
         obs.append(1.0 if enemy_here else 0.0)
-    
+
         # 5-6. Direction to best asteroid (dx, dy normalized to [-1, 1])
         top_ast = self._get_top_asteroids(ship['x'], ship['y'], count=1)
         if top_ast:
@@ -3089,7 +3089,7 @@ class ProspectorsPiratesEnv(gym.Env):
         else:
             dx_ast, dy_ast = 0.0, 0.0
         obs.extend([dx_ast, dy_ast])
-    
+
         # 7-8. Direction to nearest trading post (dx, dy normalized to [-1, 1])
         nearest_tp = self._get_nearest_entity(ship['x'], ship['y'], self.trading_posts)
         if nearest_tp:
@@ -3098,31 +3098,31 @@ class ProspectorsPiratesEnv(gym.Env):
         else:
             dx_tp, dy_tp = 0.0, 0.0
         obs.extend([dx_tp, dy_tp])
-    
+
         # === LOCAL SENSOR GRID: (with clamped/shifted window to maximize valid cells) ===
         sensor_range = self.config['sensor_range']
-        side = 2 * sensor_range + 1 # Grid dimension (e.g., 11 for sensor_range=5)
-    
+        side = 2 * sensor_range + 1  # Grid dimension (e.g., 11 for sensor_range=5)
+
         # Calculate top-left corner of a centered window
         x_min = ship['x'] - sensor_range
         y_min = ship['y'] - sensor_range
-    
+
         # Clamp window to stay within map bounds (shifts window when near edges)
         # This maximizes the number of valid cells in the observation
         x_min = max(0, min(x_min, self.map_width - side)) if self.map_width >= side else 0
         y_min = max(0, min(y_min, self.map_height - side)) if self.map_height >= side else 0
-    
+
         # Fill the sensor grid in row-major order (same as before for consistency)
         for row in range(side):
             for col in range(side):
                 x = x_min + col
                 y = y_min + row
-    
+
                 # Check if coordinate is valid (should almost always be true with clamping)
                 if 0 <= x < self.map_width and 0 <= y < self.map_height:
                     # Default: empty cell
                     entity_type = 0.0
-    
+
                     # Player's own cell remains 0.0 (empty)
                     if x == ship['x'] and y == ship['y']:
                         entity_type = 0.0
@@ -3133,17 +3133,17 @@ class ProspectorsPiratesEnv(gym.Env):
                         entity_type = 0.66
                     elif self._get_entity_at_location(x, y, self.asteroids):
                         entity_type = 0.33
-    
+
                     obs.append(entity_type)
                 else:
                     # Out-of-bounds (should be rare with clamping, only when map < sensor grid)
                     obs.append(-1.0)
-    
+
         # === TOP 5 ASTEROIDS (30 values: 5 asteroids * 6 features) ===
         top_asteroids = self._get_top_asteroids(ship['x'], ship['y'], count=self.config['top_asteroids_count'])
-        max_dist = math.sqrt(self.map_width**2 + self.map_height**2)
+        max_dist = math.sqrt(self.map_width ** 2 + self.map_height ** 2)
         max_mass = float(self.config.get('asteroid_mass_max', 80))
-    
+
         for asteroid in top_asteroids:
             obs.extend([
                 asteroid['x'] / max(1, self.map_width),
@@ -3153,11 +3153,11 @@ class ProspectorsPiratesEnv(gym.Env):
                 asteroid['distance'] / max(1.0, max_dist),
                 asteroid['score'],  # Already normalized 0-1
             ])
-    
+
         # Pad with zeros if fewer than 5 asteroids
         for _ in range(self.config['top_asteroids_count'] - len(top_asteroids)):
             obs.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-    
+
         # === NEAREST TRADING POST (3 values) ===
         nearest_post = self._get_nearest_entity(ship['x'], ship['y'], self.trading_posts)
         if nearest_post:
@@ -3169,11 +3169,11 @@ class ProspectorsPiratesEnv(gym.Env):
             ])
         else:
             obs.extend([0.0, 0.0, 0.0])
-    
+
         # === TWO ENEMY TYPES (14 values: 2 enemies * 7 features) ===
         # Get strongest and weakest enemies at same coordinates as player
         strongest, weakest = self._get_extreme_enemies(ship['x'], ship['y'])
-    
+
         for enemy in [strongest, weakest]:
             if enemy:
                 combat_score = self._calculate_enemy_combat_score(enemy)
@@ -3187,8 +3187,8 @@ class ProspectorsPiratesEnv(gym.Env):
                     combat_score,  # Already normalized 0-1
                 ])
             else:
-                obs.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-    
+                obs.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+
         # Return Dict observation with action mask
         obs_array = np.array(obs, dtype=np.float32)
         if skip_mask:
@@ -3210,28 +3210,28 @@ class ProspectorsPiratesEnv(gym.Env):
         if not self.asteroids:
             return []
 
-        max_dist = math.sqrt(self.map_width**2 + self.map_height**2)
+        max_dist = math.sqrt(self.map_width ** 2 + self.map_height ** 2)
         scored_asteroids = []
-    
+
         for asteroid in self.asteroids:
             if asteroid.get('nutrinium', 0) <= 0:
                 continue
-    
+
             dist = self._calculate_distance(x, y, asteroid['x'], asteroid['y'])
             mass = max(1, asteroid.get('mass', 1))
             nutrinium = asteroid.get('nutrinium', 0)
 
             # Calculate concentration (nutrinium / mass)
             concentration = nutrinium / mass
-    
+
             # Score: concentration * nutrinium / (distance + 1)
             # This prioritizes: high concentration, high nutrinium, low distance
             raw_score = concentration * nutrinium / (dist + 1)
-    
+
             # Normalize score to 0-1 range (approximate max score)
             max_score = 50.0  # Reasonable max for normalization
             normalized_score = min(1.0, raw_score / max_score)
-    
+
             scored_asteroids.append({
                 'x': asteroid['x'],
                 'y': asteroid['y'],
@@ -3240,7 +3240,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 'distance': dist,
                 'score': normalized_score,
             })
-    
+
         # Sort by score descending and return top N
         scored_asteroids.sort(key=lambda a: a['score'], reverse=True)
         return scored_asteroids[:count]
@@ -3283,8 +3283,8 @@ class ProspectorsPiratesEnv(gym.Env):
         Factors: health, energy, credits, attack_power, attack_accuracy, shield_strength
 
         Args:
-             enemy: Enemy ship dictionary
-             raw: If True, return raw score; otherwise return normalized 0-1 score
+            enemy: Enemy ship dictionary
+            raw: If True, return raw score; otherwise return normalized 0-1 score
         """
         health = enemy.get('health', 0)
         energy = enemy.get('energy', 0)
@@ -3404,7 +3404,7 @@ class ProspectorsPiratesEnv(gym.Env):
         print(f"{'=' * 90}")
 
         # Create map with wider spacing
-        game_map = [[' ' for _ in range(self.map_width)] for _ in range(self.map_height)]
+        game_map = [['  ' for _ in range(self.map_width)] for _ in range(self.map_height)]
 
         # Place entities with more information
         # Store asteroid info for displaying nutrinium
@@ -3433,13 +3433,13 @@ class ProspectorsPiratesEnv(gym.Env):
                 enemy_map[i] = ship
 
         if not self.player_ship['destroyed']:
-            game_map[self.player_ship['y']][self.player_ship['x']] = 'P.'
+            game_map[self.player_ship['y']][self.player_ship['x']] = 'P '
 
         # Print map with wider layout
         # Build a per-cell listing of entities so we can show multiple entities comma-separated
         cell_entities = [[[] for _ in range(self.map_width)] for _ in range(self.map_height)]
 
-        # Asteroids: show as A<nutrinium> (only if nutrinium > 0)
+        # Asteroids: show as A<nutrinium> (only if nutrinium>0)
         for x, y, asteroid in asteroid_map.items():
             if 0 <= x < self.map_width and 0 <= y < self.map_height:
                 cell_entities[y][x].append(f"A{asteroid['nutrinium']}")
@@ -3455,7 +3455,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 x, y = ship['x'], ship['y']
                 if 0 <= x < self.map_width and 0 <= y < self.map_height:
                     # Use ship name instead of index
-                    ship_name = ship.get('name', f"E{i + 1}")
+                    ship_name = ship.get('name', f'E{i+1}')
                     cell_entities[y][x].append(ship_name)
 
         # Player - use ship name (P)
@@ -3488,14 +3488,14 @@ class ProspectorsPiratesEnv(gym.Env):
         x_count = x_max - x_min + 1
 
         # Top header with column indices centered for the rendered window
-        header = '.....' + ''.join(str(i % 10).center(cell_width + 3) for i in range(x_min, x_max + 1))
+        header = '    ' + ''.join(str(i % 10).center(cell_width + 3) for i in range(x_min, x_max + 1))
         print(header)
 
         # Build box-drawing borders so each cell is enclosed (for the window width):
-        segment = '*' * (cell_width + 2)
-        top_border = '.....' + '+' + ''.join([segment] * x_count) + '+'
-        mid_border = '.....' + '+' + ''.join([segment] * x_count) + '+'
-        bottom_border = '.....' + '+' + ''.join([segment] * x_count) + '+'
+        segment = '-' * (cell_width + 2)
+        top_border = '  ' + '+' + '+'.join([segment] * x_count) + '+'
+        mid_border = '  ' + '+' + '+'.join([segment] * x_count) + '+'
+        bottom_border = '  ' + '+' + '+'.join([segment] * x_count) + '+'
 
         print(top_border)
 
@@ -3505,7 +3505,7 @@ class ProspectorsPiratesEnv(gym.Env):
             for x in range(x_min, x_max + 1):
                 items = cell_entities[y][x]
                 if items:
-                    cell_text = ', '.join(items)
+                    cell_text = ','.join(items)
                 else:
                     cell_text = ''
                 # Truncate if too long
@@ -3514,7 +3514,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 row_cells.append(cell_text.center(cell_width + 2))
 
             # Print row with left index and vertical separators
-            print(f"{str(y % 10)} | {'|'.join(row_cells)} |")
+            print(f" {str(y % 10)}  |" + '|'.join(row_cells) + '|')
 
             # Print middle separator between rows (except after last rendered row)
             if y < y_max:
