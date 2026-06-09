@@ -14,6 +14,8 @@ import os
 import logging
 from enum import IntEnum
 
+from game_simulator import original_action
+
 # Import stable-baselines3 models for enemy AI
 try:
     from stable_baselines3 import PPO, DQN, A2C
@@ -964,7 +966,7 @@ class ProspectorsPiratesEnv(gym.Env):
 
             if not asteroids:
                 logger.warning(f"No valid asteroids found in config for dimension '{dimension_key}'")
-                logger.warning(f"   Falling back to random asteroid generation.")
+                logger.warning(f"  Falling back to random asteroid generation.")
                 return None
 
             # Cache the loaded data
@@ -999,7 +1001,7 @@ class ProspectorsPiratesEnv(gym.Env):
         }
 
         Returns:
-             List of trading post dictionaries with x,y coordinates, or None if not found
+            List of trading post dictionaries with x,y coordinates, or None if not found
         """
         import json
 
@@ -1143,7 +1145,7 @@ class ProspectorsPiratesEnv(gym.Env):
             return None
         except Exception as e:
             logger.error(f"Error loading start position config: {e}")
-            logger.warning(f" Falling back to random starting position.")
+            logger.warning(f"  Falling back to random starting position.")
             return None
 
     def _load_enemy_model_paths(self) -> Optional[List[str]]:
@@ -1271,7 +1273,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 # Check if this is the known 15 vs 14 issue (LOWER_SHIELDS removed)
                 if model_action_space == 15 and env_action_space == 14:
                     # Old model (15 actions with LOWER_SHIELDS) vs new environment (14 actions)
-                    # Actions: 0-11 are the same, 12 (LOWER_SHIELDS) -> WAIT, 13->12, 14->13
+                    # Actions 0-11 are the same, 12 (LOWER_SHIELDS) -> WAIT, 13->12, 14->13
                     logger.info(f"Enemy model {model_path} has old action space (15), using compatibility mode")
                 else:
                     logger.warning(f"Enemy model {model_path} has incompatible action space: {model_action_space} vs {env_action_space}")
@@ -1285,15 +1287,16 @@ class ProspectorsPiratesEnv(gym.Env):
             try:
                 from gymnasium import spaces as _spaces
                 model_obs_space = temp_model.observation_space
-                if isinstance(model_obs_space, _spaces.Dict) and \
-                   isinstance(self.observation_space, _spaces.Dict) and \
-                   'observation' in model_obs_space.spaces and \
-                   'observation' in self.observation_space.spaces:
+                if (isinstance(model_obs_space, _spaces.Dict) and
+                    isinstance(self.observation_space, _spaces.Dict) and
+                   'observation' in model_obs_space.spaces and
+                   'observation' in self.observation_space.spaces):
                     if model_obs_space['observation'].shape != self.observation_space['observation'].shape:
                         obs_compat = False
-                        logger.info(f"Enemy model {model_path} has different obs size: "
-                                   f"{(model_obs_space['observation'].shape[0])} vs."
-                                   f"{self.observation_space['observation'].shape[0]}", )
+                        logger.info(f"Enemy model {model_path} has different obs size "
+                                    f"({model_obs_space['observation'].shape[0]} vs "
+                                    f"{self.observation_space['observation'].shape[0]}), "
+                                    f"skipping env binding")
             except Exception:
                 pass
 
@@ -1327,9 +1330,8 @@ class ProspectorsPiratesEnv(gym.Env):
             logger.warning(f"Error loading enemy model {model_path}: {e}")
             return None
 
-
     def _normalize_action(self, action) -> int:
-        """Normalize various action types (numpy.array, list, tuple, scalar) into int."""
+        """Normalize various action types (numpy array, list, tuple, scalar) into int."""
         # Numpy array
         try:
             if isinstance(action, np.ndarray):
@@ -1346,14 +1348,13 @@ class ProspectorsPiratesEnv(gym.Env):
         except Exception as e:
             raise ValueError(f"Unable to normalize action to int: {action!r}") from e
 
-
-    def is_action_valid_for_state(self, action: int, ship: dict, is_player: bool = True) -> Tuple[bool, str]:
+    def _is_action_valid_for_state(self, action: int, ship: dict, is_player: bool = True) -> Tuple[bool, str]:
         """
         Validate if an action is valid given the current game state.
 
         Enhanced action masking rules:
-        1. DESTROYED state: only REPAWN is valid
-        2. Not DESTROYED: REPAWN is invalid
+        1. DESTROYED state: only RESPAWN is valid
+        2. Not DESTROYED: RESPAWN is invalid
         3. RECHARGING state: only WAIT and RECHARGE_END are valid
         4. Not RECHARGING: RECHARGE_END is invalid (WAIT is always valid for gaining action points)
         5. RECHARGING + full energy: only RECHARGE_END is valid
@@ -1362,14 +1363,14 @@ class ProspectorsPiratesEnv(gym.Env):
         8. SELL: requires trading post at current location
         9. All actions: respect energy requirements
         10. Energy-consuming actions masked when insufficient energy
-        11. JUMP_TO_TRADING_POST and SELL require nutrinium
+        11. JUMP_TO_TRADING_POST and SELL: require nutrinium
         12. RAISE_SHIELDS: requires combat situation (enemy in same zone)
         13. JUMP_TO_ASTEROID: masked when already at asteroid with nutrinium >= 5%
         14. JUMP_TO_ASTEROID: masked when nearest asteroid is at same location (distance 0, would be a no-op)
         15. RECHARGE: masked when energy > 50% (avoid wasteful recharge cycles)
         16. JUMP_TO_TRADING_POST: masked when already at a trading post (use SELL)
         17. WAIT: masked when energy is critically low (< min useful cost) and NOT recharging
-        (prevents dead-end: WAIT doesn't restore energy, only RECHARGE does)
+            (prevents dead-end: WAIT doesn't restore energy, only RECHARGE does)
 
         Args:
             action: The action to validate
@@ -1377,25 +1378,24 @@ class ProspectorsPiratesEnv(gym.Env):
             is_player: Whether this is the player ship
 
         Returns:
-            (is_valid, reason) -- True if valid, False with reason string if invalid
-
+            (is_valid, reason) - True if valid, False with reason string if invalid
         """
-        # Rule 1: If DESTROYED, only REPAWN is valid
+        # Rule 1: If DESTROYED, only RESPAWN is valid
         if ship.get('destroyed', False):
-            if action == ActionType.REPAWN:
+            if action == ActionType.RESPAWN:
                 return True, ""
             else:
-                return False, "ship is destroyed, only REPAWN is valid"
+                return False, "ship is destroyed, only RESPAWN is valid"
 
-        # Rule 2: If NOT destroyed, REPAWN is invalid
-        if action == ActionType.REPAWN:
+        # Rule 2: If NOT destroyed, RESPAWN is invalid
+        if action == ActionType.RESPAWN:
             return False, "can only respawn when destroyed"
 
         # Rule 3 & 5: If RECHARGING, only WAIT and RECHARGE_END are valid
         # If recharging + full energy, only RECHARGE_END is valid
         # Rule 3b: RECHARGE_END is masked until energy >= 50% to prevent
-        # inefficient short recharge cycles (e.g. recharging from 7->17
-        # then immediately jumping/mining back to low energy)
+        #          inefficient short recharge cycles (e.g. recharging from 7->17
+        #          then immediately jumping/mining back to low energy)
         if ship.get('recharging', False):
             recharge_end_threshold = int(self.config['max_energy'] * 0.5)
             if ship['energy'] >= self.config['max_energy']:
@@ -1427,7 +1427,7 @@ class ProspectorsPiratesEnv(gym.Env):
         # From here: ship is not destroyed and not recharging
         # Validate specific actions with their requirements
 
-        # WAIT -- generally valid but masked when energy is critically low and not recharging.
+        # WAIT - generally valid but masked when energy is critically low and not recharging.
         # Per game rules: "WAIT does not require ENERGY. If the ship is RECHARGING
         # then it generates ENERGY." So WAIT without recharging at low energy is a
         # dead-end that traps the agent forever (can't do anything useful, energy
@@ -1444,7 +1444,7 @@ class ProspectorsPiratesEnv(gym.Env):
                     return False, "energy too low to do anything useful, must RECHARGE instead of WAIT"
             return True, ""
 
-        # MINE -- requires asteroid at current location with nutrinium
+        # MINE - requires asteroid at current location with nutrinium
         if action == ActionType.MINE:
             # Rule 10: Check energy requirement
             if ship['energy'] < self.config['energy_costs']['mine']:
@@ -1455,9 +1455,9 @@ class ProspectorsPiratesEnv(gym.Env):
                 return False, "no asteroid at current location"
             if asteroid['nutrinium'] <= 0:
                 return False, "asteroid has no nutrinium"
-        return True, ""
+            return True, ""
 
-        # MOVE actions -- require sufficient energy (Rule 10)
+        # MOVE actions - require sufficient energy (Rule 10)
         if action in [ActionType.MOVE_NORTH, ActionType.MOVE_SOUTH, ActionType.MOVE_EAST, ActionType.MOVE_WEST]:
             if ship['energy'] < self.config['energy_costs']['move']:
                 return False, "insufficient energy to move"
@@ -1476,7 +1476,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 return False, "would move off map"
             return True, ""
 
-        # RECHARGE -- can only start if not already recharging and energy is low enough
+        # RECHARGE - can only start if not already recharging and energy is low enough
         # Masked when energy > 50% to prevent wasteful recharge cycles
         # Also masked immediately after ending a recharge to prevent recharge loops
         if action == ActionType.RECHARGE:
@@ -1487,13 +1487,13 @@ class ProspectorsPiratesEnv(gym.Env):
                 return False, "energy already full"
             recharge_threshold = int(self.config['max_energy'] * 0.3)
             if ship['energy'] > recharge_threshold:
-                return False, f"energy too high to recharge ({ship['energy']} / {self.config['max_energy']}, threshold {recharge_threshold})"
+                return False, f"energy too high to recharge ({ship['energy']}/{self.config['max_energy']}, threshold {recharge_threshold})"
             return True, ""
 
-        # RECHARGE_END -- already handled in recharging state check above
+        # RECHARGE_END - already handled in recharging state check above
         # This code path won't be reached for RECHARGE_END
 
-        # ATTACK -- requires enemy in same zone and sufficient energy
+        # ATTACK - requires enemy in same zone and sufficient energy
         if action == ActionType.ATTACK:
             # Rule 10: Check energy requirement
             if ship['energy'] < self.config['energy_costs']['attack']:
@@ -1507,6 +1507,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 targets = [self.player_ship] + [s for s in self.opponent_ships if s is not ship]
 
             active_targets = [t for t in targets if not t.get('destroyed', False)]
+
             if not active_targets:
                 return False, "no enemy ships available"
 
@@ -1517,14 +1518,15 @@ class ProspectorsPiratesEnv(gym.Env):
             )
             if not enemy_in_zone:
                 return False, "no enemy in same zone"
+
             return True, ""
 
-        # JUMP_TO_ASTEROID -- requires asteroids and sufficient energy (Rule 10)
+        # JUMP_TO_ASTEROID - requires asteroids and sufficient energy (Rule 10)
         # Masked when already at an asteroid with nutrinium concentration >= 5%
         # Masked when the nearest asteroid is at the same location (distance 0, would do nothing)
         if action == ActionType.JUMP_TO_ASTEROID:
             # Check if already at a mineable asteroid with sufficient nutrinium
-            current_asteroid = self.get_entity_at_location(ship['x'], ship['y'], self.asteroids)
+            current_asteroid = self._get_entity_at_location(ship['x'], ship['y'], self.asteroids)
             if current_asteroid is not None and current_asteroid.get('nutrinium', 0) > 0:
                 mass = max(current_asteroid.get('mass', 1), 1)
                 concentration = current_asteroid['nutrinium'] / mass
@@ -1532,9 +1534,10 @@ class ProspectorsPiratesEnv(gym.Env):
                     return False, f"already at asteroid with {concentration:.0%} nutrinium, mine it first"
 
             # Find best asteroid by score (same logic as _action_jump)
-            top = self.get_top_asteroids(ship['x'], ship['y'], count=1)
+            top = self._get_top_asteroids(ship['x'], ship['y'], count=1)
             if not top:
                 return False, "no asteroids available"
+
             best = top[0]
             distance = best['distance']
 
@@ -1542,36 +1545,41 @@ class ProspectorsPiratesEnv(gym.Env):
             # would be a no-op. Mask it to prevent infinite loops.
             if distance == 0:
                 return False, "best asteroid is at current location (distance 0), mine it or move away"
+
             energy_cost = int(distance * self.config['energy_costs']['jump'])
 
             if ship['energy'] < energy_cost:
                 return False, f"insufficient energy (need {energy_cost}, have {ship['energy']})"
+
             return True, ""
 
-        # JUMP_TO_TRADING_POST -- requires trading posts, sufficient energy, and nutrinium (Rule 11)
+        # JUMP_TO_TRADING_POST - requires trading posts, sufficient energy, and nutrinium (Rule 11)
         # Masked when already at a trading post (should SELL instead)
         if action == ActionType.JUMP_TO_TRADING_POST:
             # Rule 11: Requires nutrinium (no point jumping to trading post without anything to sell)
             if ship['nutrinium'] < 10:
-        return False, "not enough nutrinium to justify jumping to trading post (need >= 10)"
-        if current_post is not None:
-            return False, "already at a trading post, use SELL instead"
+                return False, "not enough nutrinium to justify jumping to trading post (need >= 10)"
 
-        post = self._get_nearest_entity(ship['x'], ship['y'], self.trading_posts)
-        if post is None:
-            return False, "no trading posts available"
+            # Already at a trading post -- just SELL instead
+            current_post = self._get_entity_at_location(ship['x'], ship['y'], self.trading_posts)
+            if current_post is not None:
+                return False, "already at a trading post, use SELL instead"
 
-        distance = self.calculate_distance(ship['x'], ship['y'], post['x'], post['y'])
-        energy_cost = int(distance * self.config['energy_costs']['jump'])
+            post = self._get_nearest_entity(ship['x'], ship['y'], self.trading_posts)
+            if post is None:
+                return False, "no trading posts available"
 
-        if ship['energy'] < energy_cost:
-            return False, f"insufficient energy (need {energy_cost}, have {ship['energy']})"
+            distance = self.calculate_distance(ship['x'], ship['y'], post['x'], post['y'])
+            energy_cost = int(distance * self.config['energy_costs']['jump'])
 
-        return True, ""
+            if ship['energy'] < energy_cost:
+                return False, f"insufficient energy (need {energy_cost}, have {ship['energy']})"
+
+            return True, ""
 
         # SELL - requires being at trading post with nutrinium (Rules 9 & 11)
         if action == ActionType.SELL:
-            trading_post = self.get_entity_at_location(ship['x'], ship['y'], self.trading_posts)
+            trading_post = self._get_entity_at_location(ship['x'], ship['y'], self.trading_posts)
             if trading_post is None:
                 return False, "not at a trading post"
             # Rule 11: Requires nutrinium
@@ -1579,42 +1587,46 @@ class ProspectorsPiratesEnv(gym.Env):
                 return False, "no nutrinium to sell"
             return True, ""
 
-        # RAISE_SHIELDS -- requires shields down, sufficient energy, and enemy threat in same zone (Rules 10 & 12)
+        # RAISE_SHIELDS - requires shields down, sufficient energy, and enemy threat in same zone (Rules 10 & 12)
         if action == ActionType.RAISE_SHIELDS:
             if ship['shields_up']:
                 reason = "shields already up"
                 if self.warn_on_invalid_action or os.getenv('PNP_DEBUG_MASK'):
-                    logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')}.shields_up=True -> invalid: {reason}")
-                return False, f"{reason}"
+                    logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')} shields_up=True -> invalid: {reason}")
+                return False, f"shields already up"
             if ship['energy'] < self.config['energy_costs']['shields']:
                 reason = "insufficient energy for shields"
                 if self.warn_on_invalid_action or os.getenv('PNP_DEBUG_MASK'):
-                    logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')}.energy={ship.get('energy')}.cost={self.config['energy_costs']['shields']} -> invalid: {reason}")
-                return False, f"{reason}"
+                    logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')} energy={ship.get('energy')} cost={self.config['energy_costs']['shields']} -> invalid: {reason}")
+                return False, f"insufficient energy for shields"
 
-        # Rule 12 (updated): RAISE_SHIELDS is only valid when there is an enemy threat in the same zone
-        # This allows preemptive shield raising when an enemy is detected nearby
-        if is_player:
-            targets = self.opponent_ships
-        else:
-            targets = [self.player_ship] + [s for s in self.opponent_ships if s is not ship]
+            # Rule 12 (updated): RAISE_SHIELDS is only valid when there is an enemy threat in the same zone
+            # This allows preemptive shield raising when an enemy is detected nearby
+            if is_player:
+                targets = self.opponent_ships
+            else:
+                targets = [self.player_ship] + [s for s in self.opponent_ships if s is not ship]
             active_targets = [t for t in targets if not t.get('destroyed', False)]
-        if not active_targets:
-            reason = "no enemy threat, shields not needed"
-            if self.warn_on_invalid_action or os.getenv('PNP_DEBUG_MASK'):
-                logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')}.no_active_targets -> invalid: {reason}")
-            return False, f"{reason}"
+            if not active_targets:
+                reason = "no enemy threat, shields not needed"
+                if self.warn_on_invalid_action or os.getenv('PNP_DEBUG_MASK'):
+                    logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')} no active_targets -> invalid: {reason}")
+                return False, f"no enemy threat, shields not needed"
 
-        enemy_in_same_zone = any((t['x'] == ship['x'] and t['y'] == ship['y']) for t in active_targets)
-        if not enemy_in_same_zone:
-            reason = "no enemy in same zone, no threat"
-            if self.warn_on_invalid_action or os.getenv('PNP_DEBUG_MASK'):
-                logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')}.pos=({ship.get('x')},{ship.get('y')}).enemies={enemy_positions} -> invalid: {reason}")
-            return False, f"{reason}"
+            enemy_in_same_zone = any((t['x'] == ship['x'] and t['y'] == ship['y']) for t in active_targets)
+            if not enemy_in_same_zone:
+                reason = "no enemy in same zone, no threat"
+                if self.warn_on_invalid_action or os.getenv('PNP_DEBUG_MASK'):
+                    enemy_positions = [(t.get('name', '?', t.get('x'), t.get('y')) for t in active_targets)]
+                    logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')}.pos=({ship.get('x')},{ship.get('y')}).enemies={enemy_positions} -> invalid: {reason}")
+                return False, f"no enemy in same zone, no threat"
 
-        if self.warn_on_invalid_action or os.getenv('PNP_DEBUG_MASK'):
-            logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')}.pos=({ship.get('x')},{ship.get('y')}).has_enemy_in_zone -> ALLOWED")
-        return True, ""
+            if self.warn_on_invalid_action or os.getenv('PNP_DEBUG_MASK'):
+                logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')}.pos=({ship.get('x')},{ship.get('y')}).has_enemy_in_zone -> ALLOWED")
+            return True, ""
+
+        # Unknown action
+        return False, f"unknown action {action}"
 
     def _get_action_mask(self, ship: dict = None, is_player: bool = True) -> np.ndarray:
         """
@@ -1634,7 +1646,7 @@ class ProspectorsPiratesEnv(gym.Env):
 
         # Check each action
         for action in range(self.action_space.n):
-            is_valid = self.is_action_valid_for_state(action, ship, is_player=is_player)
+            is_valid, _ = self._is_action_valid_for_state(action, ship, is_player=is_player)
             mask[action] = 1 if is_valid else 0
 
         return mask
@@ -1648,11 +1660,13 @@ class ProspectorsPiratesEnv(gym.Env):
 
         # Normalize action to int (handles numpy arrays, lists, tuples, scalars)
         try:
-            action = self.normalize_action(action)
+            action = self._normalize_action(action)
             action_valid = 0 <= action < self.action_space.n
         except Exception as e:
-        if self.warn_on_invalid_action:
-            logger.warning(f"Unable to normalize action {requested_action_raw!r}: {e}. Defaulting to WAIT.")
+            # Normalization failed (e.g., non-int-like input). Default to WAIT
+            self.invalid_action_count += 1
+            if self.warn_on_invalid_action:
+                logger.warning(f"Unable to normalize action {requested_action_raw!r}: {e}. Defaulting to WAIT.")
             action = int(ActionType.WAIT)
             action_valid = False
 
@@ -1661,21 +1675,21 @@ class ProspectorsPiratesEnv(gym.Env):
             self.invalid_action_count += 1
             if self.warn_on_invalid_action:
                 logger.warning(f"Action {action} out of bounds [0, {self.action_space.n - 1}]. Defaulting to WAIT.")
-                action = int(ActionType.WAIT)
-                action_valid = False
+            action = int(ActionType.WAIT)
+            action_valid = False
 
         # If player is destroyed, force RESPAWN action
         if self.player_ship['destroyed']:
             if action != ActionType.RESPAWN:
                 # Override any other action to RESPAWN
                 if self.warn_on_invalid_action:
-                    logger.warning("Player is destroyed. Only RESPAWN action is allowed. Forcing RESPAWN.")
+                    logger.warning(f"Player is destroyed. Only RESPAWN action is allowed. Forcing RESPAWN.")
                 action = int(ActionType.RESPAWN)
 
-        # If terminate on player death is True, terminate after respawn action
-        if self.terminate_on_player_death:
-            observation = self._get_observation()
-            return observation, 0.0, True, False, self._get_info()
+            # If terminate_on_player_death is True, terminate after respawn action
+            if self.terminate_on_player_death:
+                observation = self._get_observation()
+                return observation, 0.0, True, False, self._get_info()
 
         # With action masking, invalid actions should not be selected by the model
         # However, we still track them for diagnostics and ENFORCE the masking
@@ -1688,176 +1702,177 @@ class ProspectorsPiratesEnv(gym.Env):
                 if self.warn_on_invalid_action:
                     logger.warning(f"Action {ActionType(action).name} invalid for current state: {state_invalid_reason}. "
                                    f"This should not happen with action masking!")
-        else:
-            original_action = action
 
-        # ENFORCE action masking; force invalid action to appropriate valid action
-        # This prevents the model from executing invalid actions
-        if self.player_ship.get('recharging', False):
-            # If recharging with full energy, force to RECHARGE_END
-            if self.player_ship['energy'] >= self.config['max_energy']:
-                action = int(ActionType.RECHARGE_END)
-                if self.warn_on_invalid_action:
-                    logger.warning(f"Forcing {ActionType(original_action).name} -> RECHARGE_END (energy full while recharging)")
-            elif original_action not in (int(ActionType.WAIT), int(ActionType.RECHARGE_END)):
-                # Model wants to do something active (ATTACK, MINE, MOVE, etc.)
-                # End recharging so the player can act on the next step
-                action = int(ActionType.RECHARGE_END)
-                if self.warn_on_invalid_action:
-                    logger.warning(f"Forcing {ActionType(original_action).name} -> RECHARGE_END (model wants active action, ending recharge)")
-            else:
-                action = int(ActionType.WAIT)
-                if self.warn_on_invalid_action:
-                    logger.warning(f"Force {ActionType(original_action).name} -> WAIT (recharging)")
+                # ENFORCE action masking: force invalid action to appropriate valid action
+                # This prevents the model from executing invalid actions
+                original_action = action
 
-        elif self.player_ship.get('destroyed', False):
-            action = int(ActionType.RESPAWN)
-            if self.warn_on_invalid_action:
-                logger.warning(f"Forcing {ActionType(original_action).name} -> REPAWN (destroyed)")
-        else:
-            # Not recharging, not destroyed: pick the best valid action
-            # from the action mask so the player doesn't get stuck on WAIT
-            mask = self.get_action_mask(self.player_ship)
-            # When energy is very low, prioritize RECHARGE to avoid getting stuck
-            if self.player_ship['energy'] <= self.config['energy_costs'].get('move', 5):
-                preferred_fallback_order = [
-                    ActionType.RECHARGE,
-                    ActionType.MINE,
-                    ActionType.SELL,
-                    ActionType.WAIT,  # WAIT is free
-                    ActionType.JUMP_TO_ASTEROID,
-                    ActionType.JUMP_TO_TRADING_POST,
-                    ActionType.MOVE_NORTH,
-                    ActionType.MOVE_SOUTH,
-                    ActionType.MOVE_EAST,
-                    ActionType.MOVE_WEST,
-                    ActionType.ATTACK,
-                    ActionType.RAISE_SHIELDS,
-                ]
-            else:
-                # Prefer productive actions over idle WAIT
-                preferred_fallback_order = [
-                    ActionType.MINE,
-                    ActionType.SELL,
-                    ActionType.JUMP_TO_ASTEROID,
-                    ActionType.JUMP_TO_TRADING_POST,
-                    ActionType.MOVE_NORTH,
-                    ActionType.MOVE_SOUTH,
-                    ActionType.MOVE_EAST,
-                    ActionType.MOVE_WEST,
-                    ActionType.RECHARGE,
-                    ActionType.ATTACK,
-                    ActionType.RAISE_SHIELDS,
-                    ActionType.WAIT,  # last resort
-                ]
-            fallback = int(ActionType.WAIT)
-            for fb_action in preferred_fallback_order:
-                if mask[int(fb_action)] == 1:
-fallback = int(fb_action)
-        break
-    action = fallback
-    if self.warn_on_invalid_action:
-        logger.warning(f"Forcing {ActionType(original_action).name} -> {ActionType(action).name} (best valid fallback)")
+                # Determine the appropriate fallback action based on current state
+                if self.player_ship.get('recharging', False):
+                    # If recharging with full energy, force to RECHARGE_END
+                    if self.player_ship['energy'] >= self.config['max_energy']:
+                        action = int(ActionType.RECHARGE_END)
+                        if self.warn_on_invalid_action:
+                            logger.warning(f"Forcing {ActionType(original_action).name} -> RECHARGE_END (energy full while recharging)")
+                    elif original_action not in (int(ActionType.WAIT), int(ActionType.RECHARGE_END)):
+                        # Model wants to do something active (ATTACK, MINE, MOVE, etc.)
+                        # End recharging so the player can act on the next step
+                        action = int(ActionType.RECHARGE_END)
+                        if self.warn_on_invalid_action:
+                            logger.warning(f"Forcing {ActionType(original_action).name} -> RECHARGE_END (model wants active action, ending recharge)")
+                    else:
+                        action = int(ActionType.WAIT)
+                        if self.warn_on_invalid_action:
+                            logger.warning(f"Force {ActionType(original_action).name} -> WAIT (recharging)")
 
-    reward -= 0.0
-    self.current_step += 1
-    self.action_counter += 1 # Increment action counter (tracks actions taken this episode)
+                elif self.player_ship.get('destroyed', False):
+                    action = int(ActionType.RESPAWN)
+                    if self.warn_on_invalid_action:
+                        logger.warning(f"Forcing {ActionType(original_action).name} -> REPAWN (destroyed)")
+                else:
+                    # Not recharging, not destroyed: pick the best valid action
+                    # from the action mask so the player doesn't get stuck on WAIT
+                    mask = self.get_action_mask(self.player_ship)
+                    # When energy is very low, prioritize RECHARGE to avoid getting stuck
+                    if self.player_ship['energy'] <= self.config['energy_costs'].get('move', 5):
+                        preferred_fallback_order = [
+                            ActionType.RECHARGE,
+                            ActionType.MINE,
+                            ActionType.SELL,
+                            ActionType.WAIT,  # WAIT is free
+                            ActionType.JUMP_TO_ASTEROID,
+                            ActionType.JUMP_TO_TRADING_POST,
+                            ActionType.MOVE_NORTH,
+                            ActionType.MOVE_SOUTH,
+                            ActionType.MOVE_EAST,
+                            ActionType.MOVE_WEST,
+                            ActionType.ATTACK,
+                            ActionType.RAISE_SHIELDS,
+                        ]
+                    else:
+                        # Prefer productive actions over idle WAIT
+                        preferred_fallback_order = [
+                            ActionType.MINE,
+                            ActionType.SELL,
+                            ActionType.JUMP_TO_ASTEROID,
+                            ActionType.JUMP_TO_TRADING_POST,
+                            ActionType.MOVE_NORTH,
+                            ActionType.MOVE_SOUTH,
+                            ActionType.MOVE_EAST,
+                            ActionType.MOVE_WEST,
+                            ActionType.RECHARGE,
+                            ActionType.ATTACK,
+                            ActionType.RAISE_SHIELDS,
+                            ActionType.WAIT,  # last resort
+                        ]
+                    fallback = int(ActionType.WAIT)
+                    for fb_action in preferred_fallback_order:
+                        if mask[int(fb_action)] == 1:
+                            fallback = int(fb_action)
+                            break
+                    action = fallback
+                    if self.warn_on_invalid_action:
+                        logger.warning(f"Forcing {ActionType(original_action).name} -> {ActionType(action).name} (best valid fallback)")
 
-    # Execute player action
-    self.last_player_action = int(action) if action is not None else None
-    # Provide previous position for reward components that rely on positional delta
-    prev_position = (self.player_ship['x'], self.player_ship['y'])
-    # Clear just_recharged flag when executing a non-RECHARGE action to prevent recharge loops
-    if action != int(ActionType.RECHARGE):
-        self.player_ship['just_recharged'] = False
-    action_reward, action_info = self._execute_action(action, self.player_ship, is_player=True)
-    # Expose previous position so RewardComponents (e.g., DistanceToAsteroidReward) can compute deltas
-    action_info['prev_position'] = prev_position
+        reward = 0.0
+        self.current_step += 1
+        self.action_counter += 1 # Increment action counter (tracks actions taken this episode)
 
-    # Annotate action_info with validation/debug fields
-    action_info['requested_action'] = str(requested_action_raw)
-    action_info['valid_action'] = bool(action_valid)
-    # After enforcement, the executed action is valid even if the original was not
-    action_info['state_valid'] = True
-    if not state_valid:
-        action_info['state_invalid_reason'] = state_invalid_reason
-        action_info['state_enforced'] = True  # Flag that enforcement was applied
+        # Execute player action
+        self.last_player_action = int(action) if action is not None else None
+        # Provide previous position for reward components that rely on positional delta
+        prev_position = (self.player_ship['x'], self.player_ship['y'])
+        # Clear just_recharged flag when executing a non-RECHARGE action to prevent recharge loops
+        if action != int(ActionType.RECHARGE):
+            self.player_ship['just_recharged'] = False
+        action_reward, action_info = self._execute_action(action, self.player_ship, is_player=True)
+        # Expose previous position so RewardComponents (e.g., DistanceToAsteroidReward) can compute deltas
+        action_info['prev_position'] = prev_position
+
+        # Annotate action_info with validation/debug fields
+        action_info['requested_action'] = str(requested_action_raw)
+        action_info['valid_action'] = bool(action_valid)
+        # After enforcement, the executed action is valid even if the original was not
+        action_info['state_valid'] = True
+        if not state_valid:
+            action_info['state_invalid_reason'] = state_invalid_reason
+            action_info['state_enforced'] = True  # Flag that enforcement was applied
         # keep raw reward in action_info for transparency/debugging
         action_info['raw_reward'] = float(action_reward)
 
-    # Will compute scaled reward below; store scaled in action_info for renderer
-    # compute final reward via RewardCalculator; pass env and ship for optional shaping
-    scaled = self.reward_calc.compute(action_reward, action, action_info, env=self, ship=self.player_ship)
-    reward += scaled
-    # record scaled reward in action_info for rendering/debug
-    action_info['scaled_reward'] = float(scaled)
-    # Save last player action result for rendering
-    try:
-        # shallow copy of relevant fields, include optional payload
-        self.last_player_action_result = {
-            'action': action_info.get('action'),
-            'success': action_info.get('success'),
-            'raw_reward': float(action_info.get('raw_reward', 0.0)),
-            'scaled_reward': float(action_info.get('scaled_reward', 0.0)),
-            'state_valid': action_info.get('state_valid', True),
-            'state_invalid_reason': action_info.get('state_invalid_reason', ''),
-            'payload': action_info.get('payload', None)
-        }
-    except Exception:
-        self.last_player_action_result = None
+        # Will compute scaled reward below; store scaled in action_info for renderer
+        # compute final reward via RewardCalculator; pass env and ship for optional shaping
+        scaled = self.reward_calc.compute(action_reward, action, action_info, env=self, ship=self.player_ship)
+        reward += scaled
+        # record scaled reward in action_info for rendering/debug
+        action_info['scaled_reward'] = float(scaled)
+        # Save last player action result for rendering
+        try:
+            # shallow copy of relevant fields, include optional payload
+            self.last_player_action_result = {
+                'action': action_info.get('action'),
+                'success': action_info.get('success'),
+                'raw_reward': float(action_info.get('raw_reward', 0.0)),
+                'scaled_reward': float(action_info.get('scaled_reward', 0.0)),
+                'state_valid': action_info.get('state_valid', True),
+                'state_invalid_reason': action_info.get('state_invalid_reason', ''),
+                'payload': action_info.get('payload', None)
+            }
+        except Exception:
+            self.last_player_action_result = None
 
-    # Execute opponent actions (simple AI)
-    for i, opponent in enumerate(self.opponent_ships):
-        if not opponent['destroyed']:
-            opponent_action = self._get_opponent_action(opponent)
-            # Clear just_recharged flag for opponents (same as player) to prevent recharge lock
-            if opponent_action != int(ActionType.RECHARGE):
-                opponent['just_recharged'] = False
-            try:
-                self.last_opponent_actions[i] = int(opponent_action)
-            except Exception:
+        # Execute opponent actions (simple AI)
+        for i, opponent in enumerate(self.opponent_ships):
+            if not opponent['destroyed']:
+                opponent_action = self._get_opponent_action(opponent)
+                # Clear just_recharged flag for opponents (same as player) to prevent recharge lock
+                if opponent_action != int(ActionType.RECHARGE):
+                    opponent['just_recharged'] = False
+                try:
+                    self.last_opponent_actions[i] = int(opponent_action)
+                except Exception:
+                    self.last_opponent_actions[i] = None
+
+                # execute and capture result
+                r_op, info_op = self._execute_action(opponent_action, opponent, is_player=False)
+                # store a compact result for rendering, include optional payload
+                try:
+                    self.last_opponent_action_results[i] = {
+                        'action': info_op.get('action'),
+                        'success': info_op.get('success'),
+                        'raw_reward': float(r_op),
+                        'payload': info_op.get('payload', None)
+                    }
+                except Exception:
+                    self.last_opponent_action_results[i] = None
+            else:
                 self.last_opponent_actions[i] = None
+                self.last_opponent_action_results[i] = None
 
-    # execute and capture result
-    r_op, info_op = self._execute_action(opponent_action, opponent, is_player=False)
-    # store a compact result for rendering, include optional payload
-    try:
-        self.last_opponent_action_results[i] = {
-            'action': info_op.get('action'),
-            'success': info_op.get('success'),
-            'raw_reward': float(r_op),
-            'payload': info_op.get('payload', None)
-        }
-    except Exception:
-        self.last_opponent_action_results[i] = None
-    else:
-        self.last_opponent_actions[i] = None
-        self.last_opponent_action_results[i] = None
+        # Update passive effects (recharging)
+        self._update_passive_effects()
 
-    # Update passive effects (recharging)
-    self._update_passive_effects()
+        # Update combat states based on current positions. (set COMBAT when ships share a zone)
+        try:
+            self.update_combat_states()
+        except Exception:
+            # Non-fatal: if update_combat_states fails for any reason, log and continue
+            logger.exception("Failed to update combat states")
 
-    # Update combat states based on current positions. (set COMBAT when ships share a zone)
-    try:
-        self.update_combat_states()
-    except Exception:
-        # Non-fatal: if update_combat_states fails for any reason, log and continue
-        logger.exception("Failed to update combat states")
+        # Check termination conditions
+        # Only terminate on player death if flag is set (for training)
+        # Otherwise, let the game run to max_steps (for full simulation)
+        if self.terminate_on_player_death:
+            terminated = self.player_ship['destroyed']
+        else:
+            terminated = False  # Never terminate early in simulation mode
 
-    # Check termination conditions
-    # Only terminate on player death if flag is set (for training)
-    # Otherwise, let the game run to max_steps (for full simulation)
-    if self.terminate_on_player_death:
-        terminated = self.player_ship['destroyed']
-    else:
-        terminated = False  # Never terminate early in simulation mode
+        truncated = self.current_step >= self.max_steps
 
-    truncated = self.current_step >= self.max_steps
-
-    observation = self._get_observation()
-    info = self.get_info()
-    info.update(action_info)
-        return observation, reward, terminated, truncated, info
+        observation = self._get_observation()
+        info = self.get_info()
+        info.update(action_info)
+            return observation, reward, terminated, truncated, info
 
     def _execute_action(self, action: int, ship: dict, is_player: bool = True) -> Tuple[float, dict]:
         """Execute an action for a ship"""
