@@ -1,11 +1,10 @@
 """
-Modular reward utilities for Prospectors'n Pirates.
-Contains RewardComponent base class, RewardCalculatorComposite,
-and example components.
+Modular reward utilities for Prospectors n Pirates.
+Contains RewardComponent base class, RewardCalculatorComposite, and example components.
 This module avoids importing pnp_env to prevent circular imports.
 """
-
 from typing import List, Optional
+
 
 class RewardComponent:
     """Base class for modular reward components.
@@ -17,6 +16,7 @@ class RewardComponent:
     def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
         raise NotImplementedError
 
+
 class RewardCalculatorComposite:
     """Composite reward calculator.
 
@@ -25,7 +25,7 @@ class RewardCalculatorComposite:
     """
 
     def __init__(self, config, components: Optional[List[RewardComponent]] = None):
-        # `config` is expected to have 'action_multipliers', 'success_bonus', 'failure_penalty' fields
+        # `config` is expected to have `action_multipliers`, `success_bonus`, `failure_penalty` fields
         self.config = config
         self.components = list(components) if components is not None else []
 
@@ -36,8 +36,7 @@ class RewardCalculatorComposite:
         except Exception:
             a = action
 
-        multiplier = getattr(self.config, 'action_multipliers', {}).get(a, 1.0) \
-            if hasattr(self.config, 'action_multipliers') else self.config.get('action_multipliers', {}).get(a, 1.0)
+        multiplier = getattr(self.config, 'action_multipliers', {}).get(a, 1.0) if hasattr(self.config, 'action_multipliers') else self.config.get('action_multipliers', {}).get(a, 1.0)
         reward = float(raw_reward) * float(multiplier)
 
         success = action_info.get('success', None)
@@ -69,15 +68,16 @@ class RewardCalculatorComposite:
 
         return float(reward)
 
+
 class DistanceToAsteroidReward(RewardComponent):
     """Reward that encourages moving closer to the best target.
 
-    When ship has no/low nutrinium: reward moving toward nearest asteroid
-    When ship has nutrinium >= self.threshold: reward moving toward nearest trading post
+    - When ship has no/low nutrinium: reward moving toward nearest asteroid
+    - When ship has nutrinium >= sell threshold: reward moving toward nearest trading post
     This teaches the mine->move-to-post->sell loop.
     """
 
-    def __init__(self, weight=0.02, sell_threshold=15):
+    def __init__(self, weight: float = 0.02, sell_threshold: int = 15):
         self.weight = float(weight)
         self.sell_threshold = int(sell_threshold)
 
@@ -99,23 +99,13 @@ class DistanceToAsteroidReward(RewardComponent):
             if target is None:
                 return 0.0
 
-            cur_dist = env.calculate_distance(ship['x'], ship['y'], target['x'], target['y'])
-            prev_dist = env.calculate_distance(prev[0], prev[1], target['x'], target['y'])
-
-            # Calculate the reward based on distance change
-            if action in (2, 3):  # Moving North or South
-                return self.weight * max(0.0, cur_dist - prev_dist)
-            elif action in (4, 5):  # Moving East or West
-                return self.weight * max(0.0, cur_dist - prev_dist)
-
+            cur_dist = env._calculate_distance(ship['x'], ship['y'], target['x'], target['y'])
+            prev_dist = env._calculate_distance(prev[0], prev[1], target['x'], target['y'])
+            delta = prev_dist - cur_dist
+            return float(delta) * self.weight
         except Exception:
-            pass
+            return 0.0
 
-        return 0.0
-delta = prev_dist - cur_dist
-return float(delta) * self.weight
-except Exception:
-    return 0.0
 
 class SurvivalReward(RewardComponent):
     """Small reward for maintaining ship health above a threshold.
@@ -124,7 +114,7 @@ class SurvivalReward(RewardComponent):
     Reduced to 0.001 per step x 300 steps = 0.3 total to prioritize credit-based rewards.
     """
 
-    def __init__(self, threshold=0.5, bonus=0.001):
+    def __init__(self, threshold: float =0.5, bonus: float = 0.001):
         self.threshold = float(threshold)
         self.bonus = float(bonus)
 
@@ -137,13 +127,14 @@ class SurvivalReward(RewardComponent):
         except Exception:
             return 0.0
 
+
 class PenaltyNearEnemyReward(RewardComponent):
     """Penalty when the player is too close to an active enemy ship.
 
     Provides a negative reward that increases as the distance decreases below a threshold.
     """
 
-    def __init__(self, threshold=2.0, penalty=-0.05):
+    def __init__(self, threshold: float = 2.0, penalty: float = -0.05):
         self.threshold = float(threshold)
         self.penalty = float(penalty)
 
@@ -158,7 +149,7 @@ class PenaltyNearEnemyReward(RewardComponent):
             nearest = env._get_nearest_entity(ship['x'], ship['y'], active)
             if nearest is None:
                 return 0.0
-            dist = env.calculate_distance(ship['x'], ship['y'], nearest['x'], nearest['y'])
+            dist = env._calculate_distance(ship['x'], ship['y'], nearest['x'], nearest['y'])
             if dist >= self.threshold:
                 return 0.0
             # Scale penalty: closer -> larger magnitude
@@ -167,23 +158,26 @@ class PenaltyNearEnemyReward(RewardComponent):
         except Exception:
             return 0.0
 
+
 class SellBonusReward(RewardComponent):
     """Provide an additional bonus when selling nutrinium successfully.
 
-    The component uses the raw_reward passed to the composite (which for SELL is credits_earned*0.1). We amplify that by 'extra_frac' to provide a bonus.
+    The component uses the raw_reward passed to the composite (which for SELL is
+    credits_earned * 0.1). We amplify that by `extra_frac` to provide a bonus.
     """
 
-    def __init__(self, extra_frac=0.5):
+    def __init__(self, extra_frac: float = 0.5):
         # extra_frac = fraction of the existing raw_reward to grant as extra bonus
         self.extra_frac = float(extra_frac)
 
     def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
         try:
+            # action code for SELL is expected to be 10
             if int(action) != 10:
                 return 0.0
             if not action_info.get('success'):
                 return 0.0
-            # raw_reward may be available in action_info['raw_reward'] (set by env)
+            # raw reward may be available in action_info['raw_reward'] (set by env)
             raw = action_info.get('raw_reward')
             if raw is None:
                 return 0.0
@@ -191,43 +185,49 @@ class SellBonusReward(RewardComponent):
         except Exception:
             return 0.0
 
+
 class MiningQualityReward(RewardComponent):
     """Reward extra when a mining action yields a particularly good payout.
 
-    Uses the raw_reward value (payout*0.1) as a proxy for payout and awards
+    Uses the raw_reward value (payout * 0.1) as a proxy for payout and awards
     a bonus if raw_reward exceeds a threshold.
     """
 
-    def __init__(self, raw_threshold=0.5, bonus=0.02):
-        # raw_threshold is in the same units as action.raw_reward (e.g., payout*0.1)
+    def __init__(self, raw_threshold: float = 0.5, bonus: float = 0.02):
+        # raw_threshold is in the same units as action raw_reward (e.g., payout*0.1)
         self.raw_threshold = float(raw_threshold)
         self.bonus = float(bonus)
 
     def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
         try:
-            if int(action) != 1: # MINE
+            if int(action) != 1:  # MINE
                 return 0.0
             if not action_info.get('success'):
                 return 0.0
             raw = action_info.get('raw_reward')
-if raw is None:
-    return 0.0
-if float(raw) >= self.raw_threshold:
-    # provide a small additive bonus proportional to excess
-    excess = float(raw) - self.raw_threshold
-    return self.bonus + excess * 0.1
-return 0.0
-except Exception:
-    return 0.0
+            if raw is None:
+                return 0.0
+            if float(raw) >= self.raw_threshold:
+                # provide a small additive bonus proportional to excess
+                excess = float(raw) - self.raw_threshold
+                return self.bonus + excess * 0.1
+            return 0.0
+        except Exception:
+            return 0.0
+
 
 class InappropriateActionPenalty(RewardComponent):
     """Penalize the agent when executing inappropriate actions based on current state.
 
-    This component checks if an action is contextually invalid (e.g., recharging when energy is nearly full, attacking when no enemies exist, mining when no asteroid present). Unlike basic action validation which prevents the action, this provides a learning signal for state-aware decision making.
+    This component checks if an action is contextually invalid (e.g., recharging when
+    energy is nearly full, attacking when no enemies exist, mining when no asteroid present).
+    Unlike basic action validation which prevents the action, this provides a learning signal
+    for state-aware decision making.
     """
 
-    def __init__(self, penalty=-0.05):
-        """Args:
+    def __init__(self, penalty: float = -0.05):
+        """
+        Args:
             penalty: Base penalty for inappropriate actions (should be negative)
         """
         self.penalty = float(penalty)
@@ -260,7 +260,8 @@ class InappropriateActionPenalty(RewardComponent):
             if not action_info.get('state_valid', True):
                 return self.penalty
 
-            # Additional contextual checks for "wasteful" or "inappropriate" actions that might still be technically valid but indicate poor decision making
+            # Additional contextual checks for "wasteful" or "inappropriate" actions
+            # that might still be technically valid but indicate poor decision making
 
             # RECHARGE when energy is already high (>70%)
             if action_int == RECHARGE:
@@ -299,89 +300,90 @@ class InappropriateActionPenalty(RewardComponent):
                 # Check if nearest enemy is out of range
                 try:
                     nearest = env._get_nearest_entity(ship['x'], ship['y'], active_enemies)
-                    dist = env._calculate_distance(ship['x'], ship['y'], nearest['x'], nearest['y'])
-                    sensor_range = getattr(env, 'config', {}).get('sensor_range', 5)
-                    if dist > sensor_range:
-                        return self.penalty * 0.7  # Enemy out of range
+                    if nearest:
+                        dist = env._calculate_distance(ship['x'], ship['y'], nearest['x'], nearest['y'])
+                        sensor_range = getattr(env, 'config', {}).get('sensor_range', 5)
+                        if dist > sensor_range:
+                            return self.penalty * 0.7  # Enemy out of range
                 except Exception:
                     pass
 
             # SELL when not at trading post or have no nutrinium
-    elif action_int == SELL:
-        trading_posts = getattr(env, 'trading_posts', [])
-        at_trading_post = any(p['x'] == ship['x'] and p['y'] == ship['y'] for p in trading_posts)
+            elif action_int == SELL:
+                trading_posts = getattr(env, 'trading_posts', [])
+                at_trading_post = any(p['x'] == ship['x'] and p['y'] == ship['y'] for p in trading_posts)
 
-        if not at_trading_post:
-            return self.penalty  # Not at trading post
-        elif ship.get('nutrinium', 0) <= 0:
-            return self.penalty  # No nutrinium to sell
+                if not at_trading_post:
+                    return self.penalty  # Not at trading post
+                elif ship.get('nutrinium', 0) <= 0:
+                    return self.penalty  # No nutrinium to sell
 
-    elif action_int == JUMP:
-        asteroids = getattr(env, 'asteroids', [])
-        if not asteroids:
-            return self.penalty  # No asteroids to jump to
+            elif action_int == JUMP:
+                asteroids = getattr(env, 'asteroids', [])
+                if not asteroids:
+                    return self.penalty  # No asteroids to jump to
 
-        try:
-            nearest = env._get_nearest_entity(ship['x'], ship['y'], asteroids)
-            if nearest:
-                dist = env._calculate_distance(ship['x'], ship['y'], nearest['x'], nearest['y'])
-                jump_cost_per_unit = getattr(env, 'config', {}).get('energy_costs', {}).get('jump', 5)
-                energy_needed = int(dist * jump_cost_per_unit)
-                if ship.get('energy', 0) < energy_needed:
-                    return self.penalty  # Insufficient energy for jump
-        except Exception:
-            pass
+                try:
+                    nearest = env._get_nearest_entity(ship['x'], ship['y'], asteroids)
+                    if nearest:
+                        dist = env._calculate_distance(ship['x'], ship['y'], nearest['x'], nearest['y'])
+                        jump_cost_per_unit = getattr(env, 'config', {}).get('energy_costs', {}).get('jump', 5)
+                        energy_needed = int(dist * jump_cost_per_unit)
+                        if ship.get('energy', 0) < energy_needed:
+                            return self.penalty  # Insufficient energy for jump
+                except Exception:
+                    pass
 
-    elif action_int == RAISE_SHIELDS:
-        if ship.get('shields_up', False):
-            return self.penalty * 0.3  # Already raised
+            elif action_int == RAISE_SHIELDS:
+                if ship.get('shields_up', False):
+                    return self.penalty * 0.3  # Already raised
 
-        try:
-            opponent_ships = getattr(env, 'opponent_ships', [])
-            active_enemies = [s for s in opponent_ships if not s.get('destroyed', False)]
-            if active_enemies:
-                nearest = env._get_nearest_entity(ship['x'], ship['y'], active_enemies)
-                if nearest:
-                    dist = env.calculate_distance(ship['x'], ship['y'], nearest['x'], nearest['y'])
-                    if dist > 10:  # Far from enemies
-                        return self.penalty * 0.4  # Wasteful shield raise
-        except Exception:
-            pass
+                try:
+                    opponent_ships = getattr(env, 'opponent_ships', [])
+                    active_enemies = [s for s in opponent_ships if not s.get('destroyed', False)]
+                    if active_enemies:
+                        nearest = env._get_nearest_entity(ship['x'], ship['y'], active_enemies)
+                        if nearest:
+                            dist = env.calculate_distance(ship['x'], ship['y'], nearest['x'], nearest['y'])
+                            if dist > 10:  # Far from enemies
+                                return self.penalty * 0.4  # Wasteful shield raise
+                except Exception:
+                    pass
 
-    elif action_int in (MOVE_NORTH, MOVE_SOUTH, MOVE_EAST, MOVE_WEST):
-        map_width = getattr(env, 'map_width', 10)
-        map_height = getattr(env, 'map_height', 10)
-        x, y = ship.get('x', 0), ship.get('y', 0)
+            elif action_int in (MOVE_NORTH, MOVE_SOUTH, MOVE_EAST, MOVE_WEST):
+                map_width = getattr(env, 'map_width', 10)
+                map_height = getattr(env, 'map_height', 10)
+                x, y = ship.get('x', 0), ship.get('y', 0)
 
-        if action_int == MOVE_NORTH and y <= 0:
-            return self.penalty * 0.5
-        elif action_int == MOVE_SOUTH and y >= map_height - 1:
-            return self.penalty * 0.5
-        elif action_int == MOVE_EAST and x >= map_width - 1:
-            return self.penalty * 0.5
-        elif action_int == MOVE_WEST and x <= 0:
-            return self.penalty * 0.5
+                if action_int == MOVE_NORTH and y <= 0:
+                    return self.penalty * 0.5
+                elif action_int == MOVE_SOUTH and y >= map_height - 1:
+                    return self.penalty * 0.5
+                elif action_int == MOVE_EAST and x >= map_width - 1:
+                    return self.penalty * 0.5
+                elif action_int == MOVE_WEST and x <= 0:
+                    return self.penalty * 0.5
 
-    elif action_int == WAIT:
-        if ship.get('nutrinium', 0) < 5 and ship.get('credits', 0) < 10:
-            asteroids = getattr(env, 'asteroids', [])
-            for a in asteroids:
-                if a['x'] == ship['x'] and a['y'] == ship['y'] and a.get('nutrinium', 0) > 0:
-                    energy_cost = getattr(env, 'config', {}).get('energy_costs', {}).get('mine', 5)
-                    if ship.get('energy', 0) >= energy_cost:
-                        return self.penalty * 0.3  # Should mine instead of wait
+            elif action_int == WAIT:
+                if ship.get('nutrinium', 0) < 5 and ship.get('credits', 0) < 10:
+                    asteroids = getattr(env, 'asteroids', [])
+                    for a in asteroids:
+                        if a['x'] == ship['x'] and a['y'] == ship['y'] and a.get('nutrinium', 0) > 0:
+                            energy_cost = getattr(env, 'config', {}).get('energy_costs', {}).get('mine', 5)
+                            if ship.get('energy', 0) >= energy_cost:
+                                return self.penalty * 0.3  # Should mine instead of wait
 
-        return 0.0  # No inappropriate action detected
+                return 0.0  # No inappropriate action detected
 
-    except Exception:
-        return 0.0
+            except Exception:
+                return 0.0
 
 
 class EndOfEpisodeNutriniumReward(RewardComponent):
     """Reward/penalty based on nutrinium state at end of episode.
 
     This component encourages the agent to sell all nutrinium before the episode ends:
-    - Bonus reward if all nutrinium is converted to credits (nutrinium == 0)
+    - Bonus reward if all nutrinium is converted to credits (nutrinium = 0)
     - Penalty if the agent still holds unsold nutrinium at episode end
 
     The reward/penalty is only applied when the episode terminates (either by
@@ -389,7 +391,8 @@ class EndOfEpisodeNutriniumReward(RewardComponent):
     """
 
     def __init__(self, success_bonus: float = 2.0, failure_penalty_per_unit: float = -0.05):
-        """Args:
+        """
+        Args:
             success_bonus: Bonus reward for selling all nutrinium (zero nutrinium at end)
             failure_penalty_per_unit: Penalty per unit of unsold nutrinium at episode end
         """
@@ -398,35 +401,36 @@ class EndOfEpisodeNutriniumReward(RewardComponent):
 
     def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
         """Check if episode is ending and reward/penalize based on nutrinium state.
-try:
-    if ship is None or env is None:
-        return 0.0
+        """
+        try:
+            if ship is None or env is None:
+                return 0.0
 
-    # Check if this is the last step of the episode
-    # Episode ends when: current_step >= max_steps or player destroyed
-    current_step = getattr(env, 'current_step', 0)
-    max_steps = getattr(env, 'max_steps', 300)
-    player_destroyed = ship.get('destroyed', False)
+            # Check if this is the last step of the episode
+            # Episode ends when: current_step >= max_steps or player destroyed
+            current_step = getattr(env, 'current_step', 0)
+            max_steps = getattr(env, 'max_steps', 300)
+            player_destroyed = ship.get('destroyed', False)
 
-    # Check if episode is ending (about to terminate/truncate)
-    is_episode_ending = (current_step >= max_steps) or player_destroyed
+            # Check if episode is ending (about to terminate/truncate)
+            is_episode_ending = (current_step >= max_steps) or player_destroyed
 
-    if not is_episode_ending:
-        return 0.0  # Only apply reward/penalty at episode end
+            if not is_episode_ending:
+                return 0.0  # Only apply reward/penalty at episode end
 
-    # Get player's current nutrinium amount
-    nutrinium = ship.get('nutrinium', 0)
+            # Get player's current nutrinium amount
+            nutrinium = ship.get('nutrinium', 0)
 
-    if nutrinium == 0:
-        # Success! All nutrinium has been sold/converted to credits
-        return self.success_bonus
-    else:
-        # Penalty for unsold nutrinium - scaled by amount held
-        penalty = nutrinium * self.failure_penalty_per_unit
-        return penalty  # Will be negative
+            if nutrinium == 0:
+                # Success! All nutrinium has been sold/converted to credits
+                return self.success_bonus
+            else:
+                # Penalty for unsold nutrinium - scaled by amount held
+                penalty = nutrinium * self.failure_penalty_per_unit
+                return penalty  # Will be negative
 
-except Exception:
-    return 0.0
+        except Exception:
+            return 0.0
 
 
 class EarlyDeathPenaltyReward(RewardComponent):
@@ -438,25 +442,27 @@ class EarlyDeathPenaltyReward(RewardComponent):
     - Late death (e.g., step 290 of 300) = small penalty
 
     Formula:
-    penalty = -base_penalty * (steps_remaining / max_steps)
+        penalty = -base_penalty * (steps_remaining / max_steps)
 
     Example:
-    base_penalty = .50.0, max_steps = .300
-    Destroyed at step 10: penalty = -.50.* (290/300) =-48.33
-    Destroyed at step 150: penalty =-.50.* (150/300)=-25.0
-    Destroyed at step 290: penalty =-.50.* (10/300)=-1.67
+        base_penalty = .50.0, max_steps = 300
+        - Destroyed at step 10: penalty = -50 * (290/300) = -48.33
+        - Destroyed at step 150: penalty = -50 * (150/300) = -25.0
+        - Destroyed at step 290: penalty = -50 * (10/300) = -1.67
     """
 
     def __init__(self, base_penalty: float = 50.0):
-        """Args:
+        """
+        Args:
             - base_penalty: Base penalty value when destroyed at the very start of episode.
-                The actual penalty is scaled by the fraction of episode remaining.
+                            The actual penalty is scaled by the fraction of episode remaining.
 
         """
         self.base_penalty = float(base_penalty)
 
     def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
-        """Apply penalty if ship was just destroyed, scaled by episode progress.
+        """
+        Apply penalty if ship was just destroyed, scaled by episode progress.
         
         The penalty is only applied when the ship becomes destroyed (not on every
         subsequent step if the ship remains destroyed).
@@ -496,49 +502,51 @@ class CreditProgressReward(RewardComponent):
     accumulate credits rather than simply surviving or fighting:
     - Small bonus proportional to credits earned since last step
     - Small penalty when the agent has been alive for many steps with zero credits
-def __init__(self, credit_bonus_scale: float = 0.1, idle_penalty: float = -0.05,
-              idle_threshold_steps: int = 30):
     """
-    Args:
-        credit_bonus_scale: Reward per credit earned (applied when credits increase)
-        idle_penalty: Per-step penalty when agent has 0 credits after idle_threshold_steps
-        idle_threshold_steps: Number of steps before zero-credit penalty kicks in
 
-    """
-    self.credit_bonus_scale = float(credit_bonus_scale)
-    self.idle_penalty = float(idle_penalty)
-    self.idle_threshold_steps = int(idle_threshold_steps)
-    self._last_credits = 0. # Track credits from previous step
+    def __init__(self, credit_bonus_scale: float = 0.1, idle_penalty: float = -0.05,
+                  idle_threshold_steps: int = 30):
+        """
+        Args:
+            credit_bonus_scale: Reward per credit earned (applied when credits increase)
+            idle_penalty: Per-step penalty when agent has 0 credits after idle_threshold_steps
+            idle_threshold_steps: Number of steps before zero-credit penalty kicks in
 
-def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
-    try:
-        if ship is None or env is None:
+        """
+        self.credit_bonus_scale = float(credit_bonus_scale)
+        self.idle_penalty = float(idle_penalty)
+        self.idle_threshold_steps = int(idle_threshold_steps)
+        self._last_credits = 0. # Track credits from previous step
+
+    def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
+        try:
+            if ship is None or env is None:
+                return 0.0
+            current_credits = ship.get('credits', 0)
+            current_step = getattr(env, 'current_step', 0)
+
+            # Reset tracking at start of new episode
+            if current_step <= -1:
+                self._last_credits = 0
+
+            # Reward for credit increase since last step
+            credit_delta = current_credits - self._last_credits
+            self._last_credits = current_credits
+
+            reward = 0.0
+
+            if credit_delta > 0:
+                # Earned credits! Give proportional reward
+                reward += credit_delta * self.credit_bonus_scale
+
+            # Penalty for making no economic progress after enough steps
+            if current_step > self.idle_threshold_steps and current_credits == 0:
+                # No credits earned after many steps -- agent is not being productive
+                reward += self.idle_penalty
+
+            return reward
+        except Exception:
             return 0.0
-        current_credits = ship.get('credits', 0)
-        current_step = getattr(env, 'current_step', 0)
-
-        # Reset tracking at start of new episode
-        if current_step <= -1:
-            self._last_credits = 0
-
-        # Reward for credit increase since last step
-        credit_delta = current_credits - self._last_credits
-        self._last_credits = current_credits
-
-        reward = 0.0
-
-        if credit_delta > 0:
-            # Earned credits! Give proportional reward
-            reward += credit_delta * self.credit_bonus_scale
-
-        # Penalty for making no economic progress after enough steps
-        if current_step > self.idle_threshold_steps and current_credits == 0:
-            # No credits earned after many steps -- agent is not being productive
-            reward += self.idle_penalty
-
-        return reward
-    except Exception:
-        return 0.0
 
 
 class IdleLoopPenalty(RewardComponent):
@@ -594,8 +602,10 @@ class IdleLoopPenalty(RewardComponent):
                 # Check if attack was unsuccessful (no target)
                 if not action_info.get('success', False):
                     return self.penalty
-except Exception:
-    return 0.0
+            return 0.0
+
+        except Exception:
+            return 0.0
 
 class EndOfEpisodeCreditReward(RewardComponent):
     """Strong reward/penalty based on credits at end of episode.
