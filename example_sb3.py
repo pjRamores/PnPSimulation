@@ -418,10 +418,10 @@ class CheckpointCallback(BaseCallback):
             if self.verbose > 0:
                 print(f"\n{'=' * 70}")
                 print(f"CHECKPOINT SAVED")
-                print(f"  Timesteps: {self.num_timesteps:},")
+                print(f"  Timesteps: {self.num_timesteps:,}")
                 print(f"  Path: {checkpoint_path}")
                 print(f"  Checkpoint: {checkpoint_num * self.save_freq // 1_000_000}M timesteps")
-                print(f"{ '=' * 70}\n")
+                print(f"{'=' * 70}\n")
 
             self.last_save_timestep = self.num_timesteps
 
@@ -497,7 +497,7 @@ def _freeze_early_layers(model, algorithm):
                         param.requires_grad = False
 
     except Exception as e:
-        print(f" Warning: Could not freeze layers: {e}")
+        print(f"  Warning: Could not freeze layers: {e}")
 
 
 def _print_performance_participant_stats(stats_list, opponents):
@@ -532,15 +532,15 @@ def _print_performance_participant_stats(stats_list, opponents):
                 'survived': 0, 'episodes': 0,
                 'placements': {},
             }
-            p = participants['PLAYER']
-            p['episodes'] += 1
-            p_credits = stats.get('player_credits', 0) or 0
-            p['total_credits'] += p_credits
-            p['max_credits'] = max(p['max_credits'], p_credits)
-            if not stats.get('player_destroyed', False):
-                p['survived'] += 1
-            placement = placements.get('PLAYER', 0)
-            p['placements'][placement] = p['placements'].get(placement, 0) + 1
+        p = participants['PLAYER']
+        p['episodes'] += 1
+        p_credits = stats.get('player_credits', 0) or 0
+        p['total_credits'] += p_credits
+        p['max_credits'] = max(p['max_credits'], p_credits)
+        if not stats.get('player_destroyed', False):
+            p['survived'] += 1
+        placement = placements.get('PLAYER', 0)
+        p['placements'][placement] = p['placements'].get(placement, 0) + 1
 
         # Accumulate stats for enemies
         for i, enemy in enumerate(stats.get('enemy_details', [])):
@@ -611,7 +611,7 @@ def _print_performance_participant_stats(stats_list, opponents):
     # Format and print
     ranked_rows = []
     for i, row in enumerate(rows):
-        ranked_rows.append(
+        ranked_rows.append((
             str(i + 1),
             row['name'],
             row['role'][:25],  # Truncate long role names
@@ -621,22 +621,22 @@ def _print_performance_participant_stats(stats_list, opponents):
             str(row['first_place']),
             str(row['second_place']),
             str(row['third_place'])
-        )
+        ))
 
     headers = ["Rank", "Ship", "Role", "Avg Cr", "Max Cr", "Surv%", "1st", "2nd", "3rd"]
     all_rows = [headers] + ranked_rows
     cols = list(zip(*all_rows))
-    widths = [max(len(str(cell))) for cell in col) for col in cols]
+    widths = [max(len(str(cell)) for cell in col) for col in cols]
 
-    header_line = " ".join(h.ljust(w) for h, w in zip(headers, widths))
-    sep_line = " ".join('-' * w for w in widths)
-    print(f" {header_line}")
-    print(f" {sep_line}")
+    header_line = "  ".join(h.ljust(w) for h, w in zip(headers, widths))
+    sep_line = "  ".join('-' * w for w in widths)
+    print(f"  {header_line}")
+    print(f"  {sep_line}")
     for row in ranked_rows[:10]:  # Show top 10
-        line = " ".join(str(cell).ljust(w) for cell, w in zip(row, widths))
-        print(f" {line}")
+        line = "  ".join(str(cell).ljust(w) for cell, w in zip(row, widths))
+        print(f"  {line}")
     if len(ranked_rows) > 10:
-        print(f" ... ({len(ranked_rows) - 10} more)")
+        print(f"  ... ({len(ranked_rows) - 10} more)")
 
 
 def _test_model_performance(model_path, algorithm, num_episodes=100):
@@ -666,7 +666,7 @@ def _test_model_performance(model_path, algorithm, num_episodes=100):
         try:
             from game_simulator import GameSimulator
         except ImportError:
-            print("Could not import GameSimulator -- skipping performance test")
+            print(" ❌ Could not import GameSimulator -- skipping performance test")
             return None
 
         # Load enemy models from config
@@ -681,111 +681,104 @@ def _test_model_performance(model_path, algorithm, num_episodes=100):
                         enemy_models.append(line)
 
         if not enemy_models:
-            print("No enemy models found in enemy_models.config -- using only algorithmic AIs")
+            print(" ⚠️ No enemy models found in enemy_models.config -- using only algorithmic AIs")
         else:
-            print(f"Loaded {len(enemy_models)} enemy models from config")
+            print(f"  Loaded {len(enemy_models)} enemy models from config")
 
         # Build opponent list: 2xHEURISTIC, 2xPIRATE, 2xPROSPECTOR, then enemy models
         opponents = [
-            'HEURISTIC',
-            'HEURISTIC',
-    'PIRATE',
-    'PIRATE',
-    'PROSPECTOR',
-    'PROSPECTOR',
-    ] + enemy_models
+                        'HEURISTIC',
+                        'HEURISTIC',
+                        'PIRATE',
+                        'PIRATE',
+                        'PROSPECTOR',
+                        'PROSPECTOR',
+                    ] + enemy_models
 
-    print(
-        f"Opponents ({len(opponents)}): {''.join(opponents[:3])}...{''.join(opponents[-3:]) if len(opponents) > 3 else ''}")
+        print(
+            f"  Opponents ({len(opponents)}): {', '.join(opponents[:3])}...{', '.join(opponents[-3:]) if len(opponents) > 3 else ''}")
 
-    # Create simulator
-    simulator = GameSimulator(
-        model_path=model_path,
-        algorithm=algorithm,
-        map_width=10,
-        map_height=10,
-        max_steps=300
-    )
+        # Create simulator
+        simulator = GameSimulator(
+            model_path=model_path,
+            algorithm=algorithm,
+            map_width=10,
+            map_height=10,
+            max_steps=300
+        )
 
-    # Run simulation
-    print(f"\nRunning {num_episodes} episodes (this may take a while)...")
-    stats_list = simulator.run_simulation(
-        num_episodes=num_episodes,
-        forced_opponent_types=opponents,
-        render=False,
-        verbose=False  # Suppress detailed output
-    )
+        # Run simulation
+        print(f"\n  Running {num_episodes} episodes (this may take a while)...")
+        stats_list = simulator.run_simulation(
+            num_episodes=num_episodes,
+            forced_opponent_types=opponents,
+            render=False,
+            verbose=False  # Suppress detailed output
+        )
 
-    # Analyze results - count placement finishes
-    first_place = 0
-    second_place = 0
-    third_place = 0
+        # Analyze results - count placement finishes
+        first_place = 0
+        second_place = 0
+        third_place = 0
 
-    for episode_stats in stats_list:
-        # Rank all participants by credits for this episode
-        participants = []
-        participants.append(('PLAYER', episode_stats.get('player_credits', 0) or 0))
-        for enemy in episode_stats.get('enemy_details', []):
-            e_name = enemy.get('name', 'ENEMY')
-            e_credits = enemy.get('credits', 0) or 0
-            participants.append((e_name, e_credits))
-    # Sort by credits descending
-    participants.sort(key=lambda x: x[1], reverse=True)
+        for episode_stats in stats_list:
+            # Rank all participants by credits for this episode
+            participants = []
+            participants.append(('PLAYER', episode_stats.get('player_credits', 0) or 0))
 
-        # Find PLAYER's placement
-        for rank, (name, credits) in enumerate(participants):
-            if name == 'PLAYER':
-                if rank == 0:
-                    first_place += 1
-                elif rank == 1:
-                    second_place += 1
-                elif rank == 2:
-                    third_place += 1
-                break
+            for enemy in episode_stats.get('enemy_details', []):
+                e_name = enemy.get('name', 'ENEMY')
+                e_credits = enemy.get('credits', 0) or 0
+                participants.append((e_name, e_credits))
 
-        print(f"\n Performance Results ({num_episodes} episodes):")
-        print(f"   1st place: {first_place:3d} ({first_place / num_episodes * 100:.1f}%)")
-        print(f"   2nd place: {second_place:3d} ({second_place / num_episodes * 100:.1f}%)")
-        print(f"   3rd place: {third_place:3d} ({third_place / num_episodes * 100:.1f}%)")
+            # Sort by credits descending
+            participants.sort(key=lambda x: x[1], reverse=True)
 
+            # Find PLAYER's placement
+            for rank, (name, credits) in enumerate(participants):
+                if name == 'PLAYER':
+                    if rank == 0:
+                        first_place += 1
+                    elif rank == 1:
+                        second_place += 1
+                    elif rank == 2:
+                        third_place += 1
+                    break
+
+        print(f"\n  Performance Results ({num_episodes} episodes):")
+        print(f"    1st place: {first_place:3d} ({first_place / num_episodes * 100:5.1f}%)")
+        print(f"    2nd place: {second_place:3d} ({second_place / num_episodes * 100:5.1f}%)")
+        print(f"    3rd place: {third_place:3d} ({third_place / num_episodes * 100:5.1f}%)")
 
         # Print participant stats for detailed comparison
-        print(f"\n Participant Stats:")
+        print(f"\n  Participant Stats:")
         _print_performance_participant_stats(stats_list, opponents)
 
-        print(f"{ '=' * 70}")
+        print(f"  { '=' * 70}")
 
         return {
             'first_place': first_place,
             'second_place': second_place,
             'third_place': third_place
         }
-    
+
     except Exception as e:
-        print(f"   Performance testing failed: {e}")
+        print(f"  ⅹ Performance testing failed: {e}")
         import traceback
         traceback.print_exc()
         return None
 
+
 def _save_model_attributes_to_csv(model, algorithm, model_path, callback, is_transfer,
                                   total_timesteps, version, reward_config=None, csv_filename='model_tracking.csv',
-def save_model_attributes_and_training_metadata(model_path,
-                                                version,
-                                                algorithm,
-                                                model,
-                                                is_transfer,
-                                                total_timesteps,
-                                                reward_config=None,
-                                                algo_fields=None,
-                                                performance_results=None):
+                                  performance_results=None):
     """
     Save model attributes and training metadata to CSV file for tracking.
-    
+
     This function now handles schema evolution: if the existing CSV has a different
     set of headers, it will rewrite the CSV with the union of old and new headers,
     migrating existing rows and ensuring the new header order is used.
     """
-
     try:
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
@@ -819,124 +812,125 @@ def save_model_attributes_and_training_metadata(model_path,
             algo_fields = {
                 'learning_rate': model.learning_rate if not callable(model.learning_rate) else 'schedule',
                 'n_steps': model.n_steps,
-'batch_size': model.batch_size,
-'n_epochs': model.n_epochs,
-'gamma': model.gamma,
-'gae_lambda': model.gae_lambda,
-'clip_range': model.clip_range if not callable(model.clip_range) else 'schedule',
-}
-elif algorithm == 'DQN':
-    algo_fields = {
-        'learning_rate': model.learning_rate if not callable(model.learning_rate) else 'schedule',
-        'buffer_size': model.buffer_size,
-        'learning_starts': model.learning_starts,
-        'batch_size': model.batch_size,
-        'gamma': model.gamma,
-        'train_freq': model.train_freq,
-        'target_update_interval': model.target_update_interval,
-        'exploration_fraction': model.exploration_fraction,
-        'exploration_initial_eps': model.exploration_initial_eps,
-        'exploration_final_eps': model.exploration_final_eps,
-    }
-elif algorithm == 'A2C':
-    algo_fields = {
-        'learning_rate': model.learning_rate if not callable(model.learning_rate) else 'schedule',
-        'n_steps': model.n_steps,
-        'gamma': model.gamma,
-        'gae_lambda': model.gae_lambda,
-    }
+                'batch_size': model.batch_size,
+                'n_epochs': model.n_epochs,
+                'gamma': model.gamma,
+                'gae_lambda': model.gae_lambda,
+                'clip_range': model.clip_range if not callable(model.clip_range) else 'schedule',
+            }
+        elif algorithm == 'DQN':
+            algo_fields = {
+                'learning_rate': model.learning_rate if not callable(model.learning_rate) else 'schedule',
+                'buffer_size': model.buffer_size,
+                'learning_starts': model.learning_starts,
+                'batch_size': model.batch_size,
+                'gamma': model.gamma,
+                'train_freq': model.train_freq,
+                'target_update_interval': model.target_update_interval,
+                'exploration_fraction': model.exploration_fraction,
+                'exploration_initial_eps': model.exploration_initial_eps,
+                'exploration_final_eps': model.exploration_final_eps,
+            }
+        elif algorithm == 'A2C':
+            algo_fields = {
+                'learning_rate': model.learning_rate if not callable(model.learning_rate) else 'schedule',
+                'n_steps': model.n_steps,
+                'gamma': model.gamma,
+                'gae_lambda': model.gae_lambda,
+            }
 
-# Update attributes with algorithm fields in this order
-attributes.update(algo_fields)
+        # Update attributes with algorithm fields in this order
+        attributes.update(algo_fields)
 
-# Add training performance metrics
-if hasattr(callback, 'episode_rewards') and callback.episode_rewards:
-    attributes.update({
-        'total_episodes': len(callback.episode_rewards),
-        'avg_rewards': float(np.mean(callback.episode_rewards)),
-        'std_rewards': float(np.std(callback.episode_rewards)),
-        'max_rewards': float(np.max(callback.episode_rewards)),
-        'min_rewards': float(np.min(callback.episode_rewards)),
-        'final_10_avg_rewards': float(np.mean(callback.episode_rewards[-10:])) if len(
-            callback.episode_rewards) >= 10 else float(np.mean(callback.episode_rewards)),
-    })
-else:
-    attributes.update({
-        'total_episodes': 0,
-        'avg_credits': 0.0,
-        'std_credits': 0.0,
-        'max_credits': 0.0,
-        'min_credits': 0.0,
-        'final_10_avg_credits': 0.0,
-    })
+        # Add training performance metrics
+        if hasattr(callback, 'episode_credits') and callback.episode_credits:
+            attributes.update({
+                'total_episodes': len(callback.episode_credits),
+                'avg_credits': float(np.mean(callback.episode_credits)),
+                'std_credits': float(np.std(callback.episode_credits)),
+                'max_credits': float(np.max(callback.episode_credits)),
+                'min_credits': float(np.min(callback.episode_credits)),
+                'final_10_avg_credits': float(np.mean(callback.episode_credits[-10:])) if len(
+                    callback.episode_credits) >= 10 else float(np.mean(callback.episode_credits)),
+            })
+        else:
+            attributes.update({
+                'total_episodes': 0,
+                'avg_credits': 0.0,
+                'std_credits': 0.0,
+                'max_credits': 0.0,
+                'min_credits': 0.0,
+                'final_10_avg_credits': 0.0,
+            })
 
-    # Add performance test results (simulation against existing models)
-    if performance_results:
-        attributes.update({
-            'perf_1st_place': performance_results.get('first_place', 0),
-            'perf_2nd_place': performance_results.get('second_place', 0),
-            'perf_3rd_place': performance_results.get('third_place', 0),
-        })
-    else:
-        attributes.update({
-            'perf_1st_place': 0,
-            'perf_2nd_place': 0,
-            'perf_3rd_place': 0,
-        })
+        # Add performance test results (simulation against existing models)
+        if performance_results:
+            attributes.update({
+                'perf_1st_place': performance_results.get('first_place', 0),
+                'perf_2nd_place': performance_results.get('second_place', 0),
+                'perf_3rd_place': performance_results.get('third_place', 0),
+            })
+        else:
+            attributes.update({
+                'perf_1st_place': 0,
+                'perf_2nd_place': 0,
+                'perf_3rd_place': 0,
+            })
 
-    # Determine CSV handling: migrate if schema changed
-    file_exists = os.path.isfile(csv_filename)
+        # Determine CSV handling: migrate if schema changed
+        file_exists = os.path.isfile(csv_filename)
 
-    if not file_exists:
-        # Write new file with header and row
-        with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=list(attributes.keys()))
-            writer.writeheader()
-            writer.writerow(attributes)
-        print(f"Model attributes saved to {csv_filename}")
-        return
+        if not file_exists:
+            # Write new file with header and row
+            with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=list(attributes.keys()))
+                writer.writeheader()
+                writer.writerow(attributes)
+            print(f"Model attributes saved to {csv_filename}")
+            return
 
-    # If file exists, read existing header
-    with open(csv_filename, 'r', newline='', encoding='utf-8') as csvfile:
-        reader = csv.DictReader(csvfile)
-        existing_fieldnames = reader.fieldnames or []
-        existing_rows = list(reader)
-new_fieldnames = list(attributes.keys())
+        # If file exists, read existing header
+        with open(csv_filename, 'r', newline='', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            existing_fieldnames = reader.fieldnames or []
+            existing_rows = list(reader)
 
-# If existing header differs (different set or order), rewrite file with union
-if set(existing_fieldnames) != set(new_fieldnames):
-    # Create union preserving new_fieldnames order, then append any existing-only fields
-    union = list(new_fieldnames)
-    for fn in existing_fieldnames:
-        if fn not in union:
-            union.append(fn)
+        new_fieldnames = list(attributes.keys())
 
-# Migrate existing rows into new format (fill missing with empty strings)
-migrated_rows = []
-for row in existing_rows:
-    new_row = {fn: row.get(fn, '') for fn in union}
-    migrated_rows.append(new_row)
+        # If existing header differs (different set or order), rewrite file with union
+        if set(existing_fieldnames) != set(new_fieldnames):
+            # Create union preserving new_fieldnames order, then append any existing-only fields
+            union = list(new_fieldnames)
+            for fn in existing_fieldnames:
+                if fn not in union:
+                    union.append(fn)
 
-# Append the new attributes row
-new_row = {fn: attributes.get(fn, '') for fn in union}
-migrated_rows.append(new_row)
+            # Migrate existing rows into new format (fill missing with empty strings)
+            migrated_rows = []
+            for row in existing_rows:
+                new_row = {fn: row.get(fn, '') for fn in union}
+                migrated_rows.append(new_row)
 
-# Write back the file with updated header
-with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
-    writer = csv.DictWriter(csvfile, fieldnames=union)
-    writer.writeheader()
-    for r in migrated_rows:
-        writer.writerow(r)
+        # Append the new attributes row
+        new_row = {fn: attributes.get(fn, '') for fn in union}
+        migrated_rows.append(new_row)
 
-print(f"Model attributes saved to {csv_filename} (schema migrated, header updated)")
-return
+            # Write back the file with updated header
+            with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=union)
+                writer.writeheader()
+                for r in migrated_rows:
+                    writer.writerow(r)
 
-# If headers match (same set), append using existing order
-with open(csv_filename, 'a', newline='', encoding='utf-8') as csvfile:
-    writer = csv.DictWriter(csvfile, fieldnames=existing_fieldnames)
-    # Ensure we only write keys that exist in existing_fieldnames (ignore extras)
-    row = {fn: attributes.get(fn, '') for fn in existing_fieldnames}
-    writer.writerow(row)
+            print(f"Model attributes saved to {csv_filename} (schema migrated, header updated)")
+            return
+
+        # If headers match (same set), append using existing order
+        with open(csv_filename, 'a', newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=existing_fieldnames)
+            # Ensure we only write keys that exist in existing_fieldnames (ignore extras)
+            row = {fn: attributes.get(fn, '') for fn in existing_fieldnames}
+            writer.writerow(row)
 
 print(f"Model attributes appended to {csv_filename}")
 
