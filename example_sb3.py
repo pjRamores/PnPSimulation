@@ -6,7 +6,6 @@ with the Prospectors n Pirates environment.
 
 Install with: pip install stable-baselines3[extra]
 """
-from reward_utils import Exception
 
 try:
     from stable_baselines3 import PPO, DQN, A2C
@@ -755,7 +754,7 @@ def _test_model_performance(model_path, algorithm, num_episodes=100):
         print(f"\n  Participant Stats:")
         _print_performance_participant_stats(stats_list, opponents)
 
-        print(f"  { '=' * 70}")
+        print(f"  {'=' * 70}")
 
         return {
             'first_place': first_place,
@@ -942,12 +941,12 @@ def _save_model_attributes_to_csv(model, algorithm, model_path, callback, is_tra
 
 
 def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
-                    transfer_from=None, freeze_layers=False, fine_tune_lr=None,
-                    map_width=10, map_height=10, min_opponents=2, max_opponents=2, max_steps=300,
-                    use_predefined_asteroids=False, asteroid_config_path='asteroids.config',
-                    use_predefined_start=False, start_position_config_path='start_positions.config',
-                    use_composite=True, composite_components: Optional[List[object]] = None,
-                    efficiency_mode=False, num_threads=None):
+                   transfer_from=None, freeze_layers=False, fine_tune_lr=None,
+                   map_width=10, map_height=10, min_opponents=2, max_opponents=2, max_steps=300,
+                   use_predefined_asteroids=False, asteroid_config_path='asteroids.config',
+                   use_predefined_start=False, start_position_config_path='start_positions.config',
+                   use_composite=True, composite_components: Optional[List[object]] = None,
+                   efficiency_mode=False, num_threads=None):
     """
     Train agent using Stable Baselines3 with optional transfer learning
 
@@ -980,13 +979,13 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
 
     is_transfer = transfer_from is not None
 
-    print("=". * 70)
+    print("=" * 70)
     if is_transfer:
         print(f"TRANSFER LEARNING: {algorithm} AGENT WITH STABLE BASELINES3")
         print(f"Loading pre-trained model from: {transfer_from}")
     else:
         print(f"TRAINING {algorithm} AGENT WITH STABLE BASELINES3")
-    print("=". * 70)
+    print("=" * 70)
 
     # Set process title for Task Manager visibility
     if SETPROCTITLE_AVAILABLE:
@@ -997,16 +996,16 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
     # Configure CPU usage mode
     cpu_settings = set_cpu_mode(efficiency_mode=efficiency_mode, num_threads=num_threads)
     print(f"\nCPU Configuration:")
-    print(f"Mode: {cpu_settings['mode']}")
-    print(f"Threads: {cpu_settings['threads']} / {cpu_settings['cpu_count']} CPUs")
+    print(f"  Mode: {cpu_settings['mode']}")
+    print(f"  Threads: {cpu_settings['threads']} / {cpu_settings['cpu_count']} CPUs")
     if cpu_settings.get('torch_configured'):
-        print(f"PyTorch: Configured for {cpu_settings['threads']} threads")
+        print(f"  PyTorch: Configured for {cpu_settings['threads']} threads")
     if cpu_settings.get('priority_set'):
-        print(f"Process Priority: {cpu_settings.get('process_priority', 'default')}")
+        print(f"  Process Priority: {cpu_settings.get('process_priority', 'default')}")
     if efficiency_mode:
-        print(f"Efficiency Mode: Balanced CPU usage for background training")
+        print(f" ⚡️ Efficiency Mode: Balanced CPU usage for background training")
     else:
-        print(f"Performance Mode: Maximum CPU usage for fastest training")
+        print(f" 🚀 Performance Mode: Maximum CPU usage for fastest training")
     print()
 
     # Create environment
@@ -1017,17 +1016,18 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
 
     # Determine opponent handling strategy
     use_dynamic_opponents = (min_opponents != max_opponents)
+
     if use_dynamic_opponents:
         # Start with mid-range opponent count for initial env creation
         initial_num_opponents = (min_opponents + max_opponents) // 2
         print(f"\nOpponent Configuration:")
-        print(f"Dynamic per-episode sampling: {min_opponents} to {max_opponents} opponents")
-        print(f"Initial env uses: {initial_num_opponents} opponents")
+        print(f"  Dynamic per-episode sampling: {min_opponents} to {max_opponents} opponents")
+        print(f"  Initial env uses: {initial_num_opponents} opponents")
     else:
         # Fixed opponent count
         initial_num_opponents = min_opponents
         print(f"\nOpponent Configuration:")
-        print(f"Fixed count: {initial_num_opponents} opponents per episode")
+        print(f"  Fixed count: {initial_num_opponents} opponents per episode")
 
     env = ProspectorsPiratesEnv(
         map_width=map_width,
@@ -1050,9 +1050,9 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
     # and applies a penalty so the model learns to respect the mask.
     if not SB3_CONTRIB_AVAILABLE:
         env = ActionMaskWrapper(env)
-        print("Action masking: penalty-based enforcement (sb3-contrib not available)")
+        print("  Action masking: penalty-based enforcement (sb3-contrib not available)")
     else:
-        print("Action masking: native MaskablePPO support")
+        print("  Action masking: native MaskablePPO support")
 
     # Wrap environment with Monitor for logging
     env = Monitor(env)
@@ -1075,22 +1075,22 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
     # Transfer Learning: Load existing model
     if is_transfer:
         print(f"\nLoading pre-trained {algorithm} model for transfer learning...")
-        print(f"Model path: {transfer_from}")
+        print(f"  Model path: {transfer_from}")
 
         # Check if model file exists
         model_path_with_zip = transfer_from if transfer_from.endswith('.zip') else f"{transfer_from}.zip"
         if not os.path.exists(model_path_with_zip):
-            print(f"Model file not found: {model_path_with_zip}")
-            print("Available models:")
+            print(f"ⅹ Model file not found: {model_path_with_zip}")
+            print("  Available models:")
             if os.path.exists('models'):
                 for f in os.listdir('models'):
                     if f.endswith('.zip'):
-                        print(f"  - models/{f.replace('.zip', '')}")
-            print("Falling back to training from scratch...")
+                        print(f"    - models/{f.replace('.zip', '')}")
+            print("  Falling back to training from scratch...")
             is_transfer = False
         else:
             try:
-                print(f"Loading from: {model_path_with_zip}")
+                print(f"  Loading from: {model_path_with_zip}")
 
                 if algorithm == 'PPO':
                     # Try to load as MaskablePPO first, fall back to regular PPO
@@ -1099,7 +1099,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                             model = MaskablePPO.load(transfer_from, env=env)
                             print("  √ Loaded as MaskablePPO")
                         except Exception as mask_err:
-                            print(f"Warning: Could not load as MaskablePPO: {mask_err}")
+                            print(f"  Warning: Could not load as MaskablePPO: {mask_err}")
                             model = None
                     if model is None:
                         # Fall back to regular PPO.
@@ -1107,14 +1107,14 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                         # Regular PPO with MultiInputPolicy can handle Dict observations.
                         # Action masking won't be applied, but training will still work.
                         model = PPO.load(transfer_from, env=env)
-                        print("✓ Loaded as regular PPO (no action masking)")
-                        print("(action mask in observations will be ignored during training)")
+                        print("  ✓ Loaded as regular PPO (no action masking)")
+                        print("    (action mask in observations will be ignored during training)")
                 elif algorithm == 'DQN':
                     model = DQN.load(transfer_from, env=env)
                 elif algorithm == 'A2C':
                     model = A2C.load(transfer_from, env=env)
                 else:
-                    print(f"Unknown algorithm: {algorithm}")
+                    print(f"ⅹ Unknown algorithm: {algorithm}")
                     return None
                 model.verbose = 0  # Disable verbose output during evaluation
 
@@ -1144,7 +1144,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                         model.clip_range_vf = get_schedule_fn(val) if val is not None else None
 
                 print(f"✓ Successfully loaded model from {transfer_from}")
-                print(f"Model has {model.num_timesteps} training timesteps")
+                print(f"  Model has {model.num_timesteps} training timesteps")
 
                 # Set fine-tuning learning rate for transfer learning.
                 # IMPORTANT: Always use a fixed (non-schedule) learning rate.
@@ -1152,12 +1152,12 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                 # to collapse toward zero after repeated transfers, producing
                 # "dead" models that can no longer learn.
                 _default_finetune_lr = {'PPO': 3e-5, 'DQN': 1e-5, 'A2C': 7e-5}
-                _min_lr = 1e-6 # Floor: never go below this
+                _min_lr = 1e-6  # Floor: never go below this
 
                 if fine_tune_lr is not None:
                     # User explicitly provided a learning rate - use it as-is
                     model.learning_rate = fine_tune_lr
-                    print(f"Using custom learning rate: {fine_tune_lr}")
+                    print(f"  Using custom learning rate: {fine_tune_lr}")
                 else:
                     original_lr = model.learning_rate
                     default_ft = _default_finetune_lr.get(algorithm, 3e-5)
@@ -1166,32 +1166,33 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                         # Learning rate is a schedule function from the saved model.
                         # Replace with a fixed rate to prevent decay across transfers.
                         model.learning_rate = default_ft
-                        print(f"Replaced learning rate schedule with fixed rate: {default_ft:.2e}")
+                        print(f"  Replaced learning rate schedule with fixed rate: {default_ft:.2e}")
                     else:
                         # Use the larger of: stored_lr / 10, or the default fine-tune rate
-                        # (both floored at _min_lr). If the stored LR was already very
+                        # (both floored at _min_lr).  If the stored LR was already very
                         # small (from repeated transfers), fall back to the algorithm's
                         # standard fine-tuning rate.
                         candidate = max(original_lr / 10, _min_lr)
                         if candidate < default_ft:
                             model.learning_rate = default_ft
                             print(
-                                f"Learning rate was too small ({original_lr:.2e}), using default fine-tuning rate: {default_ft:.2e}")
+                                f"  Learning rate was too small ({original_lr:.2e}), using default fine-tuning rate: {default_ft:.2e}")
                         else:
                             model.learning_rate = candidate
                             print(
-                                f"Reduced learning rate for fine-tuning: {original_lr:.2e} -> {model.learning_rate:.2e}")
+                                f"  Reduced learning rate for fine-tuning: {original_lr:.2e} -> {model.learning_rate:.2e}")
+
                 # Optionally freeze early layers
                 if freeze_layers:
-                    print("Freezing early network layers...")
+                    print("  Freezing early network layers...")
                     _freeze_early_layers(model, algorithm)
-                    print("✓ Early layers frozen")
+                    print("  ✓ Early layers frozen")
 
             except Exception as e:
-                print(f"❌ Failed to load model: {e}")
+                print(f"ⅹ  Failed to load model: {e}")
                 import traceback
                 traceback.print_exc()
-                print("Falling back to training from scratch...")
+                print("  Falling back to training from scratch...")
                 is_transfer = False
                 model = None
                 env = original_env  # Restore original env for fresh model creation
@@ -1203,7 +1204,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         if algorithm == 'PPO':
             # Use MaskablePPO for action masking if available
             if SB3_CONTRIB_AVAILABLE:
-                print("Using MaskablePPO with action masking support")
+                print("  Using MaskablePPO with action masking support")
                 model = MaskablePPO(
                     MaskableActorCriticPolicy,
                     env,
@@ -1225,8 +1226,8 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                     tensorboard_log=f"./tensorboard_logs/maskable_ppo/"
                 )
             else:
-                print(". Warning: sb3-contrib not available, using standard PPO")
-                print(". Action masking will not be used -- install sb3-contrib for better performance")
+                print("  Warning: sb3-contrib not available, using standard PPO")
+                print("  Action masking will not be used -- install sb3-contrib for better performance")
                 model = PPO(
                     'MultiInputPolicy',
                     env,
@@ -1262,8 +1263,8 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                 exploration_fraction=0.1,
                 exploration_initial_eps=1.0,
                 exploration_final_eps=0.05,
-        tensorboard_log=f"./tensorboard_logs/dqn/"
-        )
+                tensorboard_log=f"./tensorboard_logs/dqn/"
+            )
         elif algorithm == 'A2C':
             model = A2C(
                 'MultiInputPolicy',
@@ -1294,7 +1295,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         )
         callbacks.append(checkpoint_callback)
         print(f"\n✓ Checkpoint saving enabled: every 1M timesteps")
-        print(f"✓ Expected checkpoints: {total_timesteps // 1_000_000}")
+        print(f"  Expected checkpoints: {total_timesteps // 1_000_000}")
 
     # Ensure model was created successfully
     if model is None:
@@ -1324,6 +1325,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         import traceback
         traceback.print_exc()
         print("\nAttempting to save current model state...")
+        # Continue to save even if training failed
 
     # Save model
     # Get version number
@@ -1374,7 +1376,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                                      np.ones(window) / window, mode='valid')
             plt.plot(range(window - 1, len(callback.episode_credits)),
                      moving_avg, 'r-', linewidth=2, label=f'{window}-episode MA')
-        plt.legend()
+            plt.legend()
 
         plt.subplot(1, 2, 2)
         plt.hist(callback.episode_credits, bins=20, edgecolor='black')
@@ -1383,14 +1385,15 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         plt.ylabel('Frequency')
         plt.grid(True, alpha=0.3)
 
-    plt.tight_layout()
-    plot_filename = f'output/training_progress/{algorithm.lower()}_{version}_training_progress.png'
-    plt.savefig(plot_filename)
-    print(f"Training plots saved to {plot_filename}")
-    plt.close()
+        plt.tight_layout()
+        plot_filename = f'output/training_progress/{algorithm.lower()}_v{version}_training_progress.png'
+        plt.savefig(plot_filename)
+        print(f"Training plots saved to {plot_filename}")
+        plt.close()
 
     env.close()
     return model
+
 
 def evaluate_model(model, num_episodes=10, render=False, min_opponents=2, max_opponents=2):
     """Evaluate trained model"""
@@ -1424,47 +1427,52 @@ def evaluate_model(model, num_episodes=10, render=False, min_opponents=2, max_op
         num_opponents=initial_num_opponents,
         max_steps=300,
         render_mode='human' if render else None
-if use_dynamic_opponents:
-    env = DynamicOpponentsWrapper(env, min_opponents, max_opponents)
+    )
 
-model_obs_space = getattr(model, 'observation_space', None)
-if model_obs_space is not None and not isinstance(model_obs_space, gym.spaces.Dict):
-    env = FlattenDictObsWrapper(env)
+    # Apply dynamic opponents wrapper if using variable opponent counts
+    if use_dynamic_opponents:
+        env = DynamicOpponentsWrapper(env, min_opponents, max_opponents)
 
-episode_rewards = []
-episode_credits = []
-episode_nutrinium = []
+    # If the model expects a flat Box observation (e.g. MaskablePPO loaded as
+    # regular PPO), wrap the env so observations match.
+    model_obs_space = getattr(model, 'observation_space', None)
+    if model_obs_space is not None and not isinstance(model_obs_space, gym.spaces.Dict):
+        env = FlattenDictObsWrapper(env)
 
-for episode in range(num_episodes):
-    obs, _ = env.reset()
-    episode_reward = 0
-    done = False
-    step = 0
+    episode_rewards = []
+    episode_credits = []
+    episode_nutrinium = []
 
-    while not done:
-        action, _ = model.predict(obs, deterministic=True)
-        obs, reward, terminated, truncated, info = env.step(action)
-        done = terminated or truncated
-        episode_reward += reward
+    for episode in range(num_episodes):
+        obs, _ = env.reset()
+        episode_reward = 0
+        done = False
+        step = 0
 
-        if render and step % 20 == 0:
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+            episode_reward += reward
+
+            if render and step % 20 == 0:
+                env.render()
+
+            step += 1
+
+        if render:
             env.render()
 
-        step += 1
+        episode_rewards.append(episode_reward)
+        episode_credits.append(info['player_credits'])
+        episode_nutrinium.append(info['player_nutrinium'])
 
-    if render:
-        env.render()
-
-    episode_rewards.append(episode_reward)
-    episode_credits.append(info['player_credits'])
-    episode_nutrinium.append(info['player_nutrinium'])
-
-print(f"\nEpisode {episode + 1}/{num_episodes}:")
-print(f"Total Reward: {episode_reward:.2f}")
-    print(f"Credits Earned: {info['player_credits']}")
-    print(f"Final Nutrinium: {info['player_nutrinium']}")
-    print(f"Steps: {step}")
-    print(f"Destroyed: {info['player_destroyed']}")
+        print(f"\nEpisode {episode + 1}/{num_episodes}:")
+        print(f"  Total Reward: {episode_reward:.2f}")
+        print(f"  Credits Earned: {info['player_credits']}")
+        print(f"  Final Nutrinium: {info['player_nutrinium']}")
+        print(f"  Steps: {step}")
+        print(f"  Destroyed: {info['player_destroyed']}")
 
     print("\n" + "=" * 70)
     print("EVALUATION RESULTS")
@@ -1475,7 +1483,8 @@ print(f"Total Reward: {episode_reward:.2f}")
     print(f"Max Credits: {np.max(episode_credits)}")
     print("=" * 70)
 
-env.close()
+    env.close()
+
 
 def compare_algorithms(timesteps_per_algorithm=50000, min_opponents=2, max_opponents=2):
     """Compare different algorithms"""
@@ -1490,142 +1499,147 @@ def compare_algorithms(timesteps_per_algorithm=50000, min_opponents=2, max_oppon
     results = {}
 
     for algo in algorithms:
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"Training {algo}...")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
 
         model = train_with_sb3(algo, total_timesteps=timesteps_per_algorithm)
 
         if model:
             # Evaluate
             use_dynamic_opponents = (min_opponents != max_opponents)
-initial_num_opponents = (min_opponents + max_opponents) // 2 if use_dynamic_opponents else min_opponents
+            initial_num_opponents = (min_opponents + max_opponents) // 2 if use_dynamic_opponents else min_opponents
 
-    env = ProspectorsPiratesEnv(
-        map_width=10,
-        map_height=10,
-        num_opponents=initial_num_opponents,
-        max_steps=300,
-    )
+            env = ProspectorsPiratesEnv(
+                map_width=10,
+                map_height=10,
+                num_opponents=initial_num_opponents,
+                max_steps=300,
+            )
 
-    # Apply dynamic opponents wrapper if using variable opponent counts
-    if use_dynamic_opponents:
-        env = DynamicOpponentsWrapper(env, min_opponents, max_opponents)
+            # Apply dynamic opponents wrapper if using variable opponent counts
+            if use_dynamic_opponents:
+                env = DynamicOpponentsWrapper(env, min_opponents, max_opponents)
 
-    # Flatten obs if the model expects a flat Box (MlpPolicy)
-    model_obs_space = getattr(model, 'observation_space', None)
-    if model_obs_space is not None and not isinstance(model_obs_space, gym.spaces.Dict):
-        env = FlattenDictObsWrapper(env)
-    env = Monitor(env)
+            # Flatten obs if the model expects a flat Box (MlpPolicy)
+            model_obs_space = getattr(model, 'observation_space', None)
+            if model_obs_space is not None and not isinstance(model_obs_space, gym.spaces.Dict):
+                env = FlattenDictObsWrapper(env)
+            env = Monitor(env)
 
-    episode_rewards = []
-    episode_credits = []
+            episode_rewards = []
+            episode_credits = []
 
-    for _ in range(20):
-        obs, _ = env.reset()
-        episode_reward = 0
-        done = False
+            for _ in range(20):
+                obs, _ = env.reset()
+                episode_reward = 0
+                done = False
 
-        while not done:
-            action, _ = model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, info = env.step(action)
-            done = terminated or truncated
-            episode_reward += reward
+                while not done:
+                    action, _ = model.predict(obs, deterministic=True)
+                    obs, reward, terminated, truncated, info = env.step(action)
+                    done = terminated or truncated
+                    episode_reward += reward
 
-        episode_rewards.append(episode_reward)
-        episode_credits.append(info['player_credits'])
+                episode_rewards.append(episode_reward)
+                episode_credits.append(info['player_credits'])
 
-    results[algo] = {
-        'avg_reward': np.mean(episode_rewards),
-        'std_reward': np.std(episode_rewards),
-        'avg_credits': np.mean(episode_credits),
-        'std_credits': np.std(episode_credits),
-env.close()
+            results[algo] = {
+                'avg_reward': np.mean(episode_rewards),
+                'std_reward': np.std(episode_rewards),
+                'avg_credits': np.mean(episode_credits),
+                'std_credits': np.std(episode_credits),
+            }
 
-# Print comparison
-print("\n" + "=" * 70)
-print("ALGORITHM COMPARISON RESULTS")
-print("=" * 70)
-for algo, metrics in results.items():
-    print(f"\n{algo}:")
-    print(f"Average Reward: {metrics['avg_reward']:.2f} ± {metrics['std_reward']:.2f}")
-    print(f"Average Credits: {metrics['avg_credits']:.1f} ± {metrics['std_credits']:.1f}")
-print("=" * 70)
+            env.close()
 
-# Plot comparison
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    # Print comparison
+    print("\n" + "=" * 70)
+    print("ALGORITHM COMPARISON RESULTS")
+    print("=" * 70)
+    for algo, metrics in results.items():
+        print(f"\n{algo}:")
+        print(f"  Average Reward: {metrics['avg_reward']:.2f} ± {metrics['std_reward']:.2f}")
+        print(f"  Average Credits: {metrics['avg_credits']:.1f} ± {metrics['std_credits']:.1f}")
+    print("=" * 70)
 
-algos = list(results.keys())
-rewards = [results[a]['avg_reward'] for a in algos]
-reward_stds = [results[a]['std_reward'] for a in algos]
-credits = [results[a]['avg_credits'] for a in algos]
-credit_stds = [results[a]['std_credits'] for a in algos]
+    # Plot comparison
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
-ax1.bar(algos, rewards, yerr=reward_stds, capsize=5)
-ax1.set_title('Average Reward by Algorithm')
-ax1.set_ylabel('Average Reward')
-ax1.grid(True, alpha=0.3)
+    algos = list(results.keys())
+    rewards = [results[a]['avg_reward'] for a in algos]
+    reward_stds = [results[a]['std_reward'] for a in algos]
+    credits = [results[a]['avg_credits'] for a in algos]
+    credit_stds = [results[a]['std_credits'] for a in algos]
 
-ax2.bar(algos, credits, yerr=credit_stds, capsize=5)
-ax2.set_title('Average Credits by Algorithm')
-ax2.set_ylabel('Average Credits')
-ax2.grid(True, alpha=0.3)
+    ax1.bar(algos, rewards, yerr=reward_stds, capsize=5)
+    ax1.set_title('Average Reward by Algorithm')
+    ax1.set_ylabel('Average Reward')
+    ax1.grid(True, alpha=0.3)
 
-plt.tight_layout()
-plt.savefig('algorithm_comparison.png')
-print("\nComparison plot saved to algorithm_comparison.png")
-plt.close()
+    ax2.bar(algos, credits, yerr=credit_stds, capsize=5)
+    ax2.set_title('Average Credits by Algorithm')
+    ax2.set_ylabel('Average Credits')
+    ax2.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig('algorithm_comparison.png')
+    print("\nComparison plot saved to algorithm_comparison.png")
+    plt.close()
+
 
 if __name__ == "__main__":
     if not SB3_AVAILABLE:
-print("\nPlease install Stable Baselines3:")
-print("pip install stable-baselines3[extra]")
-exit(1)
+        pr int("\nPlease install Stable Baselines3:")
+        print("pip install stable-baselines3[extra]")
+        exit(1)
 
-# Set process title early for Task Manager visibility
-if SETPROCTITLE_AVAILABLE:
-    setproctitle("PnP Training")
-# Set console window title (more visible on Windows)
-set_console_title("PnP Training")
+    # Set process title early for Task Manager visibility
+    if SETPROCTITLE_AVAILABLE:
+        setproctitle("PnP Training")
+    # Set console window title (more visible on Windows)
+    set_console_title("PnP Training")
 
-import argparse
+    import argparse
 
-parser = argparse.ArgumentParser(
-    description='Train RL agent for Prospectors n Pirates',
-    formatter_class=argparse.RawDescriptionHelpFormatter,
-    epilog=""
+    parser = argparse.ArgumentParser(
+        description='Train RL agent for Prospectors n Pirates',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
 Examples:
-# Train a new PPO model
-python example_sb3.py --algorithm PPO --timesteps 100000
-
-# Long training with automatic checkpoints (saves every 1M timesteps)
-python example_sb3.py --algorithm PPO --timesteps 50000000
-
-# Train with efficiency mode (lower CPU usage, good for background training)
-python example_sb3.py --algorithm PPO --timesteps 100000 --efficiency-mode
-
-# Train with maximum CPU usage (default -- fastest training)
-python example_sb3.py --algorithm PPO --timesteps 100000
-
-# Train with custom thread count
-python example_sb3.py --algorithm PPO --timesteps 100000 --num-threads 4
-
-# Train with custom map size and opponents
-python example_sb3.py --algorithm PPO --timesteps 100000 --map-width 15 --map-height 15 --min-opponents 1 --max-opponents 5
-
-# Train with predefined asteroids
-python example_sb3.py --algorithm PPO --timesteps 100000 --predefined-asteroids --asteroid-config asteroids.config
-
-# Transfer learning: fine-tune an existing model
-python example_sb3.py --algorithm PPO --timesteps 50000 --transfer-from models/ppo_pnp_model
-# Transfer learning with frozen layers and custom learning rate
-python.example_sb3.py --algorithm PPO --timesteps 50000 --transfer-from models/ppo_pnp_model --freeze-layers --learning-rate 0.00001
-
-# Train on larger map with more opponents and predefined asteroids
-python.example_sb3.py --algorithm PPO --timesteps 200000 --map-width 20 --map-height 20 --min-opponents 3 --max-opponents 5 --max-steps 50
-
-# Evaluate a trained model
-python.example_sb3.py --algorithm PPO --evaluate --model-path models/ppo_pnp_model --render
+    # Train a new PPO model
+    python example_sb3.py --algorithm PPO --timesteps 100000
+    
+    # Long training with automatic checkpoints (saves every 1M timesteps)
+    python example_sb3.py --algorithm PPO --timesteps 50000000
+    
+    # Train with efficiency mode (lower CPU usage, good for background training)
+    python example_sb3.py --algorithm PPO --timesteps 100000 --efficiency-mode
+    
+    # Train with maximum CPU usage (default -- fastest training)
+    python example_sb3.py --algorithm PPO --timesteps 100000
+    
+    # Train with custom thread count
+    python example_sb3.py --algorithm PPO --timesteps 100000 --num-threads 4
+    
+    # Train with custom map size and opponents
+    python example_sb3.py --algorithm PPO --timesteps 100000 --map-width 15 --map-height 15 --min-opponents 1 --max-opponents 5
+    
+    # Train with predefined asteroids
+    python example_sb3.py --algorithm PPO --timesteps 100000 --predefined-asteroids --asteroid-config asteroids.config
+    
+    # Transfer learning: fine-tune an existing model
+    python example_sb3.py --algorithm PPO --timesteps 50000 --transfer-from models/ppo_pnp_model
+    # Transfer learning with frozen layers and custom learning rate
+    python.example_sb3.py --algorithm PPO --timesteps 50000 --transfer-from models/ppo_pnp_model --freeze-layers --learning-rate 0.00001
+    
+    # Train on larger map with more opponents and predefined asteroids
+    python.example_sb3.py --algorithm PPO --timesteps 200000 --map-width 20 --map-height 20 --min-opponents 3 --max-opponents 5 --max-steps 50
+    
+    # Evaluate a trained model
+    python.example_sb3.py --algorithm PPO --evaluate --model-path models/ppo_pnp_model --render
+"""
+    )
 
 parser.add_argument('--algorithm', type=str, default='PPO',
                     choices=['PPO', 'DQN', 'A2C', 'compare'],
