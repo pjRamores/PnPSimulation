@@ -68,11 +68,11 @@ import random
 
 class FlattenDictObsWrapper(gym.ObservationWrapper):
     """Wrapper that flattens a Dict observation space to a flat Box.
-    
-    The PnP environment returns `{'observation':..., 'action_mask':...}`. 
+
+    The PnP environment returns ``{'observation': ..., 'action_mask': ...}``.
     MaskablePPO handles the action_mask automatically, but regular PPO/DQN
-    expect a flat `Box` observation. This wrapper extracts only the
-    `'observation'` key so that models trained with `MlpPolicy` (e.g.
+    expect a flat ``Box`` observation.  This wrapper extracts only the
+    ``observation`` key so that models trained with ``MlpPolicy`` (e.g.
     MaskablePPO checkpoints loaded as regular PPO) can work.
     """
 
@@ -126,8 +126,8 @@ class ActionMaskWrapper(gym.Wrapper):
     """Wrapper that enforces action masking for standard PPO (without sb3-contrib).
 
     When sb3-contrib's MaskablePPO is not available, standard PPO ignores the
-    action_mask in the observation dict. This wrapper intercepts invalid actions
-    in `step()`, replaces them with a randomly-sampled *valid* action, and
+    action_mask in the observation dict.  This wrapper intercepts invalid actions
+    in ``step()``, replaces them with a randomly-sampled *valid* action, and
     applies a penalty so the model learns to avoid masked actions.
 
     The penalty-based approach is less efficient than true masked sampling
@@ -138,7 +138,7 @@ class ActionMaskWrapper(gym.Wrapper):
         single fallback), so the model can't game the fallback.
     """
 
-    INVALID_ACTION_PENALTY = 0.0  # No penalty -- action is silently replaced with a valid one
+    INVALID_ACTION_PENALTY = 0.0  # No penalty - action is silently replaced with a valid one
 
     def __init__(self, env: gym.Env):
         super().__init__(env)
@@ -156,7 +156,7 @@ class ActionMaskWrapper(gym.Wrapper):
             mask = self._last_action_mask
             action_int = int(action) if not isinstance(action, int) else action
             if 0 <= action_int < len(mask) and mask[action_int] == 0:
-                # Action is masked -- pick a random valid action instead
+                # Action is masked - pick a random valid action instead
                 valid_actions = [i for i in range(len(mask)) if mask[i] == 1]
                 if valid_actions:
                     action = int(np.random.choice(valid_actions))
