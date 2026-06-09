@@ -14,8 +14,6 @@ import os
 import logging
 from enum import IntEnum
 
-from game_simulator import original_action
-
 # Import stable-baselines3 models for enemy AI
 try:
     from stable_baselines3 import PPO, DQN, A2C
@@ -1288,9 +1286,9 @@ class ProspectorsPiratesEnv(gym.Env):
                 from gymnasium import spaces as _spaces
                 model_obs_space = temp_model.observation_space
                 if (isinstance(model_obs_space, _spaces.Dict) and
-                    isinstance(self.observation_space, _spaces.Dict) and
-                   'observation' in model_obs_space.spaces and
-                   'observation' in self.observation_space.spaces):
+                        isinstance(self.observation_space, _spaces.Dict) and
+                        'observation' in model_obs_space.spaces and
+                        'observation' in self.observation_space.spaces):
                     if model_obs_space['observation'].shape != self.observation_space['observation'].shape:
                         obs_compat = False
                         logger.info(f"Enemy model {model_path} has different obs size "
@@ -1569,7 +1567,7 @@ class ProspectorsPiratesEnv(gym.Env):
             if post is None:
                 return False, "no trading posts available"
 
-            distance = self.calculate_distance(ship['x'], ship['y'], post['x'], post['y'])
+            distance = self._calculate_distance(ship['x'], ship['y'], post['x'], post['y'])
             energy_cost = int(distance * self.config['energy_costs']['jump'])
 
             if ship['energy'] < energy_cost:
@@ -1593,12 +1591,12 @@ class ProspectorsPiratesEnv(gym.Env):
                 reason = "shields already up"
                 if self.warn_on_invalid_action or os.getenv('PNP_DEBUG_MASK'):
                     logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')} shields_up=True -> invalid: {reason}")
-                return False, f"shields already up"
+                return False, "shields already up"
             if ship['energy'] < self.config['energy_costs']['shields']:
                 reason = "insufficient energy for shields"
                 if self.warn_on_invalid_action or os.getenv('PNP_DEBUG_MASK'):
                     logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')} energy={ship.get('energy')} cost={self.config['energy_costs']['shields']} -> invalid: {reason}")
-                return False, f"insufficient energy for shields"
+                return False, "insufficient energy for shields"
 
             # Rule 12 (updated): RAISE_SHIELDS is only valid when there is an enemy threat in the same zone
             # This allows preemptive shield raising when an enemy is detected nearby
@@ -1611,18 +1609,18 @@ class ProspectorsPiratesEnv(gym.Env):
                 reason = "no enemy threat, shields not needed"
                 if self.warn_on_invalid_action or os.getenv('PNP_DEBUG_MASK'):
                     logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')} no active_targets -> invalid: {reason}")
-                return False, f"no enemy threat, shields not needed"
+                return False, "no enemy threat, shields not needed"
 
             enemy_in_same_zone = any((t['x'] == ship['x'] and t['y'] == ship['y']) for t in active_targets)
             if not enemy_in_same_zone:
                 reason = "no enemy in same zone, no threat"
                 if self.warn_on_invalid_action or os.getenv('PNP_DEBUG_MASK'):
-                    enemy_positions = [(t.get('name', '?', t.get('x'), t.get('y')) for t in active_targets)]
-                    logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')}.pos=({ship.get('x')},{ship.get('y')}).enemies={enemy_positions} -> invalid: {reason}")
+                    enemy_positions = [(t.get('name', '?'), t.get('x'), t.get('y')) for t in active_targets]
+                    logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')} pos=({ship.get('x')},{ship.get('y')}) enemies={enemy_positions} -> invalid: {reason}")
                 return False, f"no enemy in same zone, no threat"
 
             if self.warn_on_invalid_action or os.getenv('PNP_DEBUG_MASK'):
-                logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')}.pos=({ship.get('x')},{ship.get('y')}).has_enemy_in_zone -> ALLOWED")
+                logger.debug(f"RAISE_SHIELDS check: ship={ship.get('name')} pos=({ship.get('x')},{ship.get('y')}) has enemy in zone -> ALLOWED")
             return True, ""
 
         # Unknown action
@@ -1701,7 +1699,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 self.state_invalid_action_count += 1
                 if self.warn_on_invalid_action:
                     logger.warning(f"Action {ActionType(action).name} invalid for current state: {state_invalid_reason}. "
-                                   f"This should not happen with action masking!")
+                                 f"This should not happen with action masking!")
 
                 # ENFORCE action masking: force invalid action to appropriate valid action
                 # This prevents the model from executing invalid actions
@@ -1723,16 +1721,16 @@ class ProspectorsPiratesEnv(gym.Env):
                     else:
                         action = int(ActionType.WAIT)
                         if self.warn_on_invalid_action:
-                            logger.warning(f"Force {ActionType(original_action).name} -> WAIT (recharging)")
+                            logger.warning(f"Forcing {ActionType(original_action).name} -> WAIT (recharging)")
 
                 elif self.player_ship.get('destroyed', False):
                     action = int(ActionType.RESPAWN)
                     if self.warn_on_invalid_action:
-                        logger.warning(f"Forcing {ActionType(original_action).name} -> REPAWN (destroyed)")
+                        logger.warning(f"Forcing {ActionType(original_action).name} -> RESPAWN (destroyed)")
                 else:
                     # Not recharging, not destroyed: pick the best valid action
                     # from the action mask so the player doesn't get stuck on WAIT
-                    mask = self.get_action_mask(self.player_ship)
+                    mask = self._get_action_mask(self.player_ship)
                     # When energy is very low, prioritize RECHARGE to avoid getting stuck
                     if self.player_ship['energy'] <= self.config['energy_costs'].get('move', 5):
                         preferred_fallback_order = [
@@ -1776,7 +1774,7 @@ class ProspectorsPiratesEnv(gym.Env):
 
         reward = 0.0
         self.current_step += 1
-        self.action_counter += 1 # Increment action counter (tracks actions taken this episode)
+        self.action_counter += 1  # Increment action counter (tracks actions taken this episode)
 
         # Execute player action
         self.last_player_action = int(action) if action is not None else None
@@ -1828,11 +1826,11 @@ class ProspectorsPiratesEnv(gym.Env):
                 # Clear just_recharged flag for opponents (same as player) to prevent recharge lock
                 if opponent_action != int(ActionType.RECHARGE):
                     opponent['just_recharged'] = False
+                # store action id
                 try:
                     self.last_opponent_actions[i] = int(opponent_action)
                 except Exception:
                     self.last_opponent_actions[i] = None
-
                 # execute and capture result
                 r_op, info_op = self._execute_action(opponent_action, opponent, is_player=False)
                 # store a compact result for rendering, include optional payload
@@ -1852,9 +1850,9 @@ class ProspectorsPiratesEnv(gym.Env):
         # Update passive effects (recharging)
         self._update_passive_effects()
 
-        # Update combat states based on current positions. (set COMBAT when ships share a zone)
+        # Update combat states based on current positions (set COMBAT when ships share a zone)
         try:
-            self.update_combat_states()
+            self._update_combat_states()
         except Exception:
             # Non-fatal: if update_combat_states fails for any reason, log and continue
             logger.exception("Failed to update combat states")
@@ -1870,9 +1868,10 @@ class ProspectorsPiratesEnv(gym.Env):
         truncated = self.current_step >= self.max_steps
 
         observation = self._get_observation()
-        info = self.get_info()
+        info = self._get_info()
         info.update(action_info)
-            return observation, reward, terminated, truncated, info
+
+        return observation, reward, terminated, truncated, info
 
     def _execute_action(self, action: int, ship: dict, is_player: bool = True) -> Tuple[float, dict]:
         """Execute an action for a ship"""
@@ -1890,19 +1889,19 @@ class ProspectorsPiratesEnv(gym.Env):
                 info['payload'] = payload
             else:
                 r, success = result
-                reward += r
-                info['success'] = success
+            reward += r
+            info['success'] = success
 
         elif action in [ActionType.MOVE_NORTH, ActionType.MOVE_SOUTH,
-                        ActionType.MOVE_EAST, ActionType.MOVE_WEST]:
+                       ActionType.MOVE_EAST, ActionType.MOVE_WEST]:
             result = self._action_move(ship, action)
             if isinstance(result, tuple) and len(result) == 3:
                 r, success, payload = result
                 info['payload'] = payload
             else:
                 r, success = result
-                reward += r
-                info['success'] = success
+            reward += r
+            info['success'] = success
 
         elif action == ActionType.RECHARGE:
             success = self._action_recharge(ship)
@@ -1923,8 +1922,8 @@ class ProspectorsPiratesEnv(gym.Env):
                 info['payload'] = payload
             else:
                 r, success = result
-                reward += r
-                info['success'] = success
+            reward += r
+            info['success'] = success
 
         elif action == ActionType.JUMP_TO_ASTEROID:
             result = self._action_jump(ship)
@@ -1933,8 +1932,8 @@ class ProspectorsPiratesEnv(gym.Env):
                 info['payload'] = payload
             else:
                 r, success = result
-                reward += r
-                info['success'] = success
+            reward += r
+            info['success'] = success
 
         elif action == ActionType.JUMP_TO_TRADING_POST:
             result = self._action_jump_to_trading_post(ship)
@@ -1943,8 +1942,8 @@ class ProspectorsPiratesEnv(gym.Env):
                 info['payload'] = payload
             else:
                 r, success = result
-                reward += r
-                info['success'] = success
+            reward += r
+            info['success'] = success
 
         elif action == ActionType.SELL:
             result = self._action_sell(ship)
@@ -1953,8 +1952,8 @@ class ProspectorsPiratesEnv(gym.Env):
                 info['payload'] = payload
             else:
                 r, success = result
-                reward += r
-                info['success'] = success
+            reward += r
+            info['success'] = success
 
         elif action == ActionType.RESPAWN:
             # Store state before respawn to calculate cost
@@ -1975,335 +1974,334 @@ class ProspectorsPiratesEnv(gym.Env):
                 insurance_covered = respawn_cost - credits_paid
 
                 # Reward is negative based on credits lost (not fixed penalty)
-# Scale by a small factor to not overwhelm other rewards
-reward -= credits_paid * 0.1  # 10% of credits lost as negative reward
+                # Scale by a small factor to not overwhelm other rewards
+                reward -= credits_paid * 0.1  # 10% of credits lost as negative reward
 
-# Add payload with respawn details
-info['payload'] = {
-    'respawn_cost': respawn_cost,
-    'credits_paid': credits_paid,
-    'insurance_covered': insurance_covered,
-    'respawn_count': ship.get('respawn_count', 0)
-}
+                # Add payload with respawn details
+                info['payload'] = {
+                    'respawn_cost': respawn_cost,
+                    'credits_paid': credits_paid,
+                    'insurance_covered': insurance_covered,
+                    'respawn_count': ship.get('respawn_count', 0)
+                }
 
-return reward, info
+            return reward, info
+
+    def _action_mine(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
+        """Mine an asteroid at the current location"""
+        if ship['recharging']:
+            return -0.1, False
+
+        if ship['energy'] < self.config['energy_costs']['mine']:
+            return -0.1, False
+
+        # Find asteroid at current location
+        asteroid = self._get_entity_at_location(ship['x'], ship['y'], self.asteroids)
+        if asteroid is None:
+            return -0.1, False
+
+        # Capture pre-mine state for detailed reporting
+        abilities = ship.get('abilities', {})
+        energy_before = ship['energy']
+        asteroid_mass_before = asteroid['mass']
+        asteroid_nutr_before = asteroid['nutrinium']
+
+        ship['energy'] -= self.config['energy_costs']['mine']
+
+        # Calculate mining success based on nutrinium density
+        density = asteroid_nutr_before / max(asteroid_mass_before, 1)
+        success_chance = min(1.0, density * 10 * self.config['mining']['base_success_chance'])
+
+        # Build detailed mining payload
+        mine_details = {
+            'asteroid_x': asteroid['x'],
+            'asteroid_y': asteroid['y'],
+            '# Asteroid state before mining',
+            'ast_mass': f"(asteroid_mass_before)",
+            'ast_nutr': f"(asteroid_nutr_before)",
+            'ast_density': round(density, 4),
+            'success_chance': round(success_chance * 100, 1),
+            '# Miner skills',
+            'mine_accuracy': abilities.get('mine_accuracy', 0),
+            'mine_yield': abilities.get('mine_yield_multiplier', 1),
+            'mine_cost_skill': abilities.get('mine_cost', 2),
+            '# Energy',
+            'energy': f"{energy_before}->{ship['energy']}",
+            'energy_cost': self.config['energy_costs']['mine'],
+        }
+
+        if random.random() < success_chance:
+            # Successful mining
+            payout = random.randint(
+                self.config['mining']['min_payout'],
+                min(self.config['mining']['max_payout'], asteroid['nutrinium'])
+            )
+            asteroid['nutrinium'] -= payout
+            asteroid['mass'] -= payout
+            ship['nutrinium'] += payout
+
+            mine_details['payout'] = payout
+            mine_details['ast_mass_after'] = asteroid['mass']
+            mine_details['ast_nutr_after'] = asteroid['nutrinium']
+            mine_details['ship_nutr'] = ship['nutrinium']
+
+            return payout * 0.05, True, mine_details  # Reward for mining (precursor to SELL for credits)
+        else:
+            # Failed mining
+            asteroid['mass'] -= 1
+
+            mine_details['payout'] = 0
+            mine_details['ast_mass_after'] = asteroid['mass']
+            mine_details['ast_nutr_after'] = asteroid['nutrinium']
+
+            return -0.05, False, mine_details
 
 
-def _action_mine(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
-    """Mine an asteroid at the current location"""
-    if ship['recharging']:
-        return -0.1, False
+    def _action_move(self, ship: dict, action: int) -> Tuple[float, bool, Optional[dict]]:
+        """Move ship in a direction"""
+        if ship['energy'] < self.config['energy_costs']['move']:
+            return -0.1, False
 
-    if ship['energy'] < self.config['energy_costs']['mine']:
-        return -0.1, False
+        new_x, new_y = ship['x'], ship['y']
 
-    # Find asteroid at current location
-    asteroid = self._get_entity_at_location(ship['x'], ship['y'], self.asteroids)
-    if asteroid is None:
-        return -0.1, False
+        if action == ActionType.MOVE_NORTH:
+            new_y = max(0, ship['y'] - 1)
+        elif action == ActionType.MOVE_SOUTH:
+            new_y = min(self.map_height - 1, ship['y'] + 1)
+        elif action == ActionType.MOVE_EAST:
+            new_x = min(self.map_width - 1, ship['x'] + 1)
+        elif action == ActionType.MOVE_WEST:
+            new_x = max(0, ship['x'] - 1)
 
-    # Capture pre-mine state for detailed reporting
-    abilities = ship.get('abilities', {})
-    energy_before = ship['energy']
-    asteroid_mass_before = asteroid['mass']
-    asteroid_nutr_before = asteroid['nutrinium']
+        if new_x == ship['x'] and new_y == ship['y']:
+            return -0.1, False, {'from': (ship['x'], ship['y']), 'to': (new_x, new_y)}  # Tried to move off map
 
-    ship['energy'] -= self.config['energy_costs']['mine']
+        ship['x'] = new_x
+        ship['y'] = new_y
+        ship['energy'] -= self.config['energy_costs']['move']
+    return -0.01, True, {'from': (ship['x'] - 1 if action == ActionType.MOVE_EAST else -1 if action == ActionType.MOVE_WEST else 0), ship['y'] - 1 if action == ActionType.MOVE_SOUTH else -1 if action == ActionType.MOVE_NORTH else 0)}, 'to': (ship['x'], ship['y']))
 
-    # Calculate mining success based on nutrinium density
-    density = asteroid_nutr_before / max(asteroid_mass_before, 1)
-    success_chance = min(1.0, density * 10 * self.config['mining']['base_success_chance'])
+    def _action_recharge(self, ship: dict) -> bool:
+        """Start recharging"""
+        if ship['recharging']:
+            return False
+        ship['recharging'] = True
+        return True
 
-    # Build detailed mining payload
-    mine_details = {
-        'asteroid_x': asteroid['x'],
-        'asteroid_y': asteroid['y'],
-        '# Asteroid state before mining',
-        'ast_mass': f"(asteroid_mass_before)",
-        'ast_nutr': f"(asteroid_nutr_before)",
-        'ast_density': round(density, 4),
-        'success_chance': round(success_chance * 100, 1),
-        '# Miner skills',
-        'mine_accuracy': abilities.get('mine_accuracy', 0),
-        'mine_yield': abilities.get('mine_yield_multiplier', 1),
-        'mine_cost_skill': abilities.get('mine_cost', 2),
-        '# Energy',
-        'energy': f"{energy_before}->{ship['energy']}",
-        'energy_cost': self.config['energy_costs']['mine'],
-    }
+    def _action_recharge_end(self, ship: dict) -> bool:
+        """Stop recharging"""
+        if not ship['recharging']:
+            return False
+        ship['recharging'] = False
+        ship['just_recharged'] = True  # Prevent immediate re-recharging
+        return True
 
-    if random.random() < success_chance:
-        # Successful mining
-        payout = random.randint(
-            self.config['mining']['min_payout'],
-            min(self.config['mining']['max_payout'], asteroid['nutrinium'])
-        )
-        asteroid['nutrinium'] -= payout
-        asteroid['mass'] -= payout
-        ship['nutrinium'] += payout
+    def _action_raise_shields(self, ship: dict) -> bool:
+        """Raise shields for a ship.
 
-        mine_details['payout'] = payout
-        mine_details['ast_mass_after'] = asteroid['mass']
-        mine_details['ast_nutr_after'] = asteroid['nutrinium']
-        mine_details['ship_nutr'] = ship['nutrinium']
+        Returns True on success, False otherwise.
+        Requires shields to be currently down
+        Requires sufficient energy to power shields (uses config['energy_costs']['shields'])
+        Deducts energy cost when raising shields
 
-        return payout * 0.05, True, mine_details  # Reward for mining (precursor to SELL for credits)
-    else:
-        # Failed mining
-        asteroid['mass'] -= 1
+        """
+        if ship.get('shields_up', False):
+            return False
 
-        mine_details['payout'] = 0
-        mine_details['ast_mass_after'] = asteroid['mass']
-        mine_details['ast_nutr_after'] = asteroid['nutrinium']
+        # Need enough energy to raise shields
+        cost = self.config.get('energy_costs', {}).get('shields', 1)
+        if ship.get('energy', 0) < cost:
+            return False
 
-        return -0.05, False, mine_details
+        ship['shields_up'] = True
+        ship['energy'] = max(0, ship.get('energy', 0) - cost)
 
+        # Mark ship as in combat at its own position (shields are same-zone only)
+        ship['in_combat'] = True
+        ship.setdefault('combat_opponent_positions', set()).add((ship['x'], ship['y']))
 
-def _action_move(self, ship: dict, action: int) -> Tuple[float, bool, Optional[dict]]:
-    """Move ship in a direction"""
-    if ship['energy'] < self.config['energy_costs']['move']:
-        return -0.1, False
+        return True
 
-    new_x, new_y = ship['x'], ship['y']
+    def _action_jump(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
+        """Jump to the best asteroid (by nutrinium-to-distance score).
 
-    if action == ActionType.MOVE_NORTH:
-        new_y = max(0, ship['y'] - 1)
-    elif action == ActionType.MOVE_SOUTH:
-        new_y = min(self.map_height - 1, ship['y'] + 1)
-    elif action == ActionType.MOVE_EAST:
-        new_x = min(self.map_width - 1, ship['x'] + 1)
-    elif action == ActionType.MOVE_WEST:
-        new_x = max(0, ship['x'] - 1)
+        Uses the same scoring as _get_top_asteroids so the model's observation
+        of top asteroids aligns with where JUMP actually goes.
+        """
+        if ship['recharging']:
+            return -0.1, False, None
 
-    if new_x == ship['x'] and new_y == ship['y']:
-        return -0.1, False, {'from': (ship['x'], ship['y']), 'to': (new_x, new_y)}  # Tried to move off map
+        # Find best asteroid by score (nutrinium value vs distance), not just nearest
+        top = self._get_top_asteroids(ship['x'], ship['y'], count=1)
+        if not top:
+            return -0.1, False, None
 
-    ship['x'] = new_x
-    ship['y'] = new_y
-    ship['energy'] -= self.config['energy_costs']['move']
-return -0.01, True, {'from': (ship['x'] - 1 if action == ActionType.MOVE_EAST else -1 if action == ActionType.MOVE_WEST else 0), ship['y'] - 1 if action == ActionType.MOVE_SOUTH else -1 if action == ActionType.MOVE_NORTH else 0)}, 'to': (ship['x'], ship['y']))
+        best = top[0]
+        target = None
+        for a in self.asteroids:
+            if a['x'] == best['x'] and a['y'] == best['y']:
+                target = a
+                break
+        if target is None:
+            return -0.1, False, None
 
-def _action_recharge(self, ship: dict) -> bool:
-    """Start recharging"""
-    if ship['recharging']:
-        return False
-    ship['recharging'] = True
-    return True
+        distance = self._calculate_distance(ship['x'], ship['y'], target['x'], target['y'])
 
-def _action_recharge_end(self, ship: dict) -> bool:
-    """Stop recharging"""
-    if not ship['recharging']:
-        return False
-    ship['recharging'] = False
-    ship['just_recharged'] = True  # Prevent immediate re-recharging
-    return True
+        # Prevent jumping to same location (distance 0) -- this is a no-op
+        if distance == 0:
+            return -0.1, False, {'error': 'best asteroid is at current location'}
 
-def _action_raise_shields(self, ship: dict) -> bool:
-    """Raise shields for a ship.
+        energy_cost = int(distance * self.config['energy_costs']['jump'])
+        if ship['energy'] < energy_cost:
+            return -0.1, False, None
 
-    Returns True on success, False otherwise.
-    Requires shields to be currently down
-    Requires sufficient energy to power shields (uses config['energy_costs']['shields'])
-    Deducts energy cost when raising shields
+        # Jump to asteroid
+        old_x, old_y = ship['x'], ship['y']
+        ship['x'] = target['x']
+        ship['y'] = target['y']
+        ship['energy'] -= energy_cost
 
-    """
-    if ship.get('shields_up', False):
-        return False
+        payload = {'from': (old_x, old_y), 'to': (ship['x'], ship['y']), 'distance': distance, 'energy_cost': energy_cost}
+        return -0.01, True, payload
 
-    # Need enough energy to raise shields
-    cost = self.config.get('energy_costs', {}).get('shields', 1)
-    if ship.get('energy', 0) < cost:
-        return False
+    def _action_jump_to_trading_post(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
+        """Jump to nearest trading post"""
+        if ship['recharging']:
+            return -0.1, False, None
 
-    ship['shields_up'] = True
-    ship['energy'] = max(0, ship.get('energy', 0) - cost)
+        # Find nearest trading post
+        nearest_post = self.get_nearest_entity(ship['x'], ship['y'], self.trading_posts)
+        if nearest_post is None:
+            return -0.1, False, None
 
-    # Mark ship as in combat at its own position (shields are same-zone only)
-    ship['in_combat'] = True
-    ship.setdefault('combat_opponent_positions', set()).add((ship['x'], ship['y']))
+        distance = self._calculate_distance(ship['x'], ship['y'], nearest_post['x'], nearest_post['y'])
 
-    return True
-
-def _action_jump(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
-    """Jump to the best asteroid (by nutrinium-to-distance score).
-
-    Uses the same scoring as _get_top_asteroids so the model's observation
-    of top asteroids aligns with where JUMP actually goes.
-    """
-    if ship['recharging']:
-        return -0.1, False, None
-
-    # Find best asteroid by score (nutrinium value vs distance), not just nearest
-    top = self._get_top_asteroids(ship['x'], ship['y'], count=1)
-    if not top:
-        return -0.1, False, None
-
-    best = top[0]
-    target = None
-    for a in self.asteroids:
-        if a['x'] == best['x'] and a['y'] == best['y']:
-            target = a
-            break
-    if target is None:
-        return -0.1, False, None
-
-    distance = self._calculate_distance(ship['x'], ship['y'], target['x'], target['y'])
-
-    # Prevent jumping to same location (distance 0) -- this is a no-op
-    if distance == 0:
-        return -0.1, False, {'error': 'best asteroid is at current location'}
-
+        # Prevent jumping to same location (distance 0) -- should SELL instead
+        if distance == 0:
+            return -0.1, False, {'error': 'already at trading post, use SELL instead'}
     energy_cost = int(distance * self.config['energy_costs']['jump'])
+
     if ship['energy'] < energy_cost:
         return -0.1, False, None
 
-    # Jump to asteroid
+    # Jump to trading post
     old_x, old_y = ship['x'], ship['y']
-    ship['x'] = target['x']
-    ship['y'] = target['y']
+    ship['x'] = nearest_post['x']
+    ship['y'] = nearest_post['y']
     ship['energy'] -= energy_cost
 
     payload = {'from': (old_x, old_y), 'to': (ship['x'], ship['y']), 'distance': distance, 'energy_cost': energy_cost}
     return -0.01, True, payload
 
-def _action_jump_to_trading_post(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
-    """Jump to nearest trading post"""
-    if ship['recharging']:
-        return -0.1, False, None
-
-    # Find nearest trading post
-    nearest_post = self.get_nearest_entity(ship['x'], ship['y'], self.trading_posts)
-    if nearest_post is None:
-        return -0.1, False, None
-
-    distance = self._calculate_distance(ship['x'], ship['y'], nearest_post['x'], nearest_post['y'])
-
-    # Prevent jumping to same location (distance 0) -- should SELL instead
-    if distance == 0:
-        return -0.1, False, {'error': 'already at trading post, use SELL instead'}
-energy_cost = int(distance * self.config['energy_costs']['jump'])
-
-if ship['energy'] < energy_cost:
-    return -0.1, False, None
-
-# Jump to trading post
-old_x, old_y = ship['x'], ship['y']
-ship['x'] = nearest_post['x']
-ship['y'] = nearest_post['y']
-ship['energy'] -= energy_cost
-
-payload = {'from': (old_x, old_y), 'to': (ship['x'], ship['y']), 'distance': distance, 'energy_cost': energy_cost}
-return -0.01, True, payload
-
-def _action_sell(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
-    """Sell nutrinium at a trading post"""
-    if ship['recharging']:
-        return -0.1, False, None
-
-    # Check if at trading post
-    trading_post = self.get_entity_at_location(ship['x'], ship['y'], self.trading_posts)
-    if trading_post is None:
-        return -0.1, False, None
-
-    if ship['nutrinium'] <= 0:
-        return -0.1, False, None
-
-    # Sell all nutrinium
-    nutrinium_sold = ship['nutrinium']
-    credits_earned = nutrinium_sold * self.config['market']['nutrinium_price']
-    ship['nutrinium'] = 0
-    ship['credits'] += credits_earned
-
-    payload = {'nutrinium_sold': nutrinium_sold, 'credits_earned': credits_earned}
-    return credits_earned * 0.5, True, payload  # Reward for selling (increased from 0.1 to 0.5)
-
-def _action_respawn(self, ship: dict) -> bool:
-    """Respawn a destroyed ship"""
-    if not ship.get('destroyed', False):
-        return False
-
-    # Calculate respawn cost (increases each time)
-    base_ship_cost = self.config['market']['ship_cost']
-    respawn_count = ship.get('respawn_count', 0)
-    respawn_cost = base_ship_cost * (respawn_count + 1)
-
-    # Deduct cost from credits (can go negative)
-    ship['credits'] -= respawn_cost
-
-    # Reset ship state
-    ship['destroyed'] = False
-    ship['health'] = self.config['max_health']
-    ship['energy'] = 0.0  # Start with 0 energy after respawn
-    ship['nutrinium'] = 0.0  # Lose all nutrinium
-    ship['shields_up'] = False
-    ship['recharging'] = False
-    ship['state'] = 'READY'
-
-    # Respawn at random location
-    ship['x'] = random.randint(0, self.map_width - 1)
-    ship['y'] = random.randint(0, self.map_height - 1)
-
-    # Increment respawn counter
-    ship['respawn_count'] += 1
-
-    return True
-
-def _action_attack(self, ship: dict, is_player: bool) -> Tuple[float, bool, Optional[dict]]:
-    """Attack an enemy ship in the same zone.
-
-    Player behavior: select the weakest active opponent (lowest combat score) as target.
-    Opponent behavior: select the weakest ship in the same zone (player or other opponents).
-
-    When a target is destroyed, transfer its nutrinium to the attacker automatically.
-    """
-    if ship['recharging']:
-        return -0.1, False, None
-
-    if ship['energy'] < self.config['energy_costs']['attack']:
-        return -0.1, False, None
-
-    # Determine targets depending on who is attacking
-    if is_player:
-        # Select weakest active opponent in the same zone
-        same_zone_targets = [
-            t for t in self.opponent_ships
-            if not t.get('destroyed', False)
-            and t['x'] == ship['x'] and t['y'] == ship['y']
-        ]
-        if not same_zone_targets:
+    def _action_sell(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
+        """Sell nutrinium at a trading post"""
+        if ship['recharging']:
             return -0.1, False, None
 
-        # Compute raw score for sorting (reuse _calculate_enemy_combat_score with raw=True)
-        scored = [(self._calculate_enemy_combat_score(t, raw=True), t) for t in same_zone_targets]
-        scored.sort(key=lambda x: x[0])  # ascending -> weakest first
-        target = scored[0][1]
-
-    else:
-        # Opponent attacking: target any ship in the same zone (player or other opponents)
-        # Build list of all potential targets in the same zone
-        same_zone_targets = []
-
-        # Consider the player as a target
-        if not self.player_ship.get('destroyed', False) and self.player_ship['x'] == ship['x']:
-        if self.player_ship['x'] == ship['x']:
-            same_zone_targets.append(self.player_ship)
-
-        # Consider other opponents as targets
-        for other in self.opponent_ships:
-            if other is ship:
-                continue  # Don't attack self
-            if other.get('destroyed', False):
-                continue
-            if other['x'] == ship['x'] and other['y'] == ship['y']:
-                same_zone_targets.append(other)
-
-        if not same_zone_targets:
+        # Check if at trading post
+        trading_post = self.get_entity_at_location(ship['x'], ship['y'], self.trading_posts)
+        if trading_post is None:
             return -0.1, False, None
 
-        # Select the weakest target (lowest combat score)
-        scored = [(self.calculate_enemy_combat_score(t, raw=True), t) for t in same_zone_targets]
-        scored.sort(key=lambda x: x[0])  # ascending -> weakest first
-        target = scored[0][1]
+        if ship['nutrinium'] <= 0:
+            return -0.1, False, None
+
+        # Sell all nutrinium
+        nutrinium_sold = ship['nutrinium']
+        credits_earned = nutrinium_sold * self.config['market']['nutrinium_price']
+        ship['nutrinium'] = 0
+        ship['credits'] += credits_earned
+
+        payload = {'nutrinium_sold': nutrinium_sold, 'credits_earned': credits_earned}
+        return credits_earned * 0.5, True, payload  # Reward for selling (increased from 0.1 to 0.5)
+
+    def _action_respawn(self, ship: dict) -> bool:
+        """Respawn a destroyed ship"""
+        if not ship.get('destroyed', False):
+            return False
+
+        # Calculate respawn cost (increases each time)
+        base_ship_cost = self.config['market']['ship_cost']
+        respawn_count = ship.get('respawn_count', 0)
+        respawn_cost = base_ship_cost * (respawn_count + 1)
+
+        # Deduct cost from credits (can go negative)
+        ship['credits'] -= respawn_cost
+
+        # Reset ship state
+        ship['destroyed'] = False
+        ship['health'] = self.config['max_health']
+        ship['energy'] = 0.0  # Start with 0 energy after respawn
+        ship['nutrinium'] = 0.0  # Lose all nutrinium
+        ship['shields_up'] = False
+        ship['recharging'] = False
+        ship['state'] = 'READY'
+
+        # Respawn at random location
+        ship['x'] = random.randint(0, self.map_width - 1)
+        ship['y'] = random.randint(0, self.map_height - 1)
+
+        # Increment respawn counter
+        ship['respawn_count'] += 1
+
+        return True
+
+    def _action_attack(self, ship: dict, is_player: bool) -> Tuple[float, bool, Optional[dict]]:
+        """Attack an enemy ship in the same zone.
+
+        Player behavior: select the weakest active opponent (lowest combat score) as target.
+        Opponent behavior: select the weakest ship in the same zone (player or other opponents).
+
+        When a target is destroyed, transfer its nutrinium to the attacker automatically.
+        """
+        if ship['recharging']:
+            return -0.1, False, None
+
+        if ship['energy'] < self.config['energy_costs']['attack']:
+            return -0.1, False, None
+
+        # Determine targets depending on who is attacking
+        if is_player:
+            # Select weakest active opponent in the same zone
+            same_zone_targets = [
+                t for t in self.opponent_ships
+                if not t.get('destroyed', False)
+                and t['x'] == ship['x'] and t['y'] == ship['y']
+            ]
+            if not same_zone_targets:
+                return -0.1, False, None
+
+            # Compute raw score for sorting (reuse _calculate_enemy_combat_score with raw=True)
+            scored = [(self._calculate_enemy_combat_score(t, raw=True), t) for t in same_zone_targets]
+            scored.sort(key=lambda x: x[0])  # ascending -> weakest first
+            target = scored[0][1]
+
+        else:
+            # Opponent attacking: target any ship in the same zone (player or other opponents)
+            # Build list of all potential targets in the same zone
+            same_zone_targets = []
+
+            # Consider the player as a target
+            if not self.player_ship.get('destroyed', False) and self.player_ship['x'] == ship['x']:
+            if self.player_ship['x'] == ship['x']:
+                same_zone_targets.append(self.player_ship)
+
+            # Consider other opponents as targets
+            for other in self.opponent_ships:
+                if other is ship:
+                    continue  # Don't attack self
+                if other.get('destroyed', False):
+                    continue
+                if other['x'] == ship['x'] and other['y'] == ship['y']:
+                    same_zone_targets.append(other)
+
+            if not same_zone_targets:
+                return -0.1, False, None
+
+            # Select the weakest target (lowest combat score)
+            scored = [(self.calculate_enemy_combat_score(t, raw=True), t) for t in same_zone_targets]
+            scored.sort(key=lambda x: x[0])  # ascending -> weakest first
+            target = scored[0][1]
 
         if target is None:
             return -0.1, False, None
