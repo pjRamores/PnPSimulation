@@ -469,8 +469,8 @@ class EarlyDeathPenaltyReward(RewardComponent):
     def __init__(self, base_penalty: float = 50.0):
         """
         Args:
-             base_penalty: Base penalty value when destroyed at the very start of episode.
-                            The actual penalty is scaled by the fraction of episode remaining.
+            base_penalty: Base penalty value when destroyed at the very start of episode.
+                        The actual penalty is scaled by the fraction of episode remaining.
         """
         self.base_penalty = float(base_penalty)
 
@@ -523,7 +523,7 @@ class CreditProgressReward(RewardComponent):
     """
 
     def __init__(self, credit_bonus_scale: float = 0.1, idle_penalty: float = -0.05,
-                  idle_threshold_steps: int = 30):
+                 idle_threshold_steps: int = 30):
         """
         Args:
             credit_bonus_scale: Reward per credit earned (applied when credits increase)
@@ -533,7 +533,7 @@ class CreditProgressReward(RewardComponent):
         self.credit_bonus_scale = float(credit_bonus_scale)
         self.idle_penalty = float(idle_penalty)
         self.idle_threshold_steps = int(idle_threshold_steps)
-        self._last_credits = 0 # Track credits from previous step
+        self._last_credits = 0  # Track credits from previous step
 
     def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
         try:
@@ -684,14 +684,14 @@ class PlacementReward(RewardComponent):
     episode, ranking the player against all opponent ships by credits.
 
     Reward structure (for N participants total):
-        - 1st place:                +first_place_bonus  (default +20)
-        - Top 3 (podium):           +podium_bonus       (default: +10)
-        - Linear placement reward:  +scale * (N - rank) / (N - 1)  in [0, scale]
-        - Bottom 3:                 +bottom_penalty     (default -10, additional)
-        - Last place:               +last_place_penalty (default -10, additional)
+      - 1st place:                +first_place_bonus  (default +20)
+      - Top 3 (podium):           +podium_bonus       (default: +10)
+      - Linear placement reward:  +scale * (N - rank) / (N - 1)  in [0, scale]
+      - Bottom 3:                 +bottom_penalty     (default -10, additional)
+      - Last place:               +last_place_penalty (default -10, additional)
 
     These stack: e.g. finishing 1st gives +first + +podium + +scale,
-    finishing last with 10 players gives +0 + bottom+ last = -20.
+    finishing last with 10 players gives +0 + bottom + last = -20.
     """
 
     def __init__(self,
@@ -753,7 +753,7 @@ class PlacementReward(RewardComponent):
             if rank == n:
                 reward += self.last_place_penalty
 
-            self.applied_step = current_step
+            self._applied_step = current_step
             return reward
         except Exception:
             return 0.0
@@ -762,8 +762,8 @@ class PlacementReward(RewardComponent):
 class EnergyStarvationPenalty(RewardComponent):
     """Per-step penalty when energy is dangerously low and the agent is not recharging.
 
-    Encourages proactive recharging instead of drifting into energy-starved combat loops where
-    the agent can't move, mine, or sell effectively.
+    Encourages proactive recharging instead of drifting into energy-starved combat loops
+    where the agent can't move, mine, or sell effectively.
     """
 
     def __init__(self, threshold_frac: float = 0.15, penalty: float = -0.05):
