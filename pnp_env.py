@@ -84,7 +84,7 @@ class RewardConfig:
 
 class RewardCalculator:
     """Applies RewardConfig to raw action rewards and optional shaping.
-    
+
     The compute method takes the raw reward returned by action execution and
     returns a final scalar reward that will be accumulated by the environment.
     """
@@ -115,7 +115,7 @@ class RewardCalculator:
             try:
                 health_frac = ship.get('health', 0) / max(1.0, getattr(env, 'config', {}).get('max_health', 100))
                 if health_frac < 0.2 and a in (ActionType.RECHARGE, ActionType.RECHARGE_END, ActionType.MOVE_NORTH,
-                                               ActionType.MOVE_SOUTH, ActionType.MOVE_EAST, ActionType.MOVE_WEST):
+                                              ActionType.MOVE_SOUTH, ActionType.MOVE_EAST, ActionType.MOVE_WEST):
                     # small encouragement to take defensive/mobility actions when low HP
                     reward += 0.01
             except Exception:
@@ -128,8 +128,8 @@ class ProspectorsPiratesEnv(gym.Env):
     """
     Prospectors n Pirates Game Environment
 
-    A space mining game where ships can mine asteroids for nutrinium or attack other
-    ships to steal their cargo. The goal is to maximize credits earned.
+    A space mining game where ships can mine asteroids for nutrinium or attack
+    other ships to steal their cargo. The goal is to maximize credits earned.
     """
 
     metadata = {'render_modes': ['human', 'rgb_array'], 'render_fps': 4}
@@ -211,17 +211,17 @@ class ProspectorsPiratesEnv(gym.Env):
             'max_credits': 10000,
             'max_skill_points': 20,
             'energy_costs': {
-                'mine': .5,
+                'mine': 5,
                 'move': 2,
                 'jump': 5,  # per unit distance
                 'attack': 1,  # minimum
-                'shields': .1,
+                'shields': 1,
             },
             'combat': {
                 'base_hit_chance': 0.5,
                 'base_shield_resistance': 0.25,
                 'recharge_penalty': 0.2,
-                'damage_variance': 0.5,  # + - 50%
+                'damage_variance': 0.5,  # +- 50%
             },
             'mining': {
                 'base_success_chance': 0.5,
@@ -240,7 +240,7 @@ class ProspectorsPiratesEnv(gym.Env):
             # Total nutrinium budget = nutrinium_per_player * total_players * (1 +/- budget_variance)
             # This ensures enough nutrinium for all players to mine competitively,
             # but not so much that accumulating credits becomes trivial.
-            'nutrinium_per_player': 50,         # target: nutrinium units available per player
+            'nutrinium_per_player': 50,         # target nutrinium units available per player
             'nutrinium_budget_variance': 0.2,   # +/-20% random variance on total budget
             # Beta distribution shape parameters for nutrinium concentration per asteroid.
             # alpha < beta -> skew toward lower concentrations (more poor asteroids).
@@ -254,11 +254,11 @@ class ProspectorsPiratesEnv(gym.Env):
             'asteroid_mass_max': 80,
             # Ship abilities max values for normalization
             'abilities': {
-                'energy_max': -10,
+                'energy_max': 10,
                 'recharge_energy': 10,
                 'mine_accuracy': 10,
                 'mine_yield_multiplier': 5,
-                'mine_cost': .10,
+                'mine_cost': 10,
                 'combat_salvage_multiplier': 5,
                 'attack_accuracy': 10,
                 'attack_power': 10,
@@ -267,7 +267,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 'jump_distance': 10,
             },
             # Observation parameters
-            'top_asteroids_count': 5,  # Number of top asteroids to include in observation
+            'top_asteroids_count': 5  # Number of top asteroids to include in observation
         }
 
         # Reward shaping - configurable; allow injection of custom RewardConfig
@@ -342,7 +342,7 @@ class ProspectorsPiratesEnv(gym.Env):
                     # CreditProgressReward: rewards credit gains, penalizes zero-credit idling
                     # IdleLoopPenalty: penalizes getting stuck in non-productive loops
                     # EndOfEpisodeCreditReward: strong end-of-episode signal for credits (0.5 per credit)
-                    # InappropriateActionPenalty: penalizes contextually bad actions (e.g., MINE with no asteroid)
+                    # InappropriateActionPenalty: penalizes contextually bad actions (e.g. MINE with no asteroid)
                     comps = [
                         DistanceToAsteroidReward(),
                         SurvivalReward(),
@@ -350,19 +350,20 @@ class ProspectorsPiratesEnv(gym.Env):
                         IdleLoopPenalty(),
                         EndOfEpisodeCreditReward(),
                         EndOfEpisodeNutriniumReward(),  # Penalizes holding unsold nutrinium at episode end
-                        EarlyDeathPenaltyReward(),      # Penalizes early death proportional to remaining episode
+                        EarlyDeathPenaltyReward(),       # Penalizes early death proportional to remaining episode
                         InappropriateActionPenalty(),
                         # --- new components (analysis-driven fixes) ---
-                        PlacementReward(),              # Strong terminal reward based on final rank vs opponents
-                        SellBonusReward(),              # Reinforces the mine -> sell loop
-                        EnergyStarvationPenalty(),      # Discourages low-energy drifting / chronic energy starvation
-                        OverriddenActionPenalty(),      # Penalty when env had to override an infeasible chosen action
+                        PlacementReward(),               # Strong terminal reward based on final rank vs opponents
+                        SellBonusReward(),               # Reinforces the mine -> sell loop
+                        EnergyStarvationPenalty(),       # Discourages low-energy drifting / chronic energy starvation
+                        OverriddenActionPenalty(),       # Penalty when env had to override an infeasible chosen action
                     ]
 
                 self.reward_calc = RewardCalculatorComposite(self.reward_config, comps)
                 logger.info(f"Using RewardCalculatorComposite with components: {[c.__class__.__name__ for c in comps]}")
             except Exception as e:
-                logger.warning(f"Failed to construct RewardCalculatorComposite::{e}. Falling back to simple RewardCalculator.")
+                logger.warning(f"Failed to construct RewardCalculatorComposite: {e}. Falling back to simple RewardCalculator.")
+                self.reward_calc = RewardCalculator(self.reward_config)
         else:
             self.reward_calc = RewardCalculator(self.reward_config)
 
@@ -382,29 +383,29 @@ class ProspectorsPiratesEnv(gym.Env):
 
         # Observation space: flattened representation of game state
         # Enhanced ship state (based on full metadata):
-        # - Basic: x, y, energy, health, nutrinium, credits (6)
-        # - State flags: recharging, shields_up, state_ready (3)
-        # - Skill points: total, spent (2)
-        # - Abilities: 12 ability values
-        # - Action counter: actions taken this episode (1)
+        #   - Basic: x, y, energy, health, nutrinium, credits (6)
+        #   - State flags: recharging, shields_up, state_ready (3)
+        #   - Skill points: total, spent (2)
+        #   - Abilities: 12 ability values
+        #   - Action counter: actions taken this episode (1)
         # Total ship state: 24 values
 
         # + Strategic context (high-signal features): 8 values
-        # - at_asteroid: 1 if on asteroid with nutrinium, 0 otherwise
-        # - at_trading_post: 1 if on trading post, 0 otherwise
-        # - has_nutrinium: nutrinium / cargo_cap (how full is cargo)
-        # - enemy_in_zone: 1 if enemy at same location, 0 otherwise
-        # - nearest_asteroid_dist: distance / map_diag (normalized)
-        # - nearest_trading_post_dist: distance / map_diag (normalized)
-        # - energy_ratio: energy / max_energy (redundant but grouped with context)
-        # - episode_progress: current_step / max_steps
-
+        #   - at_asteroid: 1 if on asteroid with nutrinium, 0 otherwise
+        #   - at_trading_post: 1 if on trading post, 0 otherwise
+        #   - has_nutrinium: nutrinium / cargo_cap (how full is cargo)
+        #   - enemy_in_zone: 1 if enemy at same location, 0 otherwise
+        #   - nearest_asteroid_dist: distance / map_diag (normalized)
+        #   - nearest_trading_post_dist: distance / map_diag (normalized)
+        #   - energy_ratio: energy / max_energy (redundant but grouped with context)
+        #   - episode_progress: current_step / max_steps
+        #
         # + Local sensor data (grid around ship)
         # + Top 5 asteroids (x, y, mass, nutrinium, distance, score) = 6 values each = 30 total
         # + Nearest trading post (x, y, distance) = 3 values
         # + Two enemy types at player location:
-        # - Strongest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
-        # - Weakest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
+        #   - Strongest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
+        #   - Weakest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
         # Total enemy info: 14 values
 
         ship_state_size = 24  # Complete ship state (including action counter)
@@ -413,6 +414,7 @@ class ProspectorsPiratesEnv(gym.Env):
         top_asteroids_size = self.config['top_asteroids_count'] * 6  # 5 asteroids * 6 features each
         trading_post_size = 3  # x, y, distance
         enemy_info_size = 14  # 2 enemies * 7 features each
+
         obs_size = (
             ship_state_size +
             strategic_context_size +
@@ -554,7 +556,7 @@ class ProspectorsPiratesEnv(gym.Env):
                         ai_type = OpponentAIType.HEURISTIC
 
             ship = {
-                'name': f'E{i + 1}',  # Enemy ship name (E1, E2, E3, etc.)
+                'name': f'E{i+1}',  # Enemy ship name (E1, E2, E3, etc.)
                 'id': f'opponent_{i}',
                 'ai_type': ai_type,  # Store AI behavior type
                 'model_path': model_path if use_model else None,  # Model path for MODEL type enemies
@@ -563,7 +565,7 @@ class ProspectorsPiratesEnv(gym.Env):
                 'energy': self.config['max_energy'],
                 'health': self.config['max_health'],
                 'nutrinium': 0,  # Start with 0 nutrinium (must mine to collect)
-                'credits': 0,  # Start with 0 credits (must sell to earn)
+                'credits': 0,    # Start with 0 credits (must sell to earn)
                 'recharging': False,
                 'just_recharged': False,
                 'shields_up': False,
@@ -593,7 +595,8 @@ class ProspectorsPiratesEnv(gym.Env):
         if not self.use_predefined_asteroids or not self.asteroids:
             # Random asteroid generation using jittered-grid (stratified sampling)
             # This reduces clustering by partitioning the map into k x k buckets
-            # and placing at most one asteroid per selected bucket at a random location inside that bucket.
+            # and placing at most one asteroid per selected bucket at a random
+            # location inside that bucket.
             num_cells = max(1, self.map_width * self.map_height)
             desired = int(self.map_width * self.map_height * self.config['asteroid_density'])
             num_asteroids = max(0, min(desired, num_cells))
@@ -670,24 +673,34 @@ class ProspectorsPiratesEnv(gym.Env):
                 base_budget = self.config.get('nutrinium_per_player', 50) * total_players
                 variance = self.config.get('nutrinium_budget_variance', 0.2)
                 budget = int(base_budget * random.uniform(1.0 - variance, 1.0 + variance))
-                budget = max(total_players, budget) # at least 1 per player
+                budget = max(total_players, budget)  # at least 1 per player
 
                 if self.asteroids:
                     n_ast = len(self.asteroids)
                     alpha = self.config.get('nutrinium_beta_alpha', 1.5)
                     beta_param = self.config.get('nutrinium_beta_beta', 8.0)
 
-                    # Step 2: Draw a target concentration for each asteroid from a Beta distribution.
-                    # Beta(1.5, 8) produces a right-skewed distribution: many poor asteroids, few rich ones.
-                    # The concentrations are applied directly to each asteroid's mass so the richness pattern is preserved regardless of budget scaling.
-                    target_concentrations = [random.betavariate(alpha, beta_param) for _ in range(n_ast)]
+                    # Step 2: Draw a target concentration for each asteroid from a
+                    # Beta distribution. Beta(1.5, 8) produces a right-skewed
+                    # distribution: many poor asteroids, few rich ones.
+                    # The concentrations are applied directly to each asteroid's
+                    # mass so the richness pattern is preserved regardless of
+                    # budget scaling.
+                    target_concentrations = [
+                        random.betavariate(alpha, beta_param) for _ in range(n_ast)
+                    ]
 
-                    # Step 3: Assign raw nutrinium = floor(concentration * mass).
-                    # This gives each asteroid its "natural" deposit based on the drawn concentration. Rich asteroids (high Beta draw) get a large share of their mass as nutrinium; poor ones get little.
-                    raw_nutr = [int(c * a['mass']) for c, a in zip(target_concentrations, self.asteroids)]
+                    # Step 3: Assign raw nutrinium = floor(concentration ✕ mass).
+                    # This gives each asteroid its "natural" deposit based on the
+                    # drawn concentration. Rich asteroids (high Beta draw) get a
+                    # large share of their mass as nutrinium; poor ones get little.
+                    raw_nutr = [
+                        int(c * a['mass']) for c, a in zip(target_concentrations, self.asteroids)
+                    ]
                     raw_total = sum(raw_nutr)
 
-                    # Step 4: Scale to hit the budget while preserving concentration ordering and capping each asteroid at its mass.
+                    # Step 4: Scale to hit the budget while preserving concentration
+                    # ordering and capping each asteroid at its mass.
                     if raw_total > 0 and raw_total != budget:
                         # First pass: proportional scaling
                         scale = budget / raw_total
@@ -697,536 +710,542 @@ class ProspectorsPiratesEnv(gym.Env):
                         for i in range(n_ast):
                             allocated[i] = min(allocated[i], self.asteroids[i]['mass'])
 
-                            # Second pass: distribute remaining deficit/surplus among non-capped asteroids, respecting mass ceiling.
-                            deficit = budget - sum(allocated)
-                            if deficit > 0:
-                                # Sort uncapped asteroids by remaining headroom (desc)
-                                headroom = [(self.asteroids[i]['mass'] - allocated[i], i) for i in range(n_ast) if allocated[i] < self.asteroids[i]['mass']]
-                                headroom.sort(reverse=True)
-                                for _, idx in headroom:
-                                    give = min(deficit, self.asteroids[idx]['mass'] - allocated[idx])
-                                    allocated[idx] += give
-                                    deficit -= give
-                                    if deficit <= 0:
+                        # Second pass: distribute remaining deficit/surplus among
+                        # non-capped asteroids, respecting mass ceiling.
+                        deficit = budget - sum(allocated)
+                        if deficit > 0:
+                            # Sort uncapped asteroids by remaining headroom (desc)
+                            headroom = [
+                                (self.asteroids[i]['mass'] - allocated[i], i)
+                                for i in range(n_ast)
+                                if allocated[i] < self.asteroids[i]['mass']
+                            ]
+                            headroom.sort(reverse=True)
+                            for _, idx in headroom:
+                                give = min(deficit, self.asteroids[idx]['mass'] - allocated[idx])
+                                allocated[idx] += give
+                                deficit -= give
+                                if deficit <= 0:
                                     break
-                                elif deficit < 0:
-                                    # Over budget -- trim from richest first
-                                    surplus = -deficit
-                                    richest = sorted(range(n_ast), key=lambda i: allocated[i], reverse=True)
-                                    for idx in richest:
-                                        take = min(surplus, allocated[idx])
-                                        allocated[idx] -= take
-                                        surplus -= take
-                                        if surplus <= 0:
-                                            break
-                            elif raw_total == 0:
-                                # All concentrations were ~0; distribute budget evenly
-                                per = budget // n_ast
-                                allocated = [min(per, a['mass']) for a in self.asteroids]
-                                leftover = budget - sum(allocated)
-                                for i in range(n_ast):
-                                    if leftover <= 0:
-                                        break
-                                    give = min(leftover, self.asteroids[i]['mass'] - allocated[i])
-                                    allocated[i] += give
-                                    leftover -= give
-                            else:
-                                allocated = raw_nutr
+                        elif deficit < 0:
+                            # Over budget - trim from richest first
+                            surplus = -deficit
+                            richest = sorted(range(n_ast), key=lambda i: allocated[i], reverse=True)
+                            for idx in richest:
+                                take = min(surplus, allocated[idx])
+                                allocated[idx] -= take
+                                surplus -= take
+                                if surplus <= 0:
+                                    break
+                    elif raw_total == 0:
+                        # All concentrations were ~0; distribute budget evenly
+                        per = budget // n_ast
+                        allocated = [min(per, a['mass']) for a in self.asteroids]
+                        leftover = budget - sum(allocated)
+                        for i in range(n_ast):
+                            if leftover <= 0:
+                                break
+                            give = min(leftover, self.asteroids[i]['mass'] - allocated[i])
+                            allocated[i] += give
+                            leftover -= give
+                    else:
+                        allocated = raw_nutr
 
-                            # Step 5: Final assignment
-                            for i, asteroid in enumerate(self.asteroids):
-                                asteroid['nutrinium'] = min(allocated[i], asteroid['mass'])
+                    # Step 5: Final assignment
+                    for i, asteroid in enumerate(self.asteroids):
+                        asteroid['nutrinium'] = min(allocated[i], asteroid['mass'])
 
-            # Generate trading posts
-            self.trading_posts = []
+        # Generate trading posts
+        self.trading_posts = []
 
-            if self.use_predefined_asteroids:
-                # Load predefined trading posts from the same config file
-                predefined_posts = self._load_predefined_trading_posts()
-                if predefined_posts is not None:
-                    # Deep copy the predefined trading posts
-                    import copy
-                    self.trading_posts = copy.deepcopy(predefined_posts)
+        if self.use_predefined_asteroids:
+            # Load predefined trading posts from the same config file
+            predefined_posts = self._load_predefined_trading_posts()
+            if predefined_posts is not None:
+                # Deep copy the predefined trading posts
+                import copy
+                self.trading_posts = copy.deepcopy(predefined_posts)
 
-            # Ensure asteroids and trading posts do not overlap and that trading posts are unique
-            asteroid_positions = {(a['x'], a['y']) for a in self.asteroids}
+        # Ensure asteroids and trading posts do not overlap and that trading posts are unique
+        asteroid_positions = {(a['x'], a['y']) for a in self.asteroids}
 
-            # If we have predefined trading posts loaded, remove any that overlap asteroids
-            if self.trading_posts:
-                filtered_posts = []
-                seen_posts = set()
-                for post in self.trading_posts:
-                    key = (post['x'], post['y'])
-                    if key in asteroid_positions:
-                        logger.warning(f"Predefined trading post at {key} overlaps an asteroid and will be ignored.")
-                        continue
-                    if key in seen_posts:
-                        logger.warning(f"Duplicate predefined trading post at {key} ignored.")
-                        continue
-                    seen_posts.add(key)
-                    filtered_posts.append(post)
-                self.trading_posts = filtered_posts
+        # If we have predefined trading posts loaded, remove any that overlap asteroids
+        if self.trading_posts:
+            filtered_posts = []
+            seen_posts = set()
+            for post in self.trading_posts:
+                key = (post['x'], post['y'])
+                if key in asteroid_positions:
+                    logger.warning(f"Predefined trading post at {key} overlaps an asteroid and will be ignored.")
+                    continue
+                if key in seen_posts:
+                    logger.warning(f"Duplicate predefined trading post at {key} ignored.")
+                    continue
+                seen_posts.add(key)
+                filtered_posts.append(post)
+            self.trading_posts = filtered_posts
 
-# If not enough trading posts (or none), generate remaining using jittered-grid
-# to ensure good spatial coverage and avoid clustering. Trading posts will
-# never overlap asteroids or each other.
-needed = self.config.get('trading_post_count', 0) - len(self.trading_posts)
-if needed > 0:
-    # Build set of occupied positions (asteroids + already placed posts)
-    occupied = set(asteroid_positions) | {(p['x'], p['y']) for p in self.trading_posts}
+        # If not enough trading posts (or none), generate remaining using jittered-grid
+        # to ensure good spatial coverage and avoid clustering. Trading posts will
+        # never overlap asteroids or each other.
+        needed = self.config.get('trading_post_count', 0) - len(self.trading_posts)
+        if needed > 0:
+            # Build set of occupied positions (asteroids + already placed posts)
+            occupied = set(asteroid_positions) | {(p['x'], p['y']) for p in self.trading_posts}
 
-    # If the map is small or needed is large, fall back to random sampling
-    num_cells = self.map_width * self.map_height
-    if needed >= num_cells - len(occupied):
-        # Not enough free cells or heavy filling; sample from available
-        available = [(x, y) for x in range(self.map_width) for y in range(self.map_height) if (x, y) not in occupied]
-        if needed > len(available):
-            logger.warning(f"Not enough free cells to place {needed} additional trading posts; only {len(available)} available. Placing as many as possible.")
-            needed = len(available)
-        chosen_posts = random.sample(available, k=needed) if needed > 0 else []
-        for (tx, ty) in chosen_posts:
-            self.trading_posts.append({'x': tx, 'y': ty})
-    else:
-        # Use stratified placement: choose `needed` buckets across a k x k grid
-        # where k*k >= needed, then pick a random location inside each bucket
-        k = int(math.ceil(math.sqrt(needed)))
-        cell_w = float(self.map_width) / k
-        cell_h = float(self.map_height) / k
+            # If the map is small or needed is large, fall back to random sampling
+            num_cells = self.map_width * self.map_height
+            if needed >= num_cells - len(occupied):
+                # Not enough free cells or heavy filling; sample from available
+                available = [(x, y) for x in range(self.map_width) for y in range(self.map_height) if (x, y) not in occupied]
+                if needed > len(available):
+                    logger.warning(f"Not enough free cells to place {needed} additional trading posts; only {len(available)} available. Placing as many as possible.")
+                    needed = len(available)
+                chosen_posts = random.sample(available, k=needed) if needed > 0 else []
+                for (tx, ty) in chosen_posts:
+                    self.trading_posts.append({'x': tx, 'y': ty})
+            else:
+                # Use stratified placement: choose `needed` buckets across a k x k grid
+                # where k*k >= needed, then pick a random location inside each bucket
+                k = int(math.ceil(math.sqrt(needed)))
+                cell_w = float(self.map_width) / k
+                cell_h = float(self.map_height) / k
 
-        buckets = [(r, c) for r in range(k) for c in range(k)]
-        chosen_buckets = random.sample(buckets, k=needed) if needed < len(buckets) else buckets
+                buckets = [(r, c) for r in range(k) for c in range(k)]
+                chosen_buckets = random.sample(buckets, k=needed) if needed < len(buckets) else buckets
 
-        placed_posts = set((p['x'], p['y']) for p in self.trading_posts)
+                placed_posts = set((p['x'], p['y']) for p in self.trading_posts)
 
-        for (r, c) in chosen_buckets:
-            # Determine integer ranges for this bucket
-            x_min = int(math.floor(c * cell_w))
-            x_max = int(math.floor((c + 1) * cell_w)) - 1
-            y_min = int(math.floor(r * cell_h))
-            y_max = int(math.floor((r + 1) * cell_h)) - 1
+                for (r, c) in chosen_buckets:
+                    # Determine integer ranges for this bucket
+                    x_min = int(math.floor(c * cell_w))
+                    x_max = int(math.floor((c + 1) * cell_w)) - 1
+                    y_min = int(math.floor(r * cell_h))
+                    y_max = int(math.floor((r + 1) * cell_h)) - 1
 
-            # Clamp ranges to map bounds
-            x_min = max(0, min(self.map_width - 1, x_min))
-            x_max = max(0, min(self.map_width - 1, max(x_min, x_max)))
-            y_min = max(0, min(self.map_height - 1, y_min))
-            y_max = max(0, min(self.map_height - 1, max(y_min, y_max)))
+                    # Clamp ranges to map bounds
+                    x_min = max(0, min(self.map_width - 1, x_min))
+                    x_max = max(0, min(self.map_width - 1, max(x_min, x_max)))
+                    y_min = max(0, min(self.map_height - 1, y_min))
+                    y_max = max(0, min(self.map_height - 1, max(y_min, y_max)))
 
-            # Choose a random candidate inside bucket avoiding occupied cells
-found = False
-tries = 0
-while not found and tries < 12:
-    if x_min > x_max or y_min > y_max:
-        tx = random.randint(0, self.map_width - 1)
-        ty = random.randint(0, self.map_height - 1)
-    else:
-        tx = random.randint(x_min, x_max)
-        ty = random.randint(y_min, y_max)
+                    # Choose a random candidate inside bucket avoiding occupied cells
+                    found = False
+                    tries = 0
+                    while not found and tries < 12:
+                        if x_min > x_max or y_min > y_max:
+                            tx = random.randint(0, self.map_width - 1)
+                            ty = random.randint(0, self.map_height - 1)
+                        else:
+                            tx = random.randint(x_min, x_max)
+                            ty = random.randint(y_min, y_max)
 
-    if (tx, ty) in occupied or (tx, ty) in placed_posts:
-        # try nearby
-        tx = min(self.map_width - 1, max(0, tx + random.randint(-1, 1)))
-        ty = min(self.map_height - 1, max(0, ty + random.randint(-1, 1)))
-        tries += 1
-        continue
+                        if (tx, ty) in occupied or (tx, ty) in placed_posts:
+                            # try nearby
+                            tx = min(self.map_width - 1, max(0, tx + random.randint(-1, 1)))
+                            ty = min(self.map_height - 1, max(0, ty + random.randint(-1, 1)))
+                            tries += 1
+                            continue
 
-    # Accept this post
-    self.trading_posts.append({'x': tx, 'y': ty})
-    placed_posts.add((tx, ty))
-    found = True
+                        # Accept this post
+                        self.trading_posts.append({'x': tx, 'y': ty})
+                        placed_posts.add((tx, ty))
+                        found = True
 
-if not found:
-    # Fallback: find any available cell
-    for xx in range(self.map_width):
-        for yy in range(self.map_height):
-            if (xx, yy) not in occupied and (xx, yy) not in placed_posts:
-                self.trading_posts.append({'x': xx, 'y': yy})
-                placed_posts.add((xx, yy))
-                found = True
-                break
-    if not found:
-        logger.warning('Unable to place an expected trading post due to lack of free cells.')
+                    if not found:
+                        # Fallback: find any available cell
+                        for xx in range(self.map_width):
+                            for yy in range(self.map_height):
+                                if (xx, yy) not in occupied and (xx, yy) not in placed_posts:
+                                    self.trading_posts.append({'x': xx, 'y': yy})
+                                    placed_posts.add((xx, yy))
+                                    found = True
+                            if found:
+                                break
+                        if not found:
+                            logger.warning('Unable to place an expected trading post due to lack of free cells.')
 
-# Build spatial lookup cache for fast entity-at-location queries
-self._rebuild_location_cache()
+        # Build spatial lookup cache for fast entity-at-location queries
+        self._rebuild_location_cache()
 
-observation = self.get_observation()
-info = self._get_info()
+        observation = self.get_observation()
+        info = self._get_info()
 
-return observation, info
+        return observation, info
 
-def _load_predefined_asteroids(self) -> List[dict]:
-    """
-    Load predefined asteroids from configuration file.
+    def _load_predefined_asteroids(self) -> List[dict]:
+        """
+        Load predefined asteroids from configuration file.
 
-    Config file format (JSON):
-    {
-        "10x10": [
-            {"x": 2, "y": -3, "mass": .30, "nutrinium": .20},
-            {"x": 5, "y": -7, "mass": .45, "nutrinium": .35},
-        ],
-        "15x15": [...],
-    }
-
-    Returns:
-        List of asteroid dictionaries
-    """
-    import json
-
-    # Use cached data if available
-    if self._predefined_asteroids_cache is not None:
-        return self._predefined_asteroids_cache
-
-    dimension_key = f"{self.map_width}x{self.map_height}"
-
-    try:
-        if not os.path.exists(self.asteroid_config_path):
-            logger.warning(f"Asteroid config file not found: {self.asteroid_config_path}")
-            logger.warning(f" Falling back to random asteroid generation.")
-            return None
-
-        with open(self.asteroid_config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-
-        if dimension_key not in config:
-            logger.warning(f"No asteroid configuration found for dimension '{dimension_key}' in {self.asteroid_config_path}")
-            logger.warning(f" Available dimensions: {list(config.keys())}")
-            logger.warning(f" Falling back to random asteroid generation.")
-            return None
-
-        dimension_config = config[dimension_key]
-
-        # Support both old format (list) and new format (dict with asteroids/trading_posts)
-        if isinstance(dimension_config, list):
-            # Old format - just a list of asteroids
-            asteroids_data = dimension_config
-        elif isinstance(dimension_config, dict) and 'asteroids' in dimension_config:
-            # New format - dict with 'asteroids' and optionally 'trading_posts'
-            asteroids_data = dimension_config['asteroids']
-        else:
-            logger.warning(f"Invalid asteroid config format for dimension '{dimension_key}'!")
-            logger.warning(f" Expected list or dict with 'asteroids' key")
-            logger.warning(f" Falling back to random asteroid generation.")
-            return None
-
-        # Validate asteroid data and deduplicate by (x, y)
-        asteroids = []
-        seen = set()
-        for i, asteroid_data in enumerate(asteroids_data):
-if not all(k in asteroid_data for k in ['x', 'y', 'mass', 'nutrinium']):
-    logger.warning(f"Invalid asteroid data at index {i}: {asteroid_data}")
-    continue
-
-# Validate coordinates
-ax = int(asteroid_data['x'])
-ay = int(asteroid_data['y'])
-if not (0 <= ax < self.map_width and 0 <= ay < self.map_height):
-    logger.warning(f"Asteroid at index {i} has out-of-bounds coordinates: ({ast
-        continue
-
-        tx = int(post_data['x'])
-        ty = int(post_data['y'])
-        # Validate coordinates
-        if not (0 <= tx < self.map_width and 0 <= ty < self.map_height):
-            logger.warning(f"Trading post at index {i} has out-of-bounds coordinates: ({post_data['x']}, {post_data['y']})")
-            continue
-
-        key = (tx, ty)
-        if key in seen:
-            logger.warning(f"Duplicate trading post position at index {i} ignored: ({tx},{ty})")
-            continue
-        seen.add(key)
-        posts.append({'x': tx, 'y': ty})
-
-    if not posts:
-        logger.info(f"No valid trading posts found in config for dimension '{dimension_key}'")
-        return None
-
-    logger.info(f"Loaded {len(posts)} predefined trading posts from {self.asteroid_config_path} for dimension {dimension_key}")
-    return posts
-
-except json.JSONDecodeError as e:
-    logger.warning(f"Invalid JSON in config file (trading posts): {e}")
-    return None
-except Exception as e:
-    logger.warning(f"Error loading predefined trading posts: {e}")
-    return None
-
-
-def load_predefined_start_position(self) -> Optional[dict]:
-    """
-    Load predefined starting position from configuration file.
-
-    Config file format (JSON):
-    {
-        "10x10": {
-            "player_x": 5,
-            "player_y": 5
-        },
-        "15x15": {
-            "player_x": 7,
-            "player_y": 7
-        }
-    }
-
-    Returns:
-        Dictionary with player_x and player_y, or None if not found
-    """
-    import json
-
-    # Use cached data if available
-    if self._predefined_start_cache is not None:
-        return self._predefined_start_cache
-
-    dimension_key = f"{self.map_width}x{self.map_height}"
-
-    try:
-        if not os.path.exists(self.start_position_config_path):
-            logger.warning(f"Start position config file not found: {self.start_position_config_path}")
-            logger.warning(f"Falling back to random starting position.")
-            return None
-
-        with open(self.start_position_config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-
-        if dimension_key not in config:
-            logger.warning(f"No start position configuration found for dimension '{dimension_key}' in {self.start_position_config_path}")
-            logger.warning(f"Available dimensions: {list(config.keys())}")
-            logger.warning(f"Falling back to random starting position.")
-            return None
-
-        start_data = config[dimension_key]
-
-        # Validate start position data
-        if not all(k in start_data for k in ['player_x', 'player_y']):
-            logger.warning(f"Invalid start position data (missing player_x or player_y): {start_data}")
-            logger.warning(f"Falling back to random starting position.")
-            return None
-
-        # Validate coordinates
-        if not (0 <= start_data['player_x'] < self.map_width and 0 <= start_data['player_y'] < self.map_height):
-            logger.warning(f"Start position out of bounds: ({start_data['player_x']}, {start_data['player_y']})")
-            logger.warning(f"Falling back to random starting position.")
-            return None
-
-        start_position = {
-            'player_x': int(start_data['player_x']),
-            'player_y': int(start_data['player_y'])
+        Config file format (JSON):
+        {
+            "10x10": [
+                {"x": 2, "y": -3, "mass": .30, "nutrinium": .20},
+                {"x": 5, "y": -7, "mass": .45, "nutrinium": .35},
+            ],
+            "15x15": [...],
         }
 
-        # Cache the loaded data
-        self._predefined_start_cache = start_position
-        logger.info(f"Loaded predefined start position from {self.start_position_config_path} for dimension {dimension_key}: ({start_position['player_x']}, {start_position['player_y']})")
+        Returns:
+            List of asteroid dictionaries
+        """
+        import json
 
-        return start_position
+        # Use cached data if available
+        if self._predefined_asteroids_cache is not None:
+            return self._predefined_asteroids_cache
 
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in start position config file: {self.start_position_config_path}: {e}")
-        logger.warning(f"Falling back to random starting position.")
-except Exception as e:
-    logger.error(f"Error loading start position config: {e}")
-    logger.warning(f" Falling back to random starting position.")
-    return None
+        dimension_key = f"{self.map_width}x{self.map_height}"
 
-def load_enemy_model_paths(self) -> Optional[List[str]]:
-    """
-    Load enemy model paths from configuration file.
+        try:
+            if not os.path.exists(self.asteroid_config_path):
+                logger.warning(f"Asteroid config file not found: {self.asteroid_config_path}")
+                logger.warning(f" Falling back to random asteroid generation.")
+                return None
 
-    Config file format (text file, one model path per line):
-    models/ppo_v1_pnp_model
-    models/ppo_v5_pnp_model
-    # Lines starting with # are comments
+            with open(self.asteroid_config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
 
-    Returns:
-        List of model paths, or None if no valid models found
-    """
-    # Use cached data if available
-    if self._enemy_model_paths is not None:
-        return self._enemy_model_paths
+            if dimension_key not in config:
+                logger.warning(f"No asteroid configuration found for dimension '{dimension_key}' in {self.asteroid_config_path}")
+                logger.warning(f" Available dimensions: {list(config.keys())}")
+                logger.warning(f" Falling back to random asteroid generation.")
+                return None
 
-    try:
-        if not os.path.exists(self.enemy_models_config_path):
-            logger.info(f"Enemy models config file not found: {self.enemy_models_config_path}")
-            logger.info(f"No model-based enemies will be created.")
-            return None
+            dimension_config = config[dimension_key]
 
-        model_paths = []
-        with open(self.enemy_models_config_path, 'r', encoding='utf-8') as f:
-            for line_num, line in enumerate(f, 1):
-                # Strip whitespace
-                line = line.strip()
+            # Support both old format (list) and new format (dict with asteroids/trading_posts)
+            if isinstance(dimension_config, list):
+                # Old format - just a list of asteroids
+                asteroids_data = dimension_config
+            elif isinstance(dimension_config, dict) and 'asteroids' in dimension_config:
+                # New format - dict with 'asteroids' and optionally 'trading_posts'
+                asteroids_data = dimension_config['asteroids']
+            else:
+                logger.warning(f"Invalid asteroid config format for dimension '{dimension_key}'!")
+                logger.warning(f" Expected list or dict with 'asteroids' key")
+                logger.warning(f" Falling back to random asteroid generation.")
+                return None
 
-                # Skip empty lines and comments
-                if not line or line.startswith('#'):
+            # Validate asteroid data and deduplicate by (x, y)
+            asteroids = []
+            seen = set()
+            for i, asteroid_data in enumerate(asteroids_data):
+                if not all(k in asteroid_data for k in ['x', 'y', 'mass', 'nutrinium']):
+                    logger.warning(f"Invalid asteroid data at index {i}: {asteroid_data}")
                     continue
 
-                # Add model path
-                model_paths.append(line)
+        # Validate coordinates
+        ax = int(asteroid_data['x'])
+        ay = int(asteroid_data['y'])
+        if not (0 <= ax < self.map_width and 0 <= ay < self.map_height):
+            logger.warning(f"Asteroid at index {i} has out-of-bounds coordinates: ({ast
+                continue
 
-        if not model_paths:
-            logger.info(f"No model paths found in {self.enemy_models_config_path}")
-            logger.info(f"No model-based enemies will be created.")
+                tx = int(post_data['x'])
+                ty = int(post_data['y'])
+                # Validate coordinates
+                if not (0 <= tx < self.map_width and 0 <= ty < self.map_height):
+                    logger.warning(f"Trading post at index {i} has out-of-bounds coordinates: ({post_data['x']}, {post_data['y']})")
+                    continue
+
+                key = (tx, ty)
+                if key in seen:
+                    logger.warning(f"Duplicate trading post position at index {i} ignored: ({tx},{ty})")
+                    continue
+                seen.add(key)
+                posts.append({'x': tx, 'y': ty})
+
+            if not posts:
+                logger.info(f"No valid trading posts found in config for dimension '{dimension_key}'")
+                return None
+
+            logger.info(f"Loaded {len(posts)} predefined trading posts from {self.asteroid_config_path} for dimension {dimension_key}")
+            return posts
+
+        except json.JSONDecodeError as e:
+            logger.warning(f"Invalid JSON in config file (trading posts): {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"Error loading predefined trading posts: {e}")
             return None
 
-        # Cache the loaded paths
-        self._enemy_model_paths = model_paths
-        logger.info(f"Loaded {len(model_paths)} enemy model paths from {self.enemy_models_config_path}")
 
-        return model_paths
+    def load_predefined_start_position(self) -> Optional[dict]:
+        """
+        Load predefined starting position from configuration file.
 
-    except Exception as e:
-        logger.warning(f"Error loading enemy model paths: {e}")
-        return None
+        Config file format (JSON):
+        {
+            "10x10": {
+                "player_x": 5,
+                "player_y": 5
+            },
+            "15x15": {
+                "player_x": 7,
+                "player_y": 7
+            }
+        }
 
-def generate_random_abilities(self) -> dict:
-    """
-    Generate a random set of abilities for this episode.
-    All participants (player and enemies) share the same abilities per episode.
-    """
-    return {
-        'energy_max': random.randint(0, 5),
-        'recharge_energy': random.randint(0, 3),
-        'mine_accuracy': random.randint(0, 3),
-        'mine_yield_multiplier': random.randint(1, 2),
-        'mine_cost': random.randint(1, 3),
-        'combat_salvage_multiplier': random.randint(0, 2),
-        'sensor_range': random.randint(1, 3),
-        'attack_accuracy': random.randint(0, 5),
-        'attack_power': random.randint(0, 5),
-        'evade': random.randint(0, 3),
-        'shield_strength': random.randint(0, 3),
-        'jump_distance': random.randint(0, 3),
-    }
+        Returns:
+            Dictionary with player_x and player_y, or None if not found
+        """
+        import json
 
-def _load_enemy_model(self, model_path: str):
-    """
-    Load a trained model for enemy AI.
+        # Use cached data if available
+        if self._predefined_start_cache is not None:
+            return self._predefined_start_cache
 
-    Args:
-        model_path: Path to the model file
+        dimension_key = f"{self.map_width}x{self.map_height}"
 
-    Returns:
-        Loaded model instance, or None if loading fails
-    """
-    # Check cache first
-    if model_path in self._enemy_models:
-        return self._enemy_models[model_path]
-
-    # Check if stable-baselines3 is available
-    if not SB3_AVAILABLE:
-        logger.warning(f"stable-baselines3 not available, cannot load enemy model: {model_path}")
-        return None
-
-    try:
-        # Try to load model without environment first to check action space
-        temp_model = None
-
-        # Try PPO first (most common)
-        if 'ppo' in model_path.lower():
-            try:
-                temp_model = PPO.load(model_path)
-            except Exception:
-                pass
-
-if temp_model is None and 'dqn' in model_path.lower():
-    try:
-        temp_model = DQN.load(model_path)
-    except Exception:
-        pass
-
-    # Try A2C if both failed
-    if temp_model is None:
         try:
-            temp_model = A2C.load(model_path)
+            if not os.path.exists(self.start_position_config_path):
+                logger.warning(f"Start position config file not found: {self.start_position_config_path}")
+                logger.warning(f"Falling back to random starting position.")
+                return None
+
+            with open(self.start_position_config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+
+            if dimension_key not in config:
+                logger.warning(f"No start position configuration found for dimension '{dimension_key}' in {self.start_position_config_path}")
+                logger.warning(f"Available dimensions: {list(config.keys())}")
+                logger.warning(f"Falling back to random starting position.")
+                return None
+
+            start_data = config[dimension_key]
+
+            # Validate start position data
+            if not all(k in start_data for k in ['player_x', 'player_y']):
+                logger.warning(f"Invalid start position data (missing player_x or player_y): {start_data}")
+                logger.warning(f"Falling back to random starting position.")
+                return None
+
+            # Validate coordinates
+            if not (0 <= start_data['player_x'] < self.map_width and 0 <= start_data['player_y'] < self.map_height):
+                logger.warning(f"Start position out of bounds: ({start_data['player_x']}, {start_data['player_y']})")
+                logger.warning(f"Falling back to random starting position.")
+                return None
+
+            start_position = {
+                'player_x': int(start_data['player_x']),
+                'player_y': int(start_data['player_y'])
+            }
+
+            # Cache the loaded data
+            self._predefined_start_cache = start_position
+            logger.info(f"Loaded predefined start position from {self.start_position_config_path} for dimension {dimension_key}: ({start_position['player_x']}, {start_position['player_y']})")
+
+            return start_position
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in start position config file: {self.start_position_config_path}: {e}")
+            logger.warning(f"Falling back to random starting position.")
+    except Exception as e:
+        logger.error(f"Error loading start position config: {e}")
+        logger.warning(f" Falling back to random starting position.")
+        return None
+
+    def load_enemy_model_paths(self) -> Optional[List[str]]:
+        """
+        Load enemy model paths from configuration file.
+
+        Config file format (text file, one model path per line):
+        models/ppo_v1_pnp_model
+        models/ppo_v5_pnp_model
+        # Lines starting with # are comments
+
+        Returns:
+            List of model paths, or None if no valid models found
+        """
+        # Use cached data if available
+        if self._enemy_model_paths is not None:
+            return self._enemy_model_paths
+
+        try:
+            if not os.path.exists(self.enemy_models_config_path):
+                logger.info(f"Enemy models config file not found: {self.enemy_models_config_path}")
+                logger.info(f"No model-based enemies will be created.")
+                return None
+
+            model_paths = []
+            with open(self.enemy_models_config_path, 'r', encoding='utf-8') as f:
+                for line_num, line in enumerate(f, 1):
+                    # Strip whitespace
+                    line = line.strip()
+
+                    # Skip empty lines and comments
+                    if not line or line.startswith('#'):
+                        continue
+
+                    # Add model path
+                    model_paths.append(line)
+
+            if not model_paths:
+                logger.info(f"No model paths found in {self.enemy_models_config_path}")
+                logger.info(f"No model-based enemies will be created.")
+                return None
+
+            # Cache the loaded paths
+            self._enemy_model_paths = model_paths
+            logger.info(f"Loaded {len(model_paths)} enemy model paths from {self.enemy_models_config_path}")
+
+            return model_paths
+
+        except Exception as e:
+            logger.warning(f"Error loading enemy model paths: {e}")
+            return None
+
+    def generate_random_abilities(self) -> dict:
+        """
+        Generate a random set of abilities for this episode.
+        All participants (player and enemies) share the same abilities per episode.
+        """
+        return {
+            'energy_max': random.randint(0, 5),
+            'recharge_energy': random.randint(0, 3),
+            'mine_accuracy': random.randint(0, 3),
+            'mine_yield_multiplier': random.randint(1, 2),
+            'mine_cost': random.randint(1, 3),
+            'combat_salvage_multiplier': random.randint(0, 2),
+            'sensor_range': random.randint(1, 3),
+            'attack_accuracy': random.randint(0, 5),
+            'attack_power': random.randint(0, 5),
+            'evade': random.randint(0, 3),
+            'shield_strength': random.randint(0, 3),
+            'jump_distance': random.randint(0, 3),
+        }
+
+    def _load_enemy_model(self, model_path: str):
+        """
+        Load a trained model for enemy AI.
+
+        Args:
+            model_path: Path to the model file
+
+        Returns:
+            Loaded model instance, or None if loading fails
+        """
+        # Check cache first
+        if model_path in self._enemy_models:
+            return self._enemy_models[model_path]
+
+        # Check if stable-baselines3 is available
+        if not SB3_AVAILABLE:
+            logger.warning(f"stable-baselines3 not available, cannot load enemy model: {model_path}")
+            return None
+
+        try:
+            # Try to load model without environment first to check action space
+            temp_model = None
+
+            # Try PPO first (most common)
+            if 'ppo' in model_path.lower():
+                try:
+                    temp_model = PPO.load(model_path)
+                except Exception:
+                    pass
+
+    if temp_model is None and 'dqn' in model_path.lower():
+        try:
+            temp_model = DQN.load(model_path)
         except Exception:
             pass
 
-    # If we couldn't load the model at all, return None
-    if temp_model is None:
-        logger.warning(f"Failed to load enemy model: {model_path}")
-        return None
+        # Try A2C if both failed
+        if temp_model is None:
+            try:
+                temp_model = A2C.load(model_path)
+            except Exception:
+                pass
 
-    # Check action space compatibility
-    model_action_space = temp_model.action_space.n
-    env_action_space = self.action_space.n
-
-    if model_action_space != env_action_space:
-        # Check if this is the known 15 vs 14 issue (LOWER_SHIELDS removed)
-        if model_action_space == 15 and env_action_space == 14:
-            # Old model (15 actions with LOWER_SHIELDS) vs new environment (14 actions)
-            # Actions: 0-11 are the same, 12 (LOWER_SHIELDS) -> WAIT, 13->12, 14->13
-            logger.info(f"Enemy model {model_path} has old action space (15), using compatibility mode")
-        else:
-            logger.warning(f"Enemy model {model_path} has incompatible action space: {model_action_space} vs {env_action_space}")
+        # If we couldn't load the model at all, return None
+        if temp_model is None:
+            logger.warning(f"Failed to load enemy model: {model_path}")
             return None
 
-    # Reload model WITH environment binding for proper normalization and observation processing
-    # This ensures the enemy model gets the same treatment as the player model,
-    # preventing performance gaps due to different observation normalization.
-    # Skip env binding if observation spaces are incompatible (e.g. old model with 128 obs vs 200).
-    obs_compat = True
+        # Check action space compatibility
+        model_action_space = temp_model.action_space.n
+        env_action_space = self.action_space.n
+
+        if model_action_space != env_action_space:
+            # Check if this is the known 15 vs 14 issue (LOWER_SHIELDS removed)
+            if model_action_space == 15 and env_action_space == 14:
+                # Old model (15 actions with LOWER_SHIELDS) vs new environment (14 actions)
+                # Actions: 0-11 are the same, 12 (LOWER_SHIELDS) -> WAIT, 13->12, 14->13
+                logger.info(f"Enemy model {model_path} has old action space (15), using compatibility mode")
+            else:
+                logger.warning(f"Enemy model {model_path} has incompatible action space: {model_action_space} vs {env_action_space}")
+                return None
+
+        # Reload model WITH environment binding for proper normalization and observation processing
+        # This ensures the enemy model gets the same treatment as the player model,
+        # preventing performance gaps due to different observation normalization.
+        # Skip env binding if observation spaces are incompatible (e.g. old model with 128 obs vs 200).
+        obs_compat = True
+        try:
+            from gymnasium import spaces as _spaces
+            model_obs_space = temp_model.observation_space
+            if isinstance(model_obs_space, _spaces.Dict) and \
+               isinstance(self.observation_space, _spaces.Dict) and \
+               'observation' in model_obs_space.spaces and \
+               'observation' in self.observation_space.spaces:
+                if model_obs_space['observation'].shape != self.observation_space['observation'].shape:
+                    obs_compat = False
+                    logger.info(f"Enemy model {model_path} has different obs size: "
+                               f"{(model_obs_space['observation'].shape[0])} vs."
+                               f"{self.observation_space['observation'].shape[0]}", )
+        except Exception:
+            pass
+
+    if not obs_compat:
+        self._enemy_models[model_path] = temp_model
+        logger.info(f"Loaded enemy model without env binding: {model_path} (action space: {model_action_space})")
+        return temp_model
+
     try:
-        from gymnasium import spaces as _spaces
-        model_obs_space = temp_model.observation_space
-        if isinstance(model_obs_space, _spaces.Dict) and \
-           isinstance(self.observation_space, _spaces.Dict) and \
-           'observation' in model_obs_space.spaces and \
-           'observation' in self.observation_space.spaces:
-            if model_obs_space['observation'].shape != self.observation_space['observation'].shape:
-                obs_compat = False
-                logger.info(f"Enemy model {model_path} has different obs size: "
-                           f"{(model_obs_space['observation'].shape[0])} vs."
-                           f"{self.observation_space['observation'].shape[0]}", )
-    except Exception:
-        pass
+        # Determine which algorithm to use for reload
+        final_model = None
+        if 'ppo' in model_path.lower() or isinstance(temp_model, PPO):
+            final_model = PPO.load(model_path, env=self)
+        elif 'dqn' in model_path.lower() or isinstance(temp_model, DQN):
+            final_model = DQN.load(model_path, env=self)
+        else:
+            final_model = A2C.load(model_path, env=self)
 
-if not obs_compat:
-    self._enemy_models[model_path] = temp_model
-    logger.info(f"Loaded enemy model without env binding: {model_path} (action space: {model_action_space})")
-    return temp_model
+        # Cache the environment-bound model
+        self._enemy_models[model_path] = final_model
+        logger.info(f"Loaded enemy model with env binding: {model_path} (action space: {model_action_space})")
+        return final_model
+    except Exception as e:
+        # Fallback to model without env binding if reload fails
+        logger.warning(f"Failed to reload model with env binding ({e}), using original model without binding")
+        self._enemy_models[model_path] = temp_model
+        logger.info(f"Loaded enemy model without env binding: {model_path} (action space: {model_action_space})")
+        return temp_model
 
-try:
-    # Determine which algorithm to use for reload
-    final_model = None
-    if 'ppo' in model_path.lower() or isinstance(temp_model, PPO):
-        final_model = PPO.load(model_path, env=self)
-    elif 'dqn' in model_path.lower() or isinstance(temp_model, DQN):
-        final_model = DQN.load(model_path, env=self)
-    else:
-        final_model = A2C.load(model_path, env=self)
-
-    # Cache the environment-bound model
-    self._enemy_models[model_path] = final_model
-    logger.info(f"Loaded enemy model with env binding: {model_path} (action space: {model_action_space})")
-    return final_model
-except Exception as e:
-    # Fallback to model without env binding if reload fails
-    logger.warning(f"Failed to reload model with env binding ({e}), using original model without binding")
-    self._enemy_models[model_path] = temp_model
-    logger.info(f"Loaded enemy model without env binding: {model_path} (action space: {model_action_space})")
-    return temp_model
-
-except Exception as e:
-    logger.warning(f"Error loading enemy model {model_path}: {e}")
-    return None
+    except Exception as e:
+        logger.warning(f"Error loading enemy model {model_path}: {e}")
+        return None
 
 
-def normalize_action(self, action) -> int:
-    """Normalize various action types (numpy.array, list, tuple, scalar) into int."""
-    # Numpy array
-    try:
-        if isinstance(action, np.ndarray):
-            try:
-                return int(action.item())
-            except Exception:
-                # Fallback to first element
-                return int(action[0])
-    # Lists or tuples
-    if isinstance(action, (list, tuple)):
-        return int(action[0])
-    # Scalars (int-like)
-    return int(action)
-except Exception as e:
-    raise ValueError(f"Unable to normalize action to int: {action!r}") from e
+    def normalize_action(self, action) -> int:
+        """Normalize various action types (numpy.array, list, tuple, scalar) into int."""
+        # Numpy array
+        try:
+            if isinstance(action, np.ndarray):
+                try:
+                    return int(action.item())
+                except Exception:
+                    # Fallback to first element
+                    return int(action[0])
+        # Lists or tuples
+        if isinstance(action, (list, tuple)):
+            return int(action[0])
+        # Scalars (int-like)
+        return int(action)
+    except Exception as e:
+        raise ValueError(f"Unable to normalize action to int: {action!r}") from e
 
 
 def is_action_valid_for_state(self, action: int, ship: dict, is_player: bool = True) -> Tuple[bool, str]:
