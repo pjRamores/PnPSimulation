@@ -1234,14 +1234,14 @@ class GameSimulator:
         #     else:
         #         ai_display = ai_type_name
         #
-        #     # status = "DESTROYED" if enemy['destroyed'] else "ALIVE"
-        #     print(f"... {enemy_name} ({ai_display}): {status}, HP:{enemy['health']}, ")
-        #     # Credits: (enemy['credits']), Nutrinium: (enemy['nutrinium'])
+        #     status = "DESTROYED" if enemy['destroyed'] else "ALIVE"
+        #     print(f"   {enemy_name} ({ai_display}): {status}, HP:{enemy['health']}, "
+        #           f"Credits:{enemy['credits']}, Nutrinium:{enemy['nutrinium']}")
         #     # Print enemy abilities/skills horizontally
-        #     e_abilities = enemy.get('abilities', {})
+        #     e_abilities = enemy.get('abilities', {}) or {}
         #     if e_abilities:
         #         e_items = ", ".join(f"{k}:{v}" for k, v in sorted(e_abilities.items()))
-        #         print(f"... Abilities: {e_items}")
+        #         print(f"     Abilities: {e_items}")
 
     def calculate_player_placement(self, stats: Dict):
         """Calculate player's placement (1st, 2nd, 3rd) for this episode and update cumulative stats."""
@@ -1658,6 +1658,7 @@ def main():
             print_each_step=args.print_each_step,
             forced_opponent_types=forced_opponent_types
         )
+
     except Exception as e:
         print(f"Error: {e}")
         return 1
