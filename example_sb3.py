@@ -183,27 +183,37 @@ class ActionMaskTracker(gym.Wrapper):
 
     When sb3-contrib's MaskablePPO is available the environment must expose a
     callable ``action_masks()`` method.  The raw ``ProspectorsPiratesEnv``
-    stores the mask inside the observation dict rather than as a method, so
-    this thin wrapper bridges the gap by caching the latest mask and surfacing
-    it through the expected API.  ``Monitor`` (applied on top) forwards unknown
-    attribute lookups via ``__getattr__``, so the chain remains transparent.
+    stores the mask inside the observation dict, so this wrapper:
+    1. Caches the action mask and exposes it via action_masks()
+    2. Strips the action_mask from the returned observation dict
+    3. Flattens the observation to a plain Box for MaskablePPO compatibility
     """
 
     def __init__(self, env: gym.Env):
         super().__init__(env)
         self._action_mask = np.ones(env.action_space.n, dtype=bool)
+        
+        # Change observation space from Dict to just the flat Box observation
+        if isinstance(env.observation_space, gym.spaces.Dict) and 'observation' in env.observation_space.spaces:
+            self.observation_space = env.observation_space.spaces['observation']
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        if isinstance(obs, dict) and 'action_mask' in obs:
-            self._action_mask = np.array(obs['action_mask'], dtype=bool)
-        return obs, info
+        return self._extract_and_cache_mask(obs), info
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
-        if isinstance(obs, dict) and 'action_mask' in obs:
-            self._action_mask = np.array(obs['action_mask'], dtype=bool)
+        obs = self._extract_and_cache_mask(obs)
         return obs, reward, terminated, truncated, info
+
+    def _extract_and_cache_mask(self, obs):
+        """Extract action mask from obs dict and return only the flat observation."""
+        if isinstance(obs, dict):
+            if 'action_mask' in obs:
+                self._action_mask = np.array(obs['action_mask'], dtype=bool)
+            if 'observation' in obs:
+                return obs['observation']
+        return obs
 
     def action_masks(self) -> np.ndarray:
         """Return the latest action mask - called by MaskablePPO at every step."""
@@ -1085,17 +1095,11 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         env = ActionMaskWrapper(env)
         print("  Action masking: penalty-based enforcement (sb3-contrib not available)")
     else:
-        env = ActionMaskTracker(env)  # exposes action_masks() for MaskablePPO
+        env = ActionMaskTracker(env)  # exposes action_masks() for MaskablePPO; flattens observations
         print("  Action masking: native MaskablePPO support")
 
     # Wrap environment with Monitor for logging
     env = Monitor(env)
-
-    # Apply FlattenDictObsWrapper when using MaskablePPO to convert Dict observations to flat arrays.
-    # ActionMaskTracker has already cached the action_mask, so the action_masks() method
-    # will still work correctly for MaskablePPO.
-    if SB3_CONTRIB_AVAILABLE:
-        env = FlattenDictObsWrapper(env)
 
     # Check environment
     print("\nChecking environment compatibility...")
