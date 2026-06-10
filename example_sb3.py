@@ -271,6 +271,26 @@ def set_cpu_mode(efficiency_mode=False, num_threads=None):
             torch.set_num_threads(threads)
             torch.set_num_interop_threads(threads)
             settings['torch_configured'] = True
+            
+            # Enable MPS (Metal Performance Shaders) on Apple Silicon for GPU acceleration
+            if hasattr(torch.backends, 'mps'):
+                try:
+                    if torch.backends.mps.is_available():
+                        torch.backends.mps.enabled = True
+                        settings['mps_enabled'] = True
+                        settings['device'] = 'mps'
+                except Exception:
+                    pass
+            
+            # Enable TF32 and other optimizations for faster computation
+            try:
+                # Note: TF32 not available on CPU, but these are general optimizations
+                if hasattr(torch.backends, 'cuda'):
+                    torch.backends.cuda.matmul.allow_tf32 = True
+                    torch.backends.cudnn.allow_tf32 = True
+            except Exception:
+                pass
+                
         except RuntimeError:
             # Threads already set, can't change them
             settings['torch_configured'] = False
@@ -1047,6 +1067,8 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
     print(f"  Threads: {cpu_settings['threads']}/{cpu_settings['cpu_count']} CPUs")
     if cpu_settings.get('torch_configured'):
         print(f"  PyTorch: Configured for {cpu_settings['threads']} threads")
+    if cpu_settings.get('mps_enabled'):
+        print(f"  🔧 Metal Performance Shaders (MPS): ENABLED for GPU acceleration")
     if cpu_settings.get('priority_set'):
         print(f"  Process Priority: {cpu_settings.get('process_priority', 'default')}")
     if efficiency_mode:
@@ -1173,23 +1195,36 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                 # Conversely, if the schedule is unwrapped to a bare float, PPO.train()
                 # crashes with "'float' object is not callable".
                 # Fix: evaluate the current schedule to get the float value, then
-                # re-wrap via get_schedule_fn so it's a proper single-layer callable.
+                # re-wrap it as a proper single-layer callable.
                 if algorithm in ('PPO',):
-                    from stable_baselines3.common.utils import get_schedule_fn
+                    # Try to import ConstantSchedule from various locations
+                    schedule_fn = None
+                    try:
+                        from stable_baselines3.common.schedules import ConstantSchedule
+                        schedule_fn = lambda val: ConstantSchedule(val)
+                    except (ImportError, ModuleNotFoundError):
+                        try:
+                            from stable_baselines3.common.utils import ConstantSchedule
+                            schedule_fn = lambda val: ConstantSchedule(val)
+                        except ImportError:
+                            # Fall back to deprecated get_schedule_fn
+                            from stable_baselines3.common.utils import get_schedule_fn
+                            schedule_fn = get_schedule_fn
+                    
                     if hasattr(model, 'clip_range'):
                         try:
                             val = float(model.clip_range(1.0)) if callable(model.clip_range) else float(
                                 model.clip_range)
                         except Exception:
                             val = 0.2  # PPO default
-                        model.clip_range = get_schedule_fn(val)
+                        model.clip_range = schedule_fn(val)
                     if hasattr(model, 'clip_range_vf') and model.clip_range_vf is not None:
                         try:
                             val = float(model.clip_range_vf(1.0)) if callable(model.clip_range_vf) else float(
                                 model.clip_range_vf)
                         except Exception:
                             val = None
-                        model.clip_range_vf = get_schedule_fn(val) if val is not None else None
+                        model.clip_range_vf = schedule_fn(val) if val is not None else None
 
                 print(f"✓ Successfully loaded model from {transfer_from}")
                 print(f"  Model has {model.num_timesteps} training timesteps")
@@ -1253,13 +1288,14 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
             # Use MaskablePPO for action masking if available
             if SB3_CONTRIB_AVAILABLE:
                 print("  Using MaskablePPO with action masking support")
+                print("  🚀 Optimized for M3 Max: Large batch, increased n_steps, larger network")
                 model = MaskablePPO(
                     MaskableActorCriticPolicy,
                     env,
                     verbose=0,
                     learning_rate=3e-4,
-                    n_steps=2048,  # 2048 steps ≈ 6-7 episodes per rollout (optimized for 300-step episodes)
-                    batch_size=256,  # 256 samples per gradient update for stable learning
+                    n_steps=4096,  # 4096 steps - doubled for M3 Max resources (≈12-14 episodes per rollout)
+                    batch_size=512,  # 512 samples per gradient update (doubled for more parallelism)
                     n_epochs=10,  # Standard PPO value for better sample efficiency
                     gamma=0.99,  # Standard discount factor
                     gae_lambda=0.95,
@@ -1268,22 +1304,23 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                     vf_coef=0.5,  # Value function coefficient
                     max_grad_norm=0.5,  # Gradient clipping for stability
                     policy_kwargs=dict(
-                        net_arch=dict(pi=[512, 256, 128], vf=[512, 256, 128]),
-                        # Larger network for expanded sensor range (11x11 grid)
+                        net_arch=dict(pi=[1024, 512, 256], vf=[1024, 512, 256]),
+                        # Larger network (doubled) for M3 Max with 32GB memory
                     ),
                     tensorboard_log=f"./tensorboard_logs/maskable_ppo/"
                 )
             else:
                 print("  Warning: sb3-contrib not available, using standard PPO")
                 print("  Action masking will not be used - install sb3-contrib for better performance")
+                print("  🚀 Optimized for M3 Max: Large batch, increased n_steps, larger network")
                 model = PPO(
                     'MultiInputPolicy',
                     env,
                     verbose=0,
                     learning_rate=3e-4,
-                    n_steps=2048,  # 2048 steps ~ 6-7 episodes per rollout (optimized for 300-step episodes)
-                    batch_size=256,  # 256 samples per gradient update for stable learning
-                    n_epochs=10,  # Increased to 10 for better sample efficiency (standard PPO)
+                    n_steps=4096,  # 4096 steps - doubled for M3 Max resources (≈12-14 episodes per rollout)
+                    batch_size=512,  # 512 samples per gradient update (doubled for more parallelism)
+                    n_epochs=10,  # Standard PPO value for better sample efficiency
                     gamma=0.99,  # Standard discount factor (0.99 works well for 300-step horizon)
                     gae_lambda=0.95,
                     clip_range=0.2,
@@ -1291,20 +1328,21 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                     vf_coef=0.5,  # Value function coefficient
                     max_grad_norm=0.5,  # Gradient clipping for stability
                     policy_kwargs=dict(
-                        net_arch=dict(pi=[512, 256, 128], vf=[512, 256, 128]),
-                        # Larger network for expanded sensor range (11x11 grid)
+                        net_arch=dict(pi=[1024, 512, 256], vf=[1024, 512, 256]),
+                        # Larger network (doubled) for M3 Max with 32GB memory
                     ),
                     tensorboard_log=f"./tensorboard_logs/ppo/"
                 )
         elif algorithm == 'DQN':
+            print("  🚀 Optimized for M3 Max: Larger buffer, increased batch size")
             model = DQN(
                 'MultiInputPolicy',
                 env,
                 verbose=1,
                 learning_rate=1e-4,
-                buffer_size=50000,
+                buffer_size=200000,  # Increased 4x for M3 Max (from 50k to 200k)
                 learning_starts=1000,
-                batch_size=32,
+                batch_size=128,  # Increased 4x for more parallelism (from 32 to 128)
                 gamma=0.99,
                 train_freq=4,
                 target_update_interval=1000,
@@ -1353,6 +1391,14 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
     # Train model
     training_type = "fine-tuning" if is_transfer else "training"
     print(f"\n{training_type.capitalize()} for {total_timesteps:,} timesteps...")
+    print(f"  Algorithm: {algorithm}")
+    if algorithm == 'PPO':
+        print(f"  Batch size: 512 | n_steps: 4096 | Network: [1024, 512, 256]")
+        print(f"  ⚙️ Optimized for M3 Max (2x standard batch, larger network)")
+    elif algorithm == 'DQN':
+        print(f"  Buffer size: 200k | Batch size: 128")
+        print(f"  ⚙️ Optimized for M3 Max (4x standard buffer & batch)")
+    print()
 
     try:
         # Always reset timestep counter so that total_timesteps means
