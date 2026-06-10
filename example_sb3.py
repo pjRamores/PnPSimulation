@@ -6,7 +6,6 @@ with the Prospectors n Pirates environment.
 
 Install with: pip install stable-baselines3[extra]
 """
-from example_sb3_bk import truncated
 
 try:
     from stable_baselines3 import PPO, DQN, A2C
@@ -180,18 +179,18 @@ class ActionMaskWrapper(gym.Wrapper):
 
 
 class ActionMaskTracker(gym.Wrapper):
-    """Exposes ``action_mask()`` so MaskablePPO can read a mask at every step.
+    """Exposes ``action_masks()`` so MaskablePPO can read the mask at every step.
 
     When sb3-contrib's MaskablePPO is available the environment must expose a
-    callable ``action_mask()`` method. The raw ``ProspectorsPiratesEnv``
+    callable ``action_masks()`` method. The raw ``ProspectorsPiratesEnv``
     stores the mask inside the observation dict rather than a method, so
     this thin wrapper bridges the gap by caching the latest mask and surfacing
-    it through the expected API.  ``Monitor`` (applied to top) forwards unknown
-    attribute lookups via ``__getter__``, so the chain remains transparent.
+    it through the expected API.  ``Monitor`` (applied on top) forwards unknown
+    attribute lookups via ``__getattr__``, so the chain remains transparent.
     """
 
-    def __init__(self, env: gym.Env[]):
-        super.__init__(env)
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
         self._action_mask = np.ones(env.action_space.n, dtype=bool)
 
     def reset(self, **kwargs):
@@ -209,6 +208,7 @@ class ActionMaskTracker(gym.Wrapper):
     def action_masks(self) -> np.ndarray:
         """Return the latest action mask - called by MaskablePPO at every step."""
         return self._action_mask
+
 
 # Try to import torch for CPU/thread control
 try:
@@ -315,7 +315,6 @@ def _ask_to_evaluate(prompt="Press ENTER or SPACE to evaluate the model, or Q to
     """
     if platform.system() == 'Windows':
         try:
-            # Prefer msvcrt on Windows for single-key response
             import msvcrt
             print(prompt, end='', flush=True)
             while True:
@@ -329,9 +328,8 @@ def _ask_to_evaluate(prompt="Press ENTER or SPACE to evaluate the model, or Q to
                         print('')
                         return False
                     # Ignore other keys
-            # unreachable
         except Exception:
-            pass # Fall though to input() below
+            pass  # Fall through to input() below
 
     # Fallback: use input(); empty line or single space continues, 'q' quits
     try:
