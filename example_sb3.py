@@ -6,6 +6,7 @@ with the Prospectors n Pirates environment.
 
 Install with: pip install stable-baselines3[extra]
 """
+from example_sb3_bk import truncated
 
 try:
     from stable_baselines3 import PPO, DQN, A2C
@@ -70,9 +71,9 @@ class FlattenDictObsWrapper(gym.ObservationWrapper):
     """Wrapper that flattens a Dict observation space to a flat Box.
 
     The PnP environment returns ``{'observation': ..., 'action_mask': ...}``.
-    MaskablePPO handles the action_mask automatically, but regular PPO/DQN
+    MaskablePPO handles the action_mask automatically, but regular PPO / DQN
     expect a flat ``Box`` observation.  This wrapper extracts only the
-    ``observation`` key so that models trained with ``MlpPolicy`` (e.g.
+    ``'observation'`` key so that models trained with ``MlpPolicy`` (e.g.
     MaskablePPO checkpoints loaded as regular PPO) can work.
     """
 
@@ -178,6 +179,37 @@ class ActionMaskWrapper(gym.Wrapper):
         return obs, reward, terminated, truncated, info
 
 
+class ActionMaskTracker(gym.Wrapper):
+    """Exposes ``action_mask()`` so MaskablePPO can read a mask at every step.
+
+    When sb3-contrib's MaskablePPO is available the environment must expose a
+    callable ``action_mask()`` method. The raw ``ProspectorsPiratesEnv``
+    stores the mask inside the observation dict rather than a method, so
+    this thin wrapper bridges the gap by caching the latest mask and surfacing
+    it through the expected API.  ``Monitor`` (applied to top) forwards unknown
+    attribute lookups via ``__getter__``, so the chain remains transparent.
+    """
+
+    def __init__(self, env: gym.Env[]):
+        super.__init__(env)
+        self._action_mask = np.ones(env.action_space.n, dtype=bool)
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        if isinstance(obs, dict) and 'action_mask' in obs:
+            self._action_mask = np.array(obs['action_mask'], dtype=bool)
+        return obs, info
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        if isinstance(obs, dict) and 'action_mask' in obs:
+            self._action_mask = np.array(obs['action_mask'], dtype=bool)
+        return obs, reward, terminated, truncated, info
+
+    def action_masks(self) -> np.ndarray:
+        """Return the latest action mask - called by MaskablePPO at every step."""
+        return self._action_mask
+
 # Try to import torch for CPU/thread control
 try:
     import torch
@@ -281,32 +313,35 @@ def _ask_to_evaluate(prompt="Press ENTER or SPACE to evaluate the model, or Q to
     Returns True to continue (evaluate), False to quit.
     Accepts ENTER or SPACE to continue, 'q' or 'Q' to quit. Works on Windows and falls back to input() on other platforms.
     """
-    try:
-        # Prefer msvcrt on Windows for single-key response
-        import msvcrt
-        print(prompt, end='', flush=True)
-        while True:
-            if msvcrt.kbhit():
-                key = msvcrt.getch()
-                # Enter (CR or LF) or Space
-                if key in (b'\r', b'\n', b' '):
-                    print('')
-                    return True
-                if key.lower() == b'q':
-                    print('')
-                    return False
-                # Ignore other keys
-        # unreachable
-    except Exception:
-        # Fallback: use input(); empty line or single space continues, 'q' quits
+    if platform.system() == 'Windows':
         try:
-            resp = input(prompt)
+            # Prefer msvcrt on Windows for single-key response
+            import msvcrt
+            print(prompt, end='', flush=True)
+            while True:
+                if msvcrt.kbhit():
+                    key = msvcrt.getch()
+                    # Enter (CR or LF) or Space
+                    if key in (b'\r', b'\n', b' '):
+                        print('')
+                        return True
+                    if key.lower() == b'q':
+                        print('')
+                        return False
+                    # Ignore other keys
+            # unreachable
         except Exception:
-            # In non-interactive environments, default to continue
-            return True
-        if resp.strip().lower() == 'q':
-            return False
+            pass # Fall though to input() below
+
+    # Fallback: use input(); empty line or single space continues, 'q' quits
+    try:
+        resp = input(prompt)
+    except Exception:
+        # In non-interactive environments (e.g. test runners), default to continue
         return True
+    if resp.strip().lower() == 'q':
+        return False
+    return True
 
 
 class TrainingCallback(BaseCallback):
@@ -1052,6 +1087,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         env = ActionMaskWrapper(env)
         print("  Action masking: penalty-based enforcement (sb3-contrib not available)")
     else:
+        env = ActionMaskTracker(env)  # exposes action_masks() for MaskablePPO
         print("  Action masking: native MaskablePPO support")
 
     # Wrap environment with Monitor for logging
