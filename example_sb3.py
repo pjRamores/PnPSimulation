@@ -182,8 +182,8 @@ class ActionMaskTracker(gym.Wrapper):
     """Exposes ``action_masks()`` so MaskablePPO can read the mask at every step.
 
     When sb3-contrib's MaskablePPO is available the environment must expose a
-    callable ``action_masks()`` method. The raw ``ProspectorsPiratesEnv``
-    stores the mask inside the observation dict rather than a method, so
+    callable ``action_masks()`` method.  The raw ``ProspectorsPiratesEnv``
+    stores the mask inside the observation dict rather than as method, so
     this thin wrapper bridges the gap by caching the latest mask and surfacing
     it through the expected API.  ``Monitor`` (applied on top) forwards unknown
     attribute lookups via ``__getattr__``, so the chain remains transparent.
