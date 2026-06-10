@@ -183,7 +183,7 @@ class ActionMaskTracker(gym.Wrapper):
 
     When sb3-contrib's MaskablePPO is available the environment must expose a
     callable ``action_masks()`` method.  The raw ``ProspectorsPiratesEnv``
-    stores the mask inside the observation dict rather than as method, so
+    stores the mask inside the observation dict rather than as a method, so
     this thin wrapper bridges the gap by caching the latest mask and surfacing
     it through the expected API.  ``Monitor`` (applied on top) forwards unknown
     attribute lookups via ``__getattr__``, so the chain remains transparent.
@@ -1090,6 +1090,12 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
 
     # Wrap environment with Monitor for logging
     env = Monitor(env)
+
+    # Apply FlattenDictObsWrapper when using MaskablePPO to convert Dict observations to flat arrays.
+    # ActionMaskTracker has already cached the action_mask, so the action_masks() method
+    # will still work correctly for MaskablePPO.
+    if SB3_CONTRIB_AVAILABLE:
+        env = FlattenDictObsWrapper(env)
 
     # Check environment
     print("\nChecking environment compatibility...")
