@@ -218,6 +218,10 @@ class ActionMaskTracker(gym.Wrapper):
     def action_masks(self) -> np.ndarray:
         """Return the latest action mask - called by MaskablePPO at every step."""
         return self._action_mask
+    
+    def __getattr__(self, name):
+        """Forward attribute lookups to the wrapped environment."""
+        return getattr(self.env, name)
 
 
 # Try to import torch for CPU/thread control
@@ -1431,6 +1435,8 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
 
         plt.tight_layout()
         plot_filename = f'output/training_progress/{algorithm.lower()}_v{version}_training_progress.png'
+        # Ensure output directory exists
+        os.makedirs('output/training_progress', exist_ok=True)
         plt.savefig(plot_filename)
         print(f"Training plots saved to {plot_filename}")
         plt.close()

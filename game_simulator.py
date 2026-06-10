@@ -10,12 +10,20 @@ import random
 import os
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple
+import gymnasium as gym
 
 try:
     from stable_baselines3 import PPO, DQN, A2C
     SB3_AVAILABLE = True
 except ImportError:
     SB3_AVAILABLE = False
+
+try:
+    from sb3_contrib import MaskablePPO
+    SB3_CONTRIB_AVAILABLE = True
+except ImportError:
+    SB3_CONTRIB_AVAILABLE = False
+    MaskablePPO = None
 
 try:
     from setproctitle import setproctitle
@@ -39,6 +47,52 @@ else:
         pass
 
 from pnp_env import ProspectorsPiratesEnv, OpponentAIType
+
+
+class ActionMaskTracker(gym.Wrapper):
+    """Exposes ``action_masks()`` so MaskablePPO can read the mask at every step.
+
+    When sb3-contrib's MaskablePPO is available the environment must expose a
+    callable ``action_masks()`` method.  The raw ``ProspectorsPiratesEnv``
+    stores the mask inside the observation dict, so this wrapper:
+    1. Caches the action mask and exposes it via action_masks()
+    2. Strips the action_mask from the returned observation dict
+    3. Flattens the observation to a plain Box for MaskablePPO compatibility
+    """
+
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        self._action_mask = np.ones(env.action_space.n, dtype=bool)
+        
+        # Change observation space from Dict to just the flat Box observation
+        if isinstance(env.observation_space, gym.spaces.Dict) and 'observation' in env.observation_space.spaces:
+            self.observation_space = env.observation_space.spaces['observation']
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        return self._extract_and_cache_mask(obs), info
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        obs = self._extract_and_cache_mask(obs)
+        return obs, reward, terminated, truncated, info
+
+    def _extract_and_cache_mask(self, obs):
+        """Extract action mask from obs dict and return only the flat observation."""
+        if isinstance(obs, dict):
+            if 'action_mask' in obs:
+                self._action_mask = np.array(obs['action_mask'], dtype=bool)
+            if 'observation' in obs:
+                return obs['observation']
+        return obs
+
+    def action_masks(self) -> np.ndarray:
+        """Return the latest action mask - called by MaskablePPO at every step."""
+        return self._action_mask
+    
+    def __getattr__(self, name):
+        """Forward attribute lookups to the wrapped environment."""
+        return getattr(self.env, name)
 
 
 class ActionSpaceCompatibilityWrapper:
@@ -522,7 +576,14 @@ class GameSimulator:
         # Try to load the model first to check its action/observation space
         try:
             if self.algorithm == "PPO":
-                temp_model = PPO.load(self.model_path)
+                # Try MaskablePPO first (newer models), fall back to regular PPO
+                if SB3_CONTRIB_AVAILABLE:
+                    try:
+                        temp_model = MaskablePPO.load(self.model_path)
+                    except Exception:
+                        temp_model = PPO.load(self.model_path)
+                else:
+                    temp_model = PPO.load(self.model_path)
             elif self.algorithm == "DQN":
                 temp_model = DQN.load(self.model_path)
             elif self.algorithm == "A2C":
@@ -579,7 +640,14 @@ class GameSimulator:
 
             # Fully compatible model - load with env binding
             if self.algorithm == "PPO":
-                return PPO.load(self.model_path, env=env)
+                # Try MaskablePPO first (newer models), fall back to regular PPO
+                if SB3_CONTRIB_AVAILABLE:
+                    try:
+                        return MaskablePPO.load(self.model_path, env=env)
+                    except Exception:
+                        return PPO.load(self.model_path, env=env)
+                else:
+                    return PPO.load(self.model_path, env=env)
             elif self.algorithm == "DQN":
                 return DQN.load(self.model_path, env=env)
             elif self.algorithm == "A2C":
@@ -634,6 +702,9 @@ class GameSimulator:
             minimap_radius=minimap_radius,
             forced_opponent_types=forced_opponent_types
         )
+        
+        # Apply ActionMaskTracker wrapper to match training environment
+        env = ActionMaskTracker(env)
 
         # Load model
         model = self.load_model(env)
