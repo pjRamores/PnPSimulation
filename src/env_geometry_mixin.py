@@ -6,9 +6,9 @@ cache) used across observation, action and AI logic.
 
 from env_common import *
 
+
 class EnvGeometryMixin:
     """Distance and entity-location helpers."""
-
 
     def _get_entity_at_location(self, x: int, y: int, entities: List[dict]) -> Optional[dict]:
         """Get entity at a specific location using spatial cache for performance."""
