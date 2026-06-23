@@ -20,15 +20,16 @@ from env_geometry_mixin import EnvGeometryMixin
 from env_render_mixin import EnvRenderMixin
 from utils import action_masker
 
+
 class ProspectorsPiratesEnv(
-    EnvSetupMixin,
-    EnvMaskingMixin,
-    EnvObservationMixin,
-    EnvActionsMixin,
-    EnvOpponentMixin,
-    EnvGeometryMixin,
-    EnvRenderMixin,
-    gym.Env):
+        EnvSetupMixin,
+        EnvMaskingMixin,
+        EnvObservationMixin,
+        EnvActionsMixin,
+        EnvOpponentMixin,
+        EnvGeometryMixin,
+        EnvRenderMixin,
+        gym.Env):
     """
     Prospectors n Pirates Game Environment
 
@@ -52,7 +53,7 @@ class ProspectorsPiratesEnv(
                  start_position_config_path: str = 'start_positions.config',
                  enemy_models_config_path: str = 'enemy_models.config',
                  terminate_on_player_death: bool = True,
-                 forced_opponent_types: Optional[List] = None,
+                 forced_opponent_types: Optional[list] = None,
                  randomize_action_restrictions: bool = False,
                  # Rendering options
                  cell_width: Optional[int] = None,
@@ -82,14 +83,12 @@ class ProspectorsPiratesEnv(
         self.map_height = map_height
         self.num_opponents = num_opponents
         self.forced_opponent_types = forced_opponent_types
-
         if forced_opponent_types:
             self.num_opponents = len(forced_opponent_types)
         self.max_steps = max_steps
         self.render_mode = render_mode
         self.terminate_on_player_death = terminate_on_player_death
         self.randomize_action_restrictions = bool(randomize_action_restrictions)
-
         # Rendering overrides
         self.cell_width = cell_width
         self.minimap_mode = bool(minimap_mode)
@@ -99,1048 +98,1081 @@ class ProspectorsPiratesEnv(
         self.use_predefined_asteroids = use_predefined_asteroids
         self.asteroid_config_path = asteroid_config_path
         self._predefined_asteroids_cache = None
-# Starting position configuration
-self.use_predefined_start = use_predefined_start
-self.start_position_config_path = start_position_config_path
-self._predefined_start_cache = None
 
-# Enemy models configuration
-self.enemy_models_config_path = enemy_models_config_path
-self.enemy_model_entries = None  # Cache of parsed entries [{'path': str, 'spec_name': Optional[str]}]
-self._enemy_model_paths = None  # Cache for loaded model paths
-self._enemy_models = {}  # Cache for loaded model instances {path: model_instance}
-self._enemy_model_specs = {}  # Cache for model specs {path: ModelSpec}
-self._enemy_model_unavailable_paths = set()  # Paths that failed loading; skip retries
+        # Starting position configuration
+        self.use_predefined_start = use_predefined_start
+        self.start_position_config_path = start_position_config_path
+        self._predefined_start_cache = None
 
-# Per-ship model specs and observation generators
-self._ship_model_specs = {}  # Map ship id to ModelSpec (using id() as key)
-self._observation_generators = {}  # Cache of generators {spec_type: generator}
+        # Enemy models configuration
+        self.enemy_models_config_path = enemy_models_config_path
+        self._enemy_model_entries = None  # Cache of parsed entries [{'path': str, 'spec_name': Optional[str]}]
+        self._enemy_model_paths = None  # Cache for loaded model paths
+        self._enemy_models = {}  # Cache for loaded model instances {path: model_instance}
+        self._enemy_model_specs = {}  # Cache for model specs {path: ModelSpec}
+        self._enemy_model_unavailable_paths = set()  # Paths that failed loading; skip retries
 
-# Module grant policy for module-locked actions ('all' | 'random' | 'none').
-self.module_grant_mode = 'all'
+        # Per-ship model specs and observation generators
+        self._ship_model_specs = {}  # Map ship id to ModelSpec (using id() as key)
+        self._observation_generators = {}  # Cache of generators {spec_type: generator}
 
-# Game configuration (spec-accurate; mirrors live metadata.* structure).
-# See docs_game/game_concepts.md and docs_game/actions.md for the source of
-# every constant below. Values match the production server defaults.
-self.config = {
-    'max_energy': 100,          # metadata.shipConfig.maxEnergy
-    'energy_per_recharge': 10,   # metadata.shipConfig.energyPerRecharge (+recharge_energy*2/tick)
-    'max_health': 100,
-    'max_jump_distance': 50,    # metadata.shipConfig.maxJumpDistance (+jump_distance*10)
-    'max_nutrinium_cargo': 1000,
-    'max_credits': 10000,
-    # Skill-point budget allocated to EVERY ship each episode. The budget
-    # is common to all ships but distributed randomly (and differently)
-    # across the 19 skills per ship, fully consumed, re-rolled each reset.
-    # Each skill is capped 0-10, so the effective maximum is 19*10 = 190.
-    'skill_point_budget': 24,
-    # Normalizes skill_points_total/spent in the observation; kept equal to
-    # the budget so those (now-constant) values stay within [0, 1].
-    'max_skill_points': 24,
-    'energy_costs': {
-        # metadata.shipConfig.energyCosts
-        'mine': 10,           # reduced by mine_cost skill (min 0)
-        'move': 0,            # MOVE is free (recharge while moving)
-        'jump': 1,            # per unit euclidean distance
-        'jump_min_cost': 75,  # jumpMinCost; reduced by jump_cost skill (-5/pt, floor 0)
-        'attack': 1,
-        'plunder': 5,         # PLUNDER fixed cost (even on miss)
-        'negotiate': 5,
-        'sell': 0,            # SELL is free
-        'shield_maintenance': 1,  # per-tick cost while shields POWERED
-        'shields': 1,         # legacy alias (binary-shield code path; removed in P6)
-    },
-    'combat': {
-        'base_target_number': 0.5,   # roll-to-hit threshold (attack_accuracy -5%/pt, evade +5%/pt)
-        'guaranteed_miss_chance': 0.05,
-        'guaranteed_hit_chance': 0.05,
-        'attack_shield_damage': 1.5,  # attackShieldDamage: shieldDmg = round(dmg*1.5)
-        'base_shield_resistance': 0.25,   # +shield_strength/20, max 0.75
-        'recharge_penalty': 0.2,         # target recharging -> easier to hit
-        'shield_recharge_rate': 10,      # DRAINING decay/tick + RAISE_SHIELDS cost divisor
-        'base_shield_capacity': 100,     # +shield_capacity*10
-        'damage_variance': 0.5,          # +=-50% damage spread (energy*0.5..1.5)
-        'default_attack_payload': 20,    # energy committed per ATTACK when no bin chosen (scalar action space)
-    },
-    'mining': {
-        'payout_modifier': 0.01,       # mining.payoutModifier: max % of remaining nutrinium per mine
-        'base_success_chance': 0.5,    # legacy alias (old density path; removed in P3)
-        'min_payout': -1,
-        'max_payout': 10,
-        # Beta shape for the biased-low random payout (reuses asteroid-budget skew).
-        'payout_beta_alpha': 1.5,
-        'payout_beta_beta': 8.0,
-    },
-    'market': {
-        'sell_nutrinium': 98,         # metadata.market.sell.nutrinium (base; fluctuates)
-        'repair': 50,                 # metadata.market.buy.repair (REPAIR credit cost)
-        'nutrinium_price': 98,        # legacy alias of sell_nutrinium
-        'ship_cost': 100,
-        # Dynamic market: price drifts toward base, dips on simultaneous sells.
-        'price_recovery_rate': 0.05,   # fraction of gap to base recovered per tick
-        'price_dip_per_sale': 0.02,    # fractional dip applied per sale in a tick
-        'price_min_factor': 0.5,       # floor as a fraction of base price
-    },
-    'team_insurance': {
-        # metadata.teamInsurance: respawn cost per member = base*(1+escalation*N)
-        'base_cost_per_member': 10,
-        'cost_escalation': 1.0,
-    },
-    'negotiate': {
-        'base_success_chance': 0.4,   # negotiate_skill shifts succ up / fail down
-        'base_fail_chance': 0.2,
-        'min_fail_chance': 0.05,      # fail can never reach 0
-        'bonus_gain': 0.05,           # team bonus increase on SUCCESS (+negotiate_ambition*10%)
-        'bonus_penalty': 0.05,        # team bonus decrease on FAIL (-negotiate_caution*8%)
-        'max_team_bonus': 1.0,        # diminishing-returns ceiling
-    },
-    'salvage': {
-        'wreckage_percent': 0.5,      # portion of destroyed nutrinium left as wreckage
-        'energy_cost': 5,
-    },
-}
-'asteroid_density': 0.11,
-'trading_post_count': None,
-'sensor_range': 5,
-'nutrinium_min_percent': 0.08,
-'nutrinium_max_percent': 1.0,
-'nutrinium_beta_alpha': 1.5,
-'nutrinium_beta_beta': 8.0,
-'asteroid_mass_min': 50,
-'asteroid_mass_max': 500,
-'action_restrictions': {
-    'WAIT': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
-    'MINE': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': False},
-    'MOVE': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
-    'RECHARGE': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': False},
-    'RECHARGE_END': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
-    'ATTACK': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
-    'JUMP': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
-    'SELL': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
-    'RAISE_SHIELDS': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': False},
-    'LOWER_SHIELDS': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
-    'PLUNDER': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': False},
-    'SALVAGE': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': False},
-    'REPAIR': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
-    'NEGOTIATE': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
-    'RESPAWN': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True}
-},
-'abilities': {
-    'energy_max': 10,
-    'recharge_energy': 10,
-    'mine_accuracy': 10,
-    'mine_yield_multiplier': 10,
-    'mine_cost': 10,
-    'attack_power': 10,
-    'attack_accuracy': 10,
-    'evade': 10,
-    'shield_strength': 10,
-    'shield_capacity': 10,
-    'shield_efficiency': 10,
-    'combat_salvage_multiplier': 10,
-    'jump_distance': 10,
-    'jump_cost': 10,
-    'sensor_range': 10,
-    'salvage_yield': 10,
-    'negotiate_skill': 10,
-    'negotiate_cautious': 10,
-    'negotiate_ambition': 10
-},
-'top_asteroids_count': 5
+        # Module grant policy for module-locked actions ('all' | 'random' | 'none').
+        self.module_grant_mode = 'all'
 
-self.base_action_restrictions = copy.deepcopy(self.config['action_restrictions'])
+        # Game configuration (spec-accurate; mirrors live metadata.* structure).
+        # See docs_game/game_concepts.md and docs_game/actions.md for the source of
+        # every constant below. Values match the production server defaults.
+        self.config = {
+            'max_energy': 100,          # metadata.shipConfig.maxEnergy
+            'energy_per_recharge': 10,   # metadata.shipConfig.energyPerRecharge (+recharge_energy*2/tick)
+            'max_health': 100,
+            'max_jump_distance': 50,    # metadata.shipConfig.maxJumpDistance (+jump_distance*10)
+            'max_nutrinium_cargo': 1000,
+            'max_credits': 10000,
+            # Skill-point budget allocated to EVERY ship each episode. The budget
+            # is common to all ships but distributed randomly (and differently)
+            # across the 19 skills per ship, fully consumed, re-rolled each reset.
+            # Each skill is capped 0-10, so the effective maximum is 19*10 = 190.
+            'skill_point_budget': 24,
+            # Normalizes skill_points_total/spent in the observation; kept equal to
+            # the budget so those (now-constant) values stay within [0, 1].
+            'max_skill_points': 24,
+            'energy_costs': {
+                # metadata.shipConfig.energyCosts
+                'mine': 10,           # reduced by mine_cost skill (min 0)
+                'move': 0,            # MOVE is free (recharge while moving)
+                'jump': 1,            # per unit euclidean distance
+                'jump_min_cost': 75,  # jumpMinCost; reduced by jump_cost skill (-5/pt, floor 0)
+                'attack': 1,
+                'plunder': 5,         # PLUNDER fixed cost (even on miss)
+                'negotiate': 5,
+                'sell': 0,            # SELL is free
+                'shield_maintenance': 1,  # per-tick cost while shields POWERED
+                'shields': 1,         # legacy alias (binary-shield code path; removed in P6)
+            },
+            'combat': {
+                'base_target_number': 0.5,   # roll-to-hit threshold (attack_accuracy -5%/pt, evade +5%/pt)
+                'guaranteed_miss_chance': 0.05,
+                'guaranteed_hit_chance': 0.05,
+                'attack_shield_damage': 1.5,  # attackShieldDamage: shieldDmg = round(dmg*1.5)
+                'base_shield_resistance': 0.25,   # +shield_strength/20, max 0.75
+                'recharge_penalty': 0.2,         # target recharging -> easier to hit
+                'shield_recharge_rate': 10,      # DRAINING decay/tick + RAISE_SHIELDS cost divisor
+                'base_shield_capacity': 100,     # +shield_capacity*10
+                'damage_variance': 0.5,          # +=-50% damage spread (energy*0.5..1.5)
+                'default_attack_payload': 20,    # energy committed per ATTACK when no bin chosen (scalar action space)
+            },
+            'mining': {
+                'payout_modifier': 0.01,       # mining.payoutModifier: max % of remaining nutrinium per mine
+                'base_success_chance': 0.5,    # legacy alias (old density path; removed in P3)
+                'min_payout': -1,
+                'max_payout': 10,
+                # Beta shape for the biased-low random payout (reuses asteroid-budget skew).
+                'payout_beta_alpha': 1.5,
+                'payout_beta_beta': 8.0,
+            },
+            'market': {
+                'sell_nutrinium': 98,         # metadata.market.sell.nutrinium (base; fluctuates)
+                'repair': 50,                 # metadata.market.buy.repair (REPAIR credit cost)
+                'nutrinium_price': 98,        # legacy alias of sell_nutrinium
+                'ship_cost': 100,
+                # Dynamic market: price drifts toward base, dips on simultaneous sells.
+                'price_recovery_rate': 0.05,   # fraction of gap to base recovered per tick
+                'price_dip_per_sale': 0.02,    # fractional dip applied per sale in a tick
+                'price_min_factor': 0.5,       # floor as a fraction of base price
+            },
+            'team_insurance': {
+                # metadata.teamInsurance: respawn cost per member = base*(1+escalation*N)
+                'base_cost_per_member': 10,
+                'cost_escalation': 1.0,
+            },
+            'negotiate': {
+                'base_success_chance': 0.4,   # negotiate_skill shifts succ up / fail down
+                'base_fail_chance': 0.2,
+                'min_fail_chance': 0.05,      # fail can never reach 0
+                'bonus_gain': 0.05,           # team bonus increase on SUCCESS (+negotiate_ambition*10%)
+                'bonus_penalty': 0.05,        # team bonus decrease on FAIL (-negotiate_caution*8%)
+                'max_team_bonus': 1.0,        # diminishing-returns ceiling
+            },
+            'salvage': {
+                'wreckage_percent': 0.5,      # portion of destroyed nutrinium left as wreckage
+                'energy_cost': 5,             # metadata.salvage.energyCost
+            },
+            'asteroid_density': 0.11,
+            #
+            #
+            #
+            #
+            #
+            'trading_post_count': None,
+            'trading_post_density': 0.0015360,
+            'trading_post_min': 4,
+            'sensor_range': 5,
+            #
+            #
+            #
+            #
+            #
+            #
+            #
+            'nutrinium_min_percent': 0.08,
+            'nutrinium_max_percent': 1.0,
+            #
+            #
+            #
+            #
+            'nutrinium_beta_alpha': 1.5,
+            'nutrinium_beta_beta': 8.0,
+            #
+            'asteroid_mass_min': 50,
+            'asteroid_mass_max': 500,
+            #
+            #
+            #
+            'action_restrictions': {
+                'WAIT': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
+                'MINE': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': False},
+                'MOVE': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
+                'RECHARGE': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': False},
+                'RECHARGE_END': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
+                'ATTACK': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
+                'JUMP': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
+                'SELL': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
+                'RAISE_SHIELDS': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': False},
+                'LOWER_SHIELDS': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
+                'PLUNDER': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': False},
+                'SALVAGE': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': False},
+                'REPAIR': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
+                'NEGOTIATE': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
+                'RESPAWN': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True}
+            },
+            #
+            'abilities': {
+                'energy_max': 10,
+                'recharge_energy': 10,
+                'mine_accuracy': 10,
+                'mine_yield_multiplier': 10,
+                'mine_cost': 10,
+                'attack_power': 10,
+                'attack_accuracy': 10,
+                'evade': 10,
+                'shield_strength': 10,
+                'shield_capacity': 10,
+                'shield_efficiency': 10,
+                'combat_salvage_multiplier': 10,
+                'jump_distance': 10,
+                'jump_cost': 10,
+                'sensor_range': 10,
+                'salvage_yield': 10,
+                'negotiate_skill': 10,
+                'negotiate_cautious': 10,
+                'negotiate_ambition': 10
+            },
+            #
+            'top_asteroids_count': 5
+        }
 
-self.reward_config = reward_config if reward_config is not None else RewardConfig()
-if hasattr(self.reward_config, 'use_composite', False):
-    try:
-        from reward_utils import (
-            RewardCalculatorComposite,
-            DistanceToAsteroidReward,
-            SurvivalReward,
-            PenaltyNearEnemyReward,
-            SellBonusReward,
-            MiningQualityReward,
-            InappropriateActionPenalty,
-            EndOfEpisodeNutriniumReward,
-            EarlyDeathPenaltyReward,
-            CreditProgressReward,
-            IdleLoopPenalty,
-            EndOfEpisodeCreditReward,
-            PlacementReward,
-EnergyStarvationPenalty,
-OverriddenActionPenalty,
+        #
+        #
+        #
+        #
+        self.base_action_restrictions = copy.deepcopy(self.config['action_restrictions'])
 
-# Mapping of short names to constructor callables
-component_map = {
-    'DistanceToAsteroidReward': DistanceToAsteroidReward,
-    'SurvivalReward': SurvivalReward,
-    'PenaltyNearEnemyReward': PenaltyNearEnemyReward,
-    'SellBonusReward': SellBonusReward,
-    'MiningQualityReward': MiningQualityReward,
-    'InappropriateActionPenalty': InappropriateActionPenalty,
-    'EndofEpisodeNutriniumReward': EndofEpisodeNutriniumReward,
-    'EarlyDeathPenaltyReward': EarlyDeathPenaltyReward,
-    'CreditProgressReward': CreditProgressReward,
-    'IdleLoopPenalty': IdleLoopPenalty,
-    'EndofEpisodeCreditReward': EndofEpisodeCreditReward,
-    'PlacementReward': PlacementReward,
-    'EnergyStarvationPenalty': EnergyStarvationPenalty,
-    'OverriddenActionPenalty': OverriddenActionPenalty,
-}
+        #
+        self.reward_config = reward_config if reward_config is not None else RewardConfig()
+        #
+        if hasattr(self.reward_config, 'use_composite', False):
+            try:
+                #
+                from reward_utils import (
+                    RewardCalculatorComposite,
+                    DistanceToAsteroidReward,
+                    SurvivalReward,
+                    PenaltyNearEnemyReward,
+                    SellBonusReward,
+                    MiningQualityReward,
+                    InappropriateActionPenalty,
+                    EndOfEpisodeNutriniumReward,
+                    EarlyDeathPenaltyReward,
+                    CreditProgressReward,
+                    IdleLoopPenalty,
+                    EndOfEpisodeCreditReward,
+                    PlacementReward,
+                    EnergyStarvationPenalty,
+                    OverriddenActionPenalty,
+                )
 
-comps = []
-specs = self.reward_config.composite_components or []
-if specs:
-    for spec in specs:
-        try:
-            if isinstance(spec, str):
-                name = spec
-                params = {}
-            elif isinstance(spec, dict):
-                name = spec.get('name')
-                params = spec.get('params', {}) or {}
-            else:
-                continue
+                # Mapping of short names to constructor callables
+                component_map = {
+                    'DistanceToAsteroidReward': DistanceToAsteroidReward,
+                    'SurvivalReward': SurvivalReward,
+                    'PenaltyNearEnemyReward': PenaltyNearEnemyReward,
+                    'SellBonusReward': SellBonusReward,
+                    'MiningQualityReward': MiningQualityReward,
+                    'InappropriateActionPenalty': InappropriateActionPenalty,
+                    'EndofEpisodeNutriniumReward': EndofEpisodeNutriniumReward,
+                    'EarlyDeathPenaltyReward': EarlyDeathPenaltyReward,
+                    'CreditProgressReward': CreditProgressReward,
+                    'IdleLoopPenalty': IdleLoopPenalty,
+                    'EndofEpisodeCreditReward': EndofEpisodeCreditReward,
+                    'PlacementReward': PlacementReward,
+                    'EnergyStarvationPenalty': EnergyStarvationPenalty,
+                    'OverriddenActionPenalty': OverriddenActionPenalty,
+                }
 
-            ctor = component_map.get(name)
-            if ctor is None:
-                # Unknown component name; skip
-                continue
-            # Instantiate with params if any
-            comps.append(ctor(**params) if params else ctor())
-        except Exception:
-            # Skip components that fail to construct
-            continue
-else:
-    # Default composite components - balanced to prioritize credit accumulation
-    # SurvivalReward: tiny per-step bonus for staying alive (0.001/step = 0.3 total)
-    # DistanceToAsteroidReward: gentle shaping toward mineable resources
-    # CreditProgressReward: rewards credit gains, penalizes zero-credit idling
-    # IdleLoopPenalty: penalizes getting stuck in non-productive loops
-    # EndofEpisodeCreditReward: strong end-of-episode signal for credits (0.5 per credit)
-    # InappropriateActionPenalty: penalizes contextually bad actions (e.g. MINE with no asteroid)
-comps = [
-    DistanceToAsteroidReward(),
-    SurvivalReward(),
-    CreditProgressReward(),
-    IdleLoopPenalty(),
-    EndofEpisodeCreditReward(),
-    EndofEpisodeNutriniumReward(),  # Penalizes holding unsold nutrinium at episode end
-    EarlyDeathPenaltyReward(),      # Penalizes early death proportional to remaining episode
-    InappropriateActionPenalty(),
-    # --- new components (analysis-driven fixes) ---
-    PlacementReward(),             # Strong terminal reward based on final rank vs opponents
-    SellBonusReward(),             # Reinforces the mine -> sell loop
-    EnergyStarvationPenalty(),     # Discourages low-energy drifting / chronic energy starvation
-    OverriddenActionPenalty(),     # Penalty when env had to override an infeasible chosen action
-]
+                comps = []
+                specs = self.reward_config.composite_components or []
+                if specs:
+                    for spec in specs:
+                        try:
+                            if isinstance(spec, str):
+                                name = spec
+                                params = {}
+                            elif isinstance(spec, dict):
+                                name = spec.get('name')
+                                params = spec.get('params', {}) or {}
+                            else:
+                                continue
 
-self.reward_calc = RewardCalculatorComposite(self.reward_config, comps)
-logger.info(f"Using RewardCalculatorComposite with components: [{c.__class__.__name__ for c in comps}]")
-except Exception as e:
-    logger.warning(f"Failed to construct RewardCalculatorComposite: {e}. Falling back to simple RewardCalculator.")
-    self.reward_calc = RewardCalculator(self.reward_config)
-else:
-    self.reward_calc = RewardCalculator(self.reward_config)
+                            ctor = component_map.get(name)
+                            if ctor is None:
+                                # Unknown component name; skip
+                                continue
+                            # Instantiate with params if any
+                            comps.append(ctor(**params) if params else ctor())
+                        except Exception:
+                            # Skip components that fail to construct
+                            continue
+                else:
+                    # Default composite components - balanced to prioritize credit accumulation
+                    # SurvivalReward: tiny per-step bonus for staying alive (0.001/step = 0.3 total)
+                    # DistanceToAsteroidReward: gentle shaping toward mineable resources
+                    # CreditProgressReward: rewards credit gains, penalizes zero-credit idling
+                    # IdleLoopPenalty: penalizes getting stuck in non-productive loops
+                    # EndofEpisodeCreditReward: strong end-of-episode signal for credits (0.5 per credit)
+                    # InappropriateActionPenalty: penalizes contextually bad actions (e.g. MINE with no asteroid)
+                    comps = [
+                        DistanceToAsteroidReward(),
+                        SurvivalReward(),
+                        CreditProgressReward(),
+                        IdleLoopPenalty(),
+                        EndofEpisodeCreditReward(),
+                        EndofEpisodeNutriniumReward(),  # Penalizes holding unsold nutrinium at episode end
+                        EarlyDeathPenaltyReward(),      # Penalizes early death proportional to remaining episode
+                        InappropriateActionPenalty(),
+                        # --- new components (analysis-driven fixes) ---
+                        PlacementReward(),             # Strong terminal reward based on final rank vs opponents
+                        SellBonusReward(),             # Reinforces the mine -> sell loop
+                        EnergyStarvationPenalty(),     # Discourages low-energy drifting / chronic energy starvation
+                        OverriddenActionPenalty(),     # Penalty when env had to override an infeasible chosen action
+                    ]
 
-# Invalid action handling / diagnostics
-# If True, the env will print warnings when an invalid action is provided
-self.warn_on_invalid_action = bool(warn_on_invalid_action)
-# Counter for invalid actions encountered (normalization failures or OOB)
-self.invalid_action_count = 0
-# Counter for state-invalid actions (valid action code but invalid given current state)
-self.state_invalid_action_count = 0
-
-# Default player model spec (can be overridden per model)
-self.player_model_spec = DEFAULT_FULL_SPEC
-
-# Action space: structured MultiDiscrete faithful to the game server, and
-# trainable by stable-baselines3 (which supports MultiDiscrete but not Dict action
-# spaces). The policy emits a length-4 vector:
-# [action_type, target_x, target_y, energy_bin]
-# - action_type: 0..18 (see ActionType)
-# - target:      (x, y) grid coordinate (coordinate JUMP; explicit ATTACK/PLUNDER
-#                target preference)
-# - energy_bin: 0 = "use action default", 1..N = 10%..100% of max energy (ATTACK payload)
-# A bare scalar int action is still accepted by `_normalize_action` for backward
-# compatibility (auto-target, default energy), so the heuristic AIs and legacy
-# scalar-Discrete callers continue to work unchanged.
-self.num_action_types = len(ActionType)  # 19 discrete action types
-self.energy_bins = 11           # 0 = default payload, 1..10 = 10%..100%
-self.action_space = spaces.MultiDiscrete(
-    [self.num_action_types, self.map_width, self.map_height, self.energy_bins]
-)
-
-# Observation space: flattened representation of game state
-# Enhanced ship state (based on full metadata):
-#   - Basic: x, y, energy, health, nutrinium, credits (6)
-#   - State flags: recharging, shields_up, state_ready (3)
-#   - Skill points: total, spent (2)
-#   - Abilities: 12 ability values
-#   - Action counter: actions taken this episode (1)
-# Total ship state: 24 values
-#
-# + Strategic context (high-signal features): 8 values
-#   - at_asteroid: 1 if on asteroid with nutrinium, 0 otherwise
-#   - at_trading_post: 1 if on trading post, 0 otherwise
-#   - has_nutrinium: nutrinium / cargo_cap (how full is cargo)
-#   - enemy_in_zone: 1 if enemy at same location, 0 otherwise
-#   - nearest_asteroid_dist: distance / map_diag (normalized)
-#   - nearest_trading_post_dist: distance / map_diag (normalized)
-#   - energy_ratio: energy / max_energy (redundant but grouped with context)
-#   - episode_progress: current_step / max_steps
-#
-# + Local sensor data (grid around ship)
-# + Top 5 asteroids (x, y, mass, nutrinium, distance, score) = 6 values each = 30 total
-# + Nearest trading post (x, y, distance) = 3 values
-# + Two enemy types at player location:
-#   - Strongest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
-#   - Weakest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
-# Total enemy info: 14 values
-
-ship_state_size = 24           # Complete ship state (including action counter)
-strategic_context_size = 8     # High-signal strategic features
-sensor_grid_size = (2 * self.config['sensor_range'] + 1) ** 2
-top_asteroids_size = self.config['top_asteroids_count'] * 6   # 5 asteroids * 6 features each
-# Spec-fidelity features (appended so legacy offsets stay stable):
-#    7 new skills + 5 shield-state + 3 modules + 3 team/economy
-#    + 3 negotiate-objective + 3 nearest-wreckage
-spec_fidelity_size = 24
-
-trading_post_size = 3          # Nearest trading post (x, y, distance)
-enemy_info_size = 14           # Strongest + weakest enemy at player location (7 each)
-
-# Action-restriction matrix (appended last): 2 flags per action id
-# (allowedWhileRecharging, allowedWithShieldsUp) so the policy can adapt to
-# dynamic/randomized restrictions instead of treating them as constant.
-action_restriction_size = 2 * self.num_action_types
-
-obs_size = (
-    ship_state_size +
-    strategic_context_size +
-    sensor_grid_size +
-    top_asteroids_size +
-    trading_post_size +
-    enemy_info_size +
-    spec_fidelity_size +
-    action_restriction_size
-)
-
-# Use Dict observation space to support action masking
-self.observation_space = spaces.Dict({
-    'observation': spaces.Box(
-        low=-1.0,  # Allow -1.0 for out-of-bounds indicators in sensor grid
-        high=1.0,
-        shape=(obs_size,),
-        dtype=np.float32
-    ),
-    'action_mask': spaces.Box(
-        low=0,
-        high=1,
-        shape=(self.num_action_types,),  # One mask value per action type
-        dtype=np.int8
-    )
-})
-
-# Initialize state variables
-self.current_step = 0
-self.action_counter = 0     # Track actions taken in current episode (max ~300 for 5 min @ 1 action/sec)
-self.player_ship = None
-self.opponent_ships = []
-self.asteroids = []
-self.trading_posts = []
-
-# Track last actions for display
-self.last_player_action = None
-self.last_opponent_actions = {}
-# Track last action results for display (dicts)
-self.last_player_action_result = None
-self.last_opponent_action_results = {}
-
-def _compute_trading_post_target(self) -> int:
-    """Number of trading posts to place this episode, scaled by map area.
-
-    Uses `trading_post_count` as an explicit override when set (non-None);
-    otherwise derives the count from `trading_post_density` (posts per cell)
-    and clamps to at least `trading_post_min`. Production reference: 24 posts
-    on a 125x125 map -> density ~= 0.0015360 (1 per 651 cells).
-    """
-    explicit = self.config.get('trading_post_count')
-
-if explicit is not None:
-    return max(0, int(explicit))
-density = self.config.get('trading_post_density', 0.0015360)
-floor = self.config.get('trading_post_min', 4)
-derived = round(self.map_width * self.map_height * density)
-return max(floor, int(derived))
-
-def _generate_episode_action_restrictions(self) -> dict:
-    """Derive a randomized action-restriction matrix from the baseline.
-
-    Randomly flips the `allowedWhileRecharging` / `allowedWithShieldsUp`
-    flags of most actions so the policy must read the encoded restriction
-    features to adapt. A small set of invariants is preserved to guarantee
-    the episode stays solvable (no deadlocks):
-
-    * WAIT is always allowed (idle fallback).
-    * RECHARGE_END.allowedWhileRecharging stays True (must be able to stop
-      recharging) and RECHARGE.allowedWhileRecharging stays False.
-    * MOVE.allowedWhileRecharging stays True (recharge-while-moving mobility).
-    * RESPAWN stays fully unrestricted (destroyed-ship recovery).
-    """
-    restrictions = copy.deepcopy(self._base_action_restrictions)
-    # Per-flag invariants that must not be randomized: {key: {flag: value}}.
-    locked = {
-        'WAIT': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
-        'RECHARGE': {'allowedWhileRecharging': False},
-        'RECHARGE_END': {'allowedWhileRecharging': True},
-        'MOVE': {'allowedWhileRecharging': True},
-        'RESPAWN': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
-    }
-    for key, rule in restrictions.items():
-        for flag in ('allowedWhileRecharging', 'allowedWithShieldsUp'):
-            if flag in locked.get(key, {}):
-                rule[flag] = locked[key][flag]
-            else:
-                rule[flag] = bool(random.getrandbits(1))
-    return restrictions
-
-def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, dict]:
-    """Reset the environment to initial state"""
-    super().reset(seed=seed)
-
-    if seed is not None:
-        random.seed(seed)
-        np.random.seed(seed)
-
-    self.current_step = 0
-
-    # Reset action tracking
-    self.action_counter = 0  # Reset action counter for new episode
-    self.last_player_action = None
-    self.last_opponent_actions = {}
-    self.last_player_action_result = None
-    self.last_opponent_action_results = {}
-
-    # Set this episode's action-restriction matrix. Restore the production
-    # baseline by default, or derive a randomized variant when enabled so the
-    # policy must read the restriction features to adapt. Updating config here
-    # keeps the masker, the observation encoding, and the metadata sent to bots
-    # all consistent for the whole episode.
-    if self.randomize_action_restrictions:
-        self.config['action_restrictions'] = self._generate_episode_action_restrictions()
-    else:
-        self.config['action_restrictions'] = copy.deepcopy(self._base_action_restrictions)
-
-    # Initialize player ship position
-    if self.use_predefined_start:
-        start_pos = self._load_predefined_start_position()
-        if start_pos is not None:
-            player_x, player_y = start_pos['player_x'], start_pos['player_y']
+                self.reward_calc = RewardCalculatorComposite(self.reward_config, comps)
+                logger.info(f"Using RewardCalculatorComposite with components: [{c.__class__.__name__ for c in comps}]")
+            except Exception as e:
+                logger.warning(f"Failed to construct RewardCalculatorComposite: {e}. Falling back to simple RewardCalculator.")
+                self.reward_calc = RewardCalculator(self.reward_config)
         else:
-            # Fallback to random if loading failed
+            self.reward_calc = RewardCalculator(self.reward_config)
+
+        # Invalid action handling / diagnostics
+        # If True, the env will print warnings when an invalid action is provided
+        self.warn_on_invalid_action = bool(warn_on_invalid_action)
+        # Counter for invalid actions encountered (normalization failures or OOB)
+        self.invalid_action_count = 0
+        # Counter for state-invalid actions (valid action code but invalid given current state)
+        self.state_invalid_action_count = 0
+
+        # Default player model spec (can be overridden per model)
+        self.player_model_spec = DEFAULT_FULL_SPEC
+
+        # Action space: structured MultiDiscrete faithful to the game server, and
+        # trainable by stable-baselines3 (which supports MultiDiscrete but not Dict action
+        # spaces). The policy emits a length-4 vector:
+        # [action_type, target_x, target_y, energy_bin]
+        # - action_type: 0..18 (see ActionType)
+        # - target:      (x, y) grid coordinate (coordinate JUMP; explicit ATTACK/PLUNDER
+        #                target preference)
+        # - energy_bin: 0 = "use action default", 1..N = 10%..100% of max energy (ATTACK payload)
+        # A bare scalar int action is still accepted by `_normalize_action` for backward
+        # compatibility (auto-target, default energy), so the heuristic AIs and legacy
+        # scalar-Discrete callers continue to work unchanged.
+        self.num_action_types = len(ActionType)  # 19 discrete action types
+        self.energy_bins = 11           # 0 = default payload, 1..10 = 10%..100%
+        self.action_space = spaces.MultiDiscrete(
+            [self.num_action_types, self.map_width, self.map_height, self.energy_bins]
+        )
+
+        # Observation space: flattened representation of game state
+        # Enhanced ship state (based on full metadata):
+        #   - Basic: x, y, energy, health, nutrinium, credits (6)
+        #   - State flags: recharging, shields_up, state_ready (3)
+        #   - Skill points: total, spent (2)
+        #   - Abilities: 12 ability values
+        #   - Action counter: actions taken this episode (1)
+        # Total ship state: 24 values
+        #
+        # + Strategic context (high-signal features): 8 values
+        #   - at_asteroid: 1 if on asteroid with nutrinium, 0 otherwise
+        #   - at_trading_post: 1 if on trading post, 0 otherwise
+        #   - has_nutrinium: nutrinium / cargo_cap (how full is cargo)
+        #   - enemy_in_zone: 1 if enemy at same location, 0 otherwise
+        #   - nearest_asteroid_dist: distance / map_diag (normalized)
+        #   - nearest_trading_post_dist: distance / map_diag (normalized)
+        #   - energy_ratio: energy / max_energy (redundant but grouped with context)
+        #   - episode_progress: current_step / max_steps
+        #
+        # + Local sensor data (grid around ship)
+        # + Top 5 asteroids (x, y, mass, nutrinium, distance, score) = 6 values each = 30 total
+        # + Nearest trading post (x, y, distance) = 3 values
+        # + Two enemy types at player location:
+        #   - Strongest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
+        #   - Weakest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
+        # Total enemy info: 14 values
+
+        ship_state_size = 24           # Complete ship state (including action counter)
+        strategic_context_size = 8     # High-signal strategic features
+        sensor_grid_size = (2 * self.config['sensor_range'] + 1) ** 2
+        top_asteroids_size = self.config['top_asteroids_count'] * 6   # 5 asteroids * 6 features each
+        # Spec-fidelity features (appended so legacy offsets stay stable):
+        #    7 new skills + 5 shield-state + 3 modules + 3 team/economy
+        #    + 3 negotiate-objective + 3 nearest-wreckage
+        spec_fidelity_size = 24
+
+        trading_post_size = 3          # Nearest trading post (x, y, distance)
+        enemy_info_size = 14           # Strongest + weakest enemy at player location (7 each)
+
+        # Action-restriction matrix (appended last): 2 flags per action id
+        # (allowedWhileRecharging, allowedWithShieldsUp) so the policy can adapt to
+        # dynamic/randomized restrictions instead of treating them as constant.
+        action_restriction_size = 2 * self.num_action_types
+
+        obs_size = (
+            ship_state_size +
+            strategic_context_size +
+            sensor_grid_size +
+            top_asteroids_size +
+            trading_post_size +
+            enemy_info_size +
+            spec_fidelity_size +
+            action_restriction_size
+        )
+
+        # Use Dict observation space to support action masking
+        self.observation_space = spaces.Dict({
+            'observation': spaces.Box(
+                low=-1.0,  # Allow -1.0 for out-of-bounds indicators in sensor grid
+                high=1.0,
+                shape=(obs_size,),
+                dtype=np.float32
+            ),
+            'action_mask': spaces.Box(
+                low=0,
+                high=1,
+                shape=(self.num_action_types,),  # One mask value per action type
+                dtype=np.int8
+            )
+        })
+
+        # Initialize state variables
+        self.current_step = 0
+        self.action_counter = 0     # Track actions taken in current episode (max ~300 for 5 min @ 1 action/sec)
+        self.player_ship = None
+        self.opponent_ships = []
+        self.asteroids = []
+        self.trading_posts = []
+
+        # Track last actions for display
+        self.last_player_action = None
+        self.last_opponent_actions = {}
+        # Track last action results for display (dicts)
+        self.last_player_action_result = None
+        self.last_opponent_action_results = {}
+
+    def _compute_trading_post_target(self) -> int:
+        """Number of trading posts to place this episode, scaled by map area.
+
+        Uses `trading_post_count` as an explicit override when set (non-None);
+        otherwise derives the count from `trading_post_density` (posts per cell)
+        and clamps to at least `trading_post_min`. Production reference: 24 posts
+        on a 125x125 map -> density ~= 0.0015360 (1 per 651 cells).
+        """
+        explicit = self.config.get('trading_post_count')
+        if explicit is not None:
+            return max(0, int(explicit))
+        density = self.config.get('trading_post_density', 0.0015360)
+        floor = self.config.get('trading_post_min', 4)
+        derived = round(self.map_width * self.map_height * density)
+        return max(floor, int(derived))
+
+    def _generate_episode_action_restrictions(self) -> dict:
+        """Derive a randomized action-restriction matrix from the baseline.
+
+        Randomly flips the `allowedWhileRecharging` / `allowedWithShieldsUp`
+        flags of most actions so the policy must read the encoded restriction
+        features to adapt. A small set of invariants is preserved to guarantee
+        the episode stays solvable (no deadlocks):
+
+        * WAIT is always allowed (idle fallback).
+        * RECHARGE_END.allowedWhileRecharging stays True (must be able to stop
+          recharging) and RECHARGE.allowedWhileRecharging stays False.
+        * MOVE.allowedWhileRecharging stays True (recharge-while-moving mobility).
+        * RESPAWN stays fully unrestricted (destroyed-ship recovery).
+        """
+        restrictions = copy.deepcopy(self._base_action_restrictions)
+        # Per-flag invariants that must not be randomized: {key: {flag: value}}.
+        locked = {
+            'WAIT': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
+            'RECHARGE': {'allowedWhileRecharging': False},
+            'RECHARGE_END': {'allowedWhileRecharging': True},
+            'MOVE': {'allowedWhileRecharging': True},
+            'RESPAWN': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
+        }
+        for key, rule in restrictions.items():
+            for flag in ('allowedWhileRecharging', 'allowedWithShieldsUp'):
+                if flag in locked.get(key, {}):
+                    rule[flag] = locked[key][flag]
+                else:
+                    rule[flag] = bool(random.getrandbits(1))
+        return restrictions
+
+    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, dict]:
+        """Reset the environment to initial state"""
+        super().reset(seed=seed)
+
+        if seed is not None:
+            random.seed(seed)
+            np.random.seed(seed)
+
+        self.current_step = 0
+
+        # Reset action tracking
+        self.action_counter = 0  # Reset action counter for new episode
+        self.last_player_action = None
+        self.last_opponent_actions = {}
+        self.last_player_action_result = None
+        self.last_opponent_action_results = {}
+
+        # Set this episode's action-restriction matrix. Restore the production
+        # baseline by default, or derive a randomized variant when enabled so the
+        # policy must read the restriction features to adapt. Updating config here
+        # keeps the masker, the observation encoding, and the metadata sent to bots
+        # all consistent for the whole episode.
+        if self.randomize_action_restrictions:
+            self.config['action_restrictions'] = self._generate_episode_action_restrictions()
+        else:
+            self.config['action_restrictions'] = copy.deepcopy(self._base_action_restrictions)
+
+        # Initialize player ship position
+        if self.use_predefined_start:
+            start_pos = self._load_predefined_start_position()
+            if start_pos is not None:
+                player_x, player_y = start_pos['player_x'], start_pos['player_y']
+            else:
+                # Fallback to random if loading failed
+                player_x = random.randint(0, self.map_width - 1)
+                player_y = random.randint(0, self.map_height - 1)
+        else:
             player_x = random.randint(0, self.map_width - 1)
             player_y = random.randint(0, self.map_height - 1)
-    else:
-        player_x = random.randint(0, self.map_width - 1)
-        player_y = random.randint(0, self.map_height - 1)
 
-    # Skill-point budget for this episode. Every ship gets the same budget but
-    # distributes it randomly (and differently) across the 19 skills, fully
-    # consumed and re-rolled each reset. Player and each opponent get their own
-    # independent allocation below.
-    skill_point_budget = int(self.config.get('skill_point_budget', 0))
-    # Modules installed this episode (shared by all ships). Default: all module-locked
-    # actions available, so jump/repair/salvage-heavy training is unaffected. Set
-    # self.module_grant_mode='random' to train module-gated behaviour.
-    self._episode_modules = self._generate_episode_modules()
-    # Team / market / wreckage bookkeeping (spec: team-shared respawn + negotiate bonus).
-    self.team_respawn_counts = {tid: 0 for tid in range(4)}
-    self.team_bonuses = {tid: 0.0 for tid in range(4)}
-    self.market_price = float(self.config['market']['sell_nutrinium'])
-    self.wreckage = []  # list of (name, x, y, nutrinium)
+        # Skill-point budget for this episode. Every ship gets the same budget but
+        # distributes it randomly (and differently) across the 19 skills, fully
+        # consumed and re-rolled each reset. Player and each opponent get their own
+        # independent allocation below.
+        skill_point_budget = int(self.config.get('skill_point_budget', 0))
+        # Modules installed this episode (shared by all ships). Default: all module-locked
+        # actions available, so jump/repair/salvage-heavy training is unaffected. Set
+        # self.module_grant_mode='random' to train module-gated behaviour.
+        self._episode_modules = self._generate_episode_modules()
+        # Team / market / wreckage bookkeeping (spec: team-shared respawn + negotiate bonus).
+        self.team_respawn_counts = {tid: 0 for tid in range(4)}
+        self.team_bonuses = {tid: 0.0 for tid in range(4)}
+        self.market_price = float(self.config['market']['sell_nutrinium'])
+        self.wreckage = []  # list of (name, x, y, nutrinium)
 
-    # Player's own randomized skill allocation + derived per-ship shield capacity.
-    player_abilities = self.distribute_skill_points(skill_point_budget)
-    player_shield_capacity = (
-        self.config['combat']['base_shield_capacity']
-        + player_abilities.get('shield_capacity', 0) * 10
-    )
-self.player_ship = {
-    'name': 'P',  # Player ship name
-    'x': player_x,
-    'y': player_y,
-    'energy': self.config['max_energy'],
-    'health': self.config['max_health'],
-    'nutrinium': 0,
-    'credits': 0,
-    'recharging': False,
-    'just_recharged': False,  # legacy alias of (shield['value'] > 0)
-    'destroyed': False,
-    'state': 'READY',  # READY, RECHARGING, DESTROYED
-    'respawn_count': 0,  # Track number of times respawned this episode
-    'skill_points_total': skill_point_budget,
-    'skill_points_spent': sum(player_abilities.values()),
-    # Ship abilities - this ship's own randomized allocation of the budget
-    'abilities': player_abilities,
-    # Spec-accurate fields (P0)
-    'team_id': 0,
-    'modules': list(self._episode_modules),
-    'shield': {'state': 'DOWN', 'capacity': player_shield_capacity, 'value': 0},
-    'objectives': {'negotiate': None},  # assigned after trading posts are built
-}
+        # Player's own randomized skill allocation + derived per-ship shield capacity.
+        player_abilities = self.distribute_skill_points(skill_point_budget)
+        player_shield_capacity = (
+            self.config['combat']['base_shield_capacity']
+            + player_abilities.get('shield_capacity', 0) * 10
+        )
 
-# Assign player model spec
-self._set_ship_model_spec(self.player_ship, self.player_model_spec)
+        self.player_ship = {
+            'name': 'P',  # Player ship name
+            'x': player_x,
+            'y': player_y,
+            'energy': self.config['max_energy'],
+            'health': self.config['max_health'],
+            'nutrinium': 0,
+            'credits': 0,
+            'recharging': False,
+            'just_recharged': False,  # legacy alias of (shield['value'] > 0)
+            'destroyed': False,
+            'state': 'READY',  # READY, RECHARGING, DESTROYED
+            'respawn_count': 0,  # Track number of times respawned this episode
+            'skill_points_total': skill_point_budget,
+            'skill_points_spent': sum(player_abilities.values()),
+            # Ship abilities - this ship's own randomized allocation of the budget
+            'abilities': player_abilities,
+            # Spec-accurate fields (P0)
+            'team_id': 0,
+            'modules': list(self._episode_modules),
+            'shield': {'state': 'DOWN', 'capacity': player_shield_capacity, 'value': 0},
+            'objectives': {'negotiate': None},  # assigned after trading posts are built
+        }
 
-# Initialize opponent ships
-self.opponent_ships = []
+        # Assign player model spec
+        self._set_ship_model_spec(self.player_ship, self.player_model_spec)
 
-# Load available enemy models
-enemy_model_entries = self._load_enemy_model_entries()
+        # Initialize opponent ships
+        self.opponent_ships = []
 
-for i in range(self.num_opponents):
-    # Decide AI type: use forced list if provided, otherwise random
-    use_model = False
-    model_path = None
-    model_spec = DEFAULT_FULL_SPEC
-    ai_type = None
+        # Load available enemy models
+        enemy_model_entries = self._load_enemy_model_entries()
 
-    if self.forced_opponent_types and i < len(self.forced_opponent_types):
-        # Use forced opponent type from the list
-        forced_type = self.forced_opponent_types[i]
-        # forced_type is a string: BOT_V2..BOT_V6, or a model path
-        forced_upper = forced_type.upper()
-        if forced_upper == 'BOT_V2':
-            ai_type = OpponentAIType.BOT_V2
-        elif forced_upper == 'BOT_V3':
-            ai_type = OpponentAIType.BOT_V3
-        elif forced_upper == 'BOT_V4':
-            ai_type = OpponentAIType.BOT_V4
-        elif forced_upper == 'BOT_V5':
-            ai_type = OpponentAIType.BOT_V5
-        elif forced_upper == 'BOT_V6':
-            ai_type = OpponentAIType.BOT_V6
-        elif forced_upper == 'BOT_V7':
-            ai_type = OpponentAIType.BOT_V7
-    else:
-        # Treat as model path or "model_path::SPEC_NAME"
-        ai_type = OpponentAIType.MODEL
-        use_model = True
-        parsed_path, parsed_spec_name = self._parse_enemy_model_entry(forced_type)
-        if parsed_path is None:
-            parsed_path = forced_type
-        model_path = parsed_path
-        resolved_spec = get_named_model_spec(parsed_spec_name) if parsed_spec_name else None
-        if parsed_spec_name and resolved_spec is None:
-            logger.warning(
-                "Unknown model spec '%s' for forced opponent entry '%s'. Falling back to DEFAULT_FULL_SPEC.",
-                parsed_spec_name,
-                forced_type,
-            )
-        if resolved_spec is not None:
-            model_spec = resolved_spec
+        for i in range(self.num_opponents):
+            # Decide AI type: use forced list if provided, otherwise random
+            use_model = False
+            model_path = None
+            model_spec = DEFAULT_FULL_SPEC
+            ai_type = None
 
-    else:
-        # No forced type - use random selection
-        if enemy_model_entries and len(enemy_model_entries) > 0:
-            if random.random() < 0.15:  # 15% chance to use model (reduced from 50% for training performance)
+            if self.forced_opponent_types and i < len(self.forced_opponent_types):
+                # Use forced opponent type from the list
+                forced_type = self.forced_opponent_types[i]
+                # forced_type is a string: BOT_V2..BOT_V6, or a model path
+                forced_upper = forced_type.upper()
+                if forced_upper == 'BOT_V2':
+                    ai_type = OpponentAIType.BOT_V2
+                elif forced_upper == 'BOT_V3':
+                    ai_type = OpponentAIType.BOT_V3
+                elif forced_upper == 'BOT_V4':
+                    ai_type = OpponentAIType.BOT_V4
+                elif forced_upper == 'BOT_V5':
+                    ai_type = OpponentAIType.BOT_V5
+                elif forced_upper == 'BOT_V6':
+                    ai_type = OpponentAIType.BOT_V6
+                elif forced_upper == 'BOT_V7':
+                    ai_type = OpponentAIType.BOT_V7
+            else:
+                # Treat as model path or "model_path::SPEC_NAME"
+                ai_type = OpponentAIType.MODEL
                 use_model = True
-                selected = random.choice(enemy_model_entries)
-                model_path = selected['path']
-                spec_name = selected.get('spec_name')
-                resolved_spec = get_named_model_spec(spec_name) if spec_name else None
-                if spec_name and resolved_spec is None:
+                parsed_path, parsed_spec_name = self._parse_enemy_model_entry(forced_type)
+                if parsed_path is None:
+                    parsed_path = forced_type
+                model_path = parsed_path
+                resolved_spec = get_named_model_spec(parsed_spec_name) if parsed_spec_name else None
+                if parsed_spec_name and resolved_spec is None:
                     logger.warning(
-                        "Unknown model spec '%s' for enemy model '%s'. Falling back to DEFAULT_FULL_SPEC.",
-                        spec_name,
-                        model_path,
+                        "Unknown model spec '%s' for forced opponent entry '%s'. Falling back to DEFAULT_FULL_SPEC.",
+                        parsed_spec_name,
+                        forced_type,
                     )
                 if resolved_spec is not None:
                     model_spec = resolved_spec
-                    ai_type = OpponentAIType.MODEL
 
-    if ai_type is None:
-        # Randomly assign an algorithm-based AI type, chosen uniformly
-        # from every OpponentAIType except MODEL (MODEL needs a model
-        # path and is handled in the enemy-model branch above). Driving
-        # this off the enum means any new opponent type added in the
-        # future is automatically included in training.
+                else:
+                    # No forced type - use random selection
+                    if enemy_model_entries and len(enemy_model_entries) > 0:
+                        if random.random() < 0.15:  # 15% chance to use model (reduced from 50% for training performance)
+                            use_model = True
+                            selected = random.choice(enemy_model_entries)
+                            model_path = selected['path']
+                            spec_name = selected.get('spec_name')
+                            resolved_spec = get_named_model_spec(spec_name) if spec_name else None
+                            if spec_name and resolved_spec is None:
+                                logger.warning(
+                                    "Unknown model spec '%s' for enemy model '%s'. Falling back to DEFAULT_FULL_SPEC.",
+                                    spec_name,
+                                    model_path,
+                                )
+                            if resolved_spec is not None:
+                                model_spec = resolved_spec
+                                ai_type = OpponentAIType.MODEL
 
-algorithmic_ai_types = [t for t in OpponentAIType if t != OpponentAIType.MODEL]
-ai_type = random.choice(algorithmic_ai_types)
+                if ai_type is None:
+                    # Randomly assign an algorithm-based AI type, chosen uniformly
+                    # from every OpponentAIType except MODEL (MODEL needs a model
+                    # path and is handled in the enemy-model branch above). Driving
+                    # this off the enum means any new opponent type added in the
+                    # future is automatically included in training.
 
-# This opponent's own randomized skill allocation + derived shield capacity.
-opp_abilities = self._distribute_skill_points(skill_point_budget, ai_type)
-opp_shield_capacity = (
-    self.config['combat']['base_shield_capacity']
-    + opp_abilities.get('shield_capacity', 0) * 10
-)
+                    algorithmic_ai_types = [t for t in OpponentAIType if t != OpponentAIType.MODEL]
+                    ai_type = random.choice(algorithmic_ai_types)
 
-ship = {
-    'name': f'E{i+1}',  # Enemy ship name (E1, E2, E3, etc.)
-    'id': f'opponent_{i}',
-    'ai_type': ai_type,  # Store AI behavior type
-    'model_path': model_path if use_model else None,  # Model path for MODEL type enemies
-    'x': random.randint(0, self.map_width - 1),
-    'y': random.randint(0, self.map_height - 1),
-    'energy': self.config['max_energy'],
-    'health': self.config['max_health'],
-    'nutrinium': 0,  # Start with 0 nutrinium (must mine to collect)
-    'credits': 0,  # Start with 0 credits (must sell to earn)
-    'recharging': False,
-    'just_recharged': False,
-    'shields_up': False,  # legacy alias of (shield['value'] > 0)
-    'destroyed': False,
-    'state': 'READY',
-    'respawn_count': 0,
-    'skill_points_total': skill_point_budget,
-    'skill_points_spent': sum(opp_abilities.values()),  # Ship abilities - this ship's own randomized allocation of the budget
-    'abilities': opp_abilities,
-    # Spec-accurate fields (PO)
-    'team_id': (i + 1) % 4,
-    'modules': list(self._episode_modules),
-    'shield': {'state': 'DOWN', 'capacity': opp_shield_capacity, 'value': 0},
-    'objectives': {'negotiate': None},  # assigned after trading posts are built
-}
-self.opponent_ships.append(ship)
+            # This opponent's own randomized skill allocation + derived shield capacity.
+            opp_abilities = self._distribute_skill_points(skill_point_budget, ai_type)
+            opp_shield_capacity = (
+                self.config['combat']['base_shield_capacity']
+                + opp_abilities.get('shield_capacity', 0) * 10
+            )
 
-# Assign enemy model spec from config (or default to full observation)
-self._set_ship_model_spec(ship, model_spec)
+            ship = {
+                'name': f'E{i+1}',  # Enemy ship name (E1, E2, E3, etc.)
+                'id': f'opponent_{i}',
+                'ai_type': ai_type,  # Store AI behavior type
+                'model_path': model_path if use_model else None,  # Model path for MODEL type enemies
+                'x': random.randint(0, self.map_width - 1),
+                'y': random.randint(0, self.map_height - 1),
+                'energy': self.config['max_energy'],
+                'health': self.config['max_health'],
+                'nutrinium': 0,  # Start with 0 nutrinium (must mine to collect)
+                'credits': 0,  # Start with 0 credits (must sell to earn)
+                'recharging': False,
+                'just_recharged': False,
+                'shields_up': False,  # legacy alias of (shield['value'] > 0)
+                'destroyed': False,
+                'state': 'READY',
+                'respawn_count': 0,
+                'skill_points_total': skill_point_budget,
+                'skill_points_spent': sum(opp_abilities.values()),  # Ship abilities - this ship's own randomized allocation of the budget
+                'abilities': opp_abilities,
+                # Spec-accurate fields (PO)
+                'team_id': (i + 1) % 4,
+                'modules': list(self._episode_modules),
+                'shield': {'state': 'DOWN', 'capacity': opp_shield_capacity, 'value': 0},
+                'objectives': {'negotiate': None},  # assigned after trading posts are built
+            }
+            self.opponent_ships.append(ship)
 
-# Generate asteroids
-self.asteroids = []
+            # Assign enemy model spec from config (or default to full observation)
+            self._set_ship_model_spec(ship, model_spec)
 
-if self.use_predefined_asteroids:
-    # Load predefined asteroids from config file
-    predefined = self.load_predefined_asteroids()
-    if predefined is not None:
-        # Deep copy the predefined asteroids to avoid modifying cached data
-        self.asteroids = copy.deepcopy(predefined)
-else:
-    # Fallback to random generation if loading failed
-    self.use_predefined_asteroids = False  # Disable for this episode
-
-if not self.use_predefined_asteroids or not self.asteroids:
-    # Random asteroid generation using jittered-grid (stratified sampling)
-    # This reduces clustering by partitioning the map into k x k buckets
-    # and placing at most one asteroid per selected bucket at a random
-    # location inside that bucket.
-    num_cells = max(1, self.map_width * self.map_height)
-    desired = int(self.map_width * self.map_height * self.config['asteroid_density'])
-    num_asteroids = max(0, min(desired, num_cells))
-
-    if num_asteroids == 0:
+        # Generate asteroids
         self.asteroids = []
-    else:
-        # Determine grid dimension k so that k*k >= num_asteroids
-        k = int(math.ceil(math.sqrt(num_asteroids)))
 
-        # Compute cell width/height (may be fractional)
-        cell_w = float(self.map_width) / k
-        cell_h = float(self.map_height) / k
+        if self.use_predefined_asteroids:
+            # Load predefined asteroids from config file
+            predefined = self.load_predefined_asteroids()
+            if predefined is not None:
+                # Deep copy the predefined asteroids to avoid modifying cached data
+                self.asteroids = copy.deepcopy(predefined)
+        else:
+            # Fallback to random generation if loading failed
+            self.use_predefined_asteroids = False  # Disable for this episode
 
-        # Build list of bucket indices (row, col) then randomly choose num_asteroids buckets
-        buckets = [(r, c) for r in range(k) for c in range(k)]
-        # If more buckets than needed, sample without replacement to choose buckets
-        chosen_buckets = random.sample(buckets, k=num_asteroids) if num_asteroids < len(buckets) else buckets
+        if not self.use_predefined_asteroids or not self.asteroids:
+            # Random asteroid generation using jittered-grid (stratified sampling)
+            # This reduces clustering by partitioning the map into k x k buckets
+            # and placing at most one asteroid per selected bucket at a random
+            # location inside that bucket.
+            num_cells = max(1, self.map_width * self.map_height)
+            desired = int(self.map_width * self.map_height * self.config['asteroid_density'])
+            num_asteroids = max(0, min(desired, num_cells))
 
-        placed = set()
-        for (r, c) in chosen_buckets:
-            # Determine integer ranges for this bucket
-            x_min = int(math.floor(c * cell_w))
-            x_max = int(math.floor((c + 1) * cell_w)) - 1
-            y_min = int(math.floor(r * cell_h))
-            y_max = int(math.floor((r + 1) * cell_h)) - 1
-
-            # Clamp ranges to map bounds
-            x_min = max(0, min(self.map_width - 1, x_min))
-            x_max = max(0, min(self.map_width - 1, max(x_min, x_max)))
-            y_min = max(0, min(self.map_height - 1, y_min))
-            y_max = max(0, min(self.map_height - 1, max(y_min, y_max)))
-
-            # If the bucket ended up empty (very small map), fall back to global random pos
-            if x_min > x_max or y_min > y_max:
-                ax = random.randint(0, self.map_width - 1)
-                ay = random.randint(0, self.map_height - 1)
+            if num_asteroids == 0:
+                self.asteroids = []
             else:
-                ax = random.randint(x_min, x_max)
-                ay = random.randint(y_min, y_max)
+                # Determine grid dimension k so that k*k >= num_asteroids
+                k = int(math.ceil(math.sqrt(num_asteroids)))
 
-# Ensure uniqueness; if occupied, try a few nearby cells, otherwise skip
-attempts = 0
-while (ax, ay) in placed and attempts < 8:
-    ax = min(self.map_width - 1, max(0, ax + random.randint(-1, 1)))
-    ay = min(self.map_height - 1, max(0, ay + random.randint(-1, 1)))
-    attempts += 1
-if (ax, ay) in placed:
-    # As a last resort, find any free cell
-    for xx in range(self.map_width):
-        found = False
-        for yy in range(self.map_height):
-            if (xx, yy) not in placed:
-                ax, ay = xx, yy
-                found = True
-                break
-        if found:
-            break
+                # Compute cell width/height (may be fractional)
+                cell_w = float(self.map_width) / k
+                cell_h = float(self.map_height) / k
 
-placed.add((ax, ay))
+                # Build list of bucket indices (row, col) then randomly choose num_asteroids buckets
+                buckets = [(r, c) for r in range(k) for c in range(k)]
+                # If more buckets than needed, sample without replacement to choose buckets
+                chosen_buckets = random.sample(buckets, k=num_asteroids) if num_asteroids < len(buckets) else buckets
 
-# Mass is assigned independently; nutrinium will be set in the
-# budget-distribution pass below.
-mass_min = self.config.get('asteroid_mass_min', 10)
-mass_max = self.config.get('asteroid_mass_max', 50)
-mass = random.randint(mass_min, mass_max)
-self.asteroids.append({'x': ax, 'y': ay, 'mass': mass, 'nutrinium': 0})
+                placed = set()
+                for (r, c) in chosen_buckets:
+                    # Determine integer ranges for this bucket
+                    x_min = int(math.floor(c * cell_w))
+                    x_max = int(math.floor((c + 1) * cell_w)) - 1
+                    y_min = int(math.floor(r * cell_h))
+                    y_max = int(math.floor((r + 1) * cell_h)) - 1
 
-# --- Nutrinium concentration distribution across asteroids ---
-# Production concentration model: each asteroid receives
-#   nutrinium = round(concentration * mass)
-# where concentration is drawn per asteroid as
-#   min_pct + Beta(alpha, beta) * (max_pct - min_pct).
-# Beta(1.5, 8) is right-skewed (many poor asteroids, few rich),
-# and the [min_pct, max_pct] band matches the production mapConfig
-# (minNutriniumPercent / maxNutriniumPercent). Because the value is
-# tied to each asteroid's mass, the total nutrinium scales with the
-# number of asteroids -- and therefore with map area.
-if self.asteroids:
-    alpha = self.config.get('nutrinium_beta_alpha', 1.5)
-    beta_param = self.config.get('nutrinium_beta_beta', 8.0)
-    min_pct = self.config.get('nutrinium_min_percent', 0.08)
-    max_pct = self.config.get('nutrinium_max_percent', 1.0)
-    pct_span = max(0.0, max_pct - min_pct)
+                    # Clamp ranges to map bounds
+                    x_min = max(0, min(self.map_width - 1, x_min))
+                    x_max = max(0, min(self.map_width - 1, max(x_min, x_max)))
+                    y_min = max(0, min(self.map_height - 1, y_min))
+                    y_max = max(0, min(self.map_height - 1, max(y_min, y_max)))
 
-    for asteroid in self.asteroids:
-        concentration = min_pct + random.betavariate(alpha, beta_param) * pct_span
-        concentration = min(max_pct, max(0.0, concentration))
-        nutr = int(round(concentration * asteroid['mass']))
-        asteroid['nutrinium'] = min(asteroid['mass'], max(0, nutr))
+                    # If the bucket ended up empty (very small map), fall back to global random pos
+                    if x_min > x_max or y_min > y_max:
+                        ax = random.randint(0, self.map_width - 1)
+                        ay = random.randint(0, self.map_height - 1)
+                    else:
+                        ax = random.randint(x_min, x_max)
+                        ay = random.randint(y_min, y_max)
 
-# Generate trading posts
-self.trading_posts = []
+                        # Ensure uniqueness; if occupied, try a few nearby cells, otherwise skip
+                        attempts = 0
+                        while (ax, ay) in placed and attempts < 8:
+                            ax = min(self.map_width - 1, max(0, ax + random.randint(-1, 1)))
+                            ay = min(self.map_height - 1, max(0, ay + random.randint(-1, 1)))
+                            attempts += 1
+                        if (ax, ay) in placed:
+                            # As a last resort, find any free cell
+                            for xx in range(self.map_width):
+                                found = False
+                                for yy in range(self.map_height):
+                                    if (xx, yy) not in placed:
+                                        ax, ay = xx, yy
+                                        found = True
+                                        break
+                                if found:
+                                    break
 
-if self.use_predefined_asteroids:
-    # Load predefined trading posts from the same config file
-    predefined_posts = self.load_predefined_trading_posts()
-    if predefined_posts is not None:
-        # Deep copy the predefined trading posts
-        self.trading_posts = copy.deepcopy(predefined_posts)
+                        placed.add((ax, ay))
 
-# Ensure asteroids and trading posts do not overlap and that trading posts are unique
-asteroid_positions = {(a['x'], a['y']) for a in self.asteroids}
+                        # Mass is assigned independently; nutrinium will be set in the
+                        # budget-distribution pass below.
+                        mass_min = self.config.get('asteroid_mass_min', 10)
+                        mass_max = self.config.get('asteroid_mass_max', 50)
+                        mass = random.randint(mass_min, mass_max)
+                        self.asteroids.append({'x': ax, 'y': ay, 'mass': mass, 'nutrinium': 0})
 
-# If we have predefined trading posts loaded, remove any that overlap asteroids
-if self.trading_posts:
-    filtered_posts = []
-    seen_posts = set()
-    for post in self.trading_posts:
-        key = (post['x'], post['y'])
-        if key in asteroid_positions:
-            logger.warning(f"Predefined trading post at {key} overlaps an asteroid and will be ignored.")
-            continue
-        if key in seen_posts:
-            logger.warning(f"Duplicate predefined trading post at {key} ignored.")
-            continue
-        seen_posts.add(key)
-        filtered_posts.append(post)
-    self.trading_posts = filtered_posts
+                # --- Nutrinium concentration distribution across asteroids ---
+                # Production concentration model: each asteroid receives
+                #   nutrinium = round(concentration * mass)
+                # where concentration is drawn per asteroid as
+                #   min_pct + Beta(alpha, beta) * (max_pct - min_pct).
+                # Beta(1.5, 8) is right-skewed (many poor asteroids, few rich),
+                # and the [min_pct, max_pct] band matches the production mapConfig
+                # (minNutriniumPercent / maxNutriniumPercent). Because the value is
+                # tied to each asteroid's mass, the total nutrinium scales with the
+                # number of asteroids -- and therefore with map area.
+                if self.asteroids:
+                    alpha = self.config.get('nutrinium_beta_alpha', 1.5)
+                    beta_param = self.config.get('nutrinium_beta_beta', 8.0)
+                    min_pct = self.config.get('nutrinium_min_percent', 0.08)
+                    max_pct = self.config.get('nutrinium_max_percent', 1.0)
+                    pct_span = max(0.0, max_pct - min_pct)
 
-# If not enough trading posts (or none), generate remaining using jittered-grid
-# to ensure good spatial coverage and avoid clustering. Trading posts will
-# never overlap asteroids or each other.
-self.trading_post_target = self.compute_trading_post_target()
-needed = self.trading_post_target - len(self.trading_posts)
-if needed > 0:
-    # Build set of occupied positions (asteroids + already placed posts)
-    occupied = set(asteroid_positions) | {(p['x'], p['y']) for p in self.trading_posts}
+                    for asteroid in self.asteroids:
+                        concentration = min_pct + random.betavariate(alpha, beta_param) * pct_span
+                        concentration = min(max_pct, max(0.0, concentration))
+                        nutr = int(round(concentration * asteroid['mass']))
+                        asteroid['nutrinium'] = min(asteroid['mass'], max(0, nutr))
 
-    # If the map is small or needed is large, fall back to random sampling
-    num_cells = self.map_width * self.map_height
-    if needed >= num_cells - len(occupied):
-        # Not enough free cells or heavy filling; sample from available
-        available = [(x, y) for x in range(self.map_width) for y in range(self.map_height) if (x, y) not in occupied]
-        if needed > len(available):
-            logger.warning(f"Not enough free cells to place {needed} additional trading posts; only {len(available)} available. Placing as many as possible.")
-            needed = len(available)
-        chosen_posts = random.sample(available, k=needed) if needed > 0 else []
-        for (tx, ty) in chosen_posts:
-            self.trading_posts.append({'x': tx, 'y': ty})
-else:
-    # Use stratified placement: choose `needed` buckets across a k x k grid
-    # where k*k >= needed, then pick a random location inside each bucket
-    k = int(math.ceil(math.sqrt(needed)))
-    cell_w = float(self.map_width) / k
-    cell_h = float(self.map_height) / k
+        # Generate trading posts
+        self.trading_posts = []
 
-    buckets = [(r, c) for r in range(k) for c in range(k)]
-    chosen_buckets = random.sample(buckets, k=needed) if needed < len(buckets) else buckets
+        if self.use_predefined_asteroids:
+            # Load predefined trading posts from the same config file
+            predefined_posts = self.load_predefined_trading_posts()
+            if predefined_posts is not None:
+                # Deep copy the predefined trading posts
+                self.trading_posts = copy.deepcopy(predefined_posts)
 
-    placed_posts = set((p['x'], p['y']) for p in self.trading_posts)
+        # Ensure asteroids and trading posts do not overlap and that trading posts are unique
+        asteroid_positions = {(a['x'], a['y']) for a in self.asteroids}
 
-    for (r, c) in chosen_buckets:
-        # Determine integer ranges for this bucket
-        x_min = int(math.floor(c * cell_w))
-        x_max = int(math.floor((c + 1) * cell_w)) - 1
-        y_min = int(math.floor(r * cell_h))
-        y_max = int(math.floor((r + 1) * cell_h)) - 1
+        # If we have predefined trading posts loaded, remove any that overlap asteroids
+        if self.trading_posts:
+            filtered_posts = []
+            seen_posts = set()
+            for post in self.trading_posts:
+                key = (post['x'], post['y'])
+                if key in asteroid_positions:
+                    logger.warning(f"Predefined trading post at {key} overlaps an asteroid and will be ignored.")
+                    continue
+                if key in seen_posts:
+                    logger.warning(f"Duplicate predefined trading post at {key} ignored.")
+                    continue
+                seen_posts.add(key)
+                filtered_posts.append(post)
+            self.trading_posts = filtered_posts
 
-        # Clamp ranges to map bounds
-        x_min = max(0, min(self.map_width - 1, x_min))
-        x_max = max(0, min(self.map_width - 1, max(x_min, x_max)))
-        y_min = max(0, min(self.map_height - 1, y_min))
-        y_max = max(0, min(self.map_height - 1, max(y_min, y_max)))
+    # If not enough trading posts (or none), generate remaining using jittered-grid
+    # to ensure good spatial coverage and avoid clustering. Trading posts will
+    # never overlap asteroids or each other.
+    self.trading_post_target = self.compute_trading_post_target()
+    needed = self.trading_post_target - len(self.trading_posts)
+    if needed > 0:
+        # Build set of occupied positions (asteroids + already placed posts)
+        occupied = set(asteroid_positions) | {(p['x'], p['y']) for p in self.trading_posts}
 
-        # Choose a random candidate inside bucket avoiding occupied cells
-        found = False
-        tries = 0
-        while not found and tries < 12:
-            if x_min > x_max or y_min > y_max:
-                tx = random.randint(0, self.map_width - 1)
-                ty = random.randint(0, self.map_height - 1)
-            else:
-                tx = random.randint(x_min, x_max)
-                ty = random.randint(y_min, y_max)
+        # If the map is small or needed is large, fall back to random sampling
+        num_cells = self.map_width * self.map_height
+        if needed >= num_cells - len(occupied):
+            # Not enough free cells or heavy filling; sample from available
+            available = [(x, y) for x in range(self.map_width) for y in range(self.map_height) if (x, y) not in occupied]
+            if needed > len(available):
+                logger.warning(f"Not enough free cells to place {needed} additional trading posts; only {len(available)} available. Placing as many as possible.")
+                needed = len(available)
+            chosen_posts = random.sample(available, k=needed) if needed > 0 else []
+            for (tx, ty) in chosen_posts:
+                self.trading_posts.append({'x': tx, 'y': ty})
+        else:
+            # Use stratified placement: choose `needed` buckets across a k x k grid
+            # where k*k >= needed, then pick a random location inside each bucket
+            k = int(math.ceil(math.sqrt(needed)))
+            cell_w = float(self.map_width) / k
+            cell_h = float(self.map_height) / k
 
-            if (tx, ty) in occupied or (tx, ty) in placed_posts:
-                # try nearby
-                tx = min(self.map_width - 1, max(0, tx + random.randint(-1, 1)))
-                ty = min(self.map_height - 1, max(0, ty + random.randint(-1, 1)))
-                tries += 1
-                continue
+            buckets = [(r, c) for r in range(k) for c in range(k)]
+            chosen_buckets = random.sample(buckets, k=needed) if needed < len(buckets) else buckets
 
-            # Accept this post
-            self.trading_posts.append({'x': tx, 'y': ty})
-            placed_posts.add((tx, ty))
-            found = True
+            placed_posts = set((p['x'], p['y']) for p in self.trading_posts)
 
-        if not found:
-            # Fallback: find any available cell
-            for xx in range(self.map_width):
-                for yy in range(self.map_height):
-                    if (xx, yy) not in occupied and (xx, yy) not in placed_posts:
-                        self.trading_posts.append({'x': xx, 'y': yy})
-                        placed_posts.add((xx, yy))
-                        found = True
-                        break
-                if found:
-                    break
-            if not found:
-                logger.warning('Unable to place an expected trading post due to lack of free cells.')
+            for (r, c) in chosen_buckets:
+                # Determine integer ranges for this bucket
+                x_min = int(math.floor(c * cell_w))
+                x_max = int(math.floor((c + 1) * cell_w)) - 1
+                y_min = int(math.floor(r * cell_h))
+                y_max = int(math.floor((r + 1) * cell_h)) - 1
 
-    # Give every trading post a stable name/id (used by NEGOTIATE objectives) and
-    # assign each ship an initial negotiate objective pointing at one of them.
-    for idx, post in enumerate(self.trading_posts):
-        post.setdefault('id', f'tp_{idx}')
-        post.setdefault('name', f'TP-{idx}')
-    self._assign_negotiate_objectives()
+                # Clamp ranges to map bounds
+                x_min = max(0, min(self.map_width - 1, x_min))
+                x_max = max(0, min(self.map_width - 1, max(x_min, x_max)))
+                y_min = max(0, min(self.map_height - 1, y_min))
+                y_max = max(0, min(self.map_height - 1, max(y_min, y_max)))
 
-    # Build spatial lookup cache for fast entity-at-location queries
-    self._rebuild_location_cache()
+                # Choose a random candidate inside bucket avoiding occupied cells
+                found = False
+                tries = 0
+                while not found and tries < 12:
+                    if x_min > x_max or y_min > y_max:
+                        tx = random.randint(0, self.map_width - 1)
+                        ty = random.randint(0, self.map_height - 1)
+                    else:
+                        tx = random.randint(x_min, x_max)
+                        ty = random.randint(y_min, y_max)
 
-    observation = self.get_observation()
-    info = self._get_info()
+                    if (tx, ty) in occupied or (tx, ty) in placed_posts:
+                        # try nearby
+                        tx = min(self.map_width - 1, max(0, tx + random.randint(-1, 1)))
+                        ty = min(self.map_height - 1, max(0, ty + random.randint(-1, 1)))
+                        tries += 1
+                        continue
 
-    return observation, info
+                    # Accept this post
+                    self.trading_posts.append({'x': tx, 'y': ty})
+                    placed_posts.add((tx, ty))
+                    found = True
 
-def step(self, action: int) -> Tuple[Dict, float, bool, bool, dict]:
-    """Execute one step in the environment"""
-    # Rebuild spatial lookup cache for fast entity-at-location queries
-    self._rebuild_location_cache()
-    # Market price drifts back toward its base each tick (sales dip it).
-    self._update_market()
-    # Per-ship tick order (steps 1-2): apply shield maintenance + recharge gain
-    # to the player BEFORE its action so recharge energy is spendable this tick
-    # and validity/mask checks below see the post-recharge energy.
-    self._pre_action_tick(self.player_ship)
-    # Preserve the raw requested action for debugging
-    requested_action_raw = action
+                if not found:
+                    # Fallback: find any available cell
+                    for xx in range(self.map_width):
+                        for yy in range(self.map_height):
+                            if (xx, yy) not in occupied and (xx, yy) not in placed_posts:
+                                self.trading_posts.append({'x': xx, 'y': yy})
+                                placed_posts.add((xx, yy))
+                                found = True
+                                break
+                        if found:
+                            break
+                    if not found:
+                        logger.warning('Unable to place an expected trading post due to lack of free cells.')
 
-    # Normalize action -> (action_type, target, energy). Scalar/legacy inputs yield
-    # (atype, None, None) so existing callers and AIs keep their auto-target behaviour.
-    action_target = None
-    action_energy = None
-    try:
-        action, action_target, action_energy = self._normalize_action(action)
-        action_valid = 0 <= action < self.num_action_types
-    except Exception as e:
-        # Normalization failed (e.g., non-int-like input). Default to WAIT
-        self.invalid_action_count += 1
-if self.warn_on_invalid_action:
-    logger.warning(f"Unable to normalize action {requested_action_raw!r}: {e}. Defaulting to WAIT.")
-action = int(ActionType.WAIT)
-action_valid = False
+        # Give every trading post a stable name/id (used by NEGOTIATE objectives) and
+        # assign each ship an initial negotiate objective pointing at one of them.
+        for idx, post in enumerate(self.trading_posts):
+            post.setdefault('id', f'tp_{idx}')
+            post.setdefault('name', f'TP-{idx}')
+        self._assign_negotiate_objectives()
 
-# Apply action mapping from player's model spec
-# This allows models with different action space sizes to compete
-player_spec = self._get_ship_model_spec(self.player_ship)
-mapped_action = player_spec.action_spec.map_action(action, env_action_space_size=self.num_action_types)
-if action != mapped_action:
-    action = mapped_action
+        # Build spatial lookup cache for fast entity-at-location queries
+        self._rebuild_location_cache()
 
-# Validate bounds; if out of range, default to WAIT
-if not (0 <= action < self.num_action_types):
-    self.invalid_action_count += 1
+        observation = self.get_observation()
+        info = self._get_info()
+
+        return observation, info
+
+    def step(self, action: int) -> Tuple[Dict, float, bool, bool, dict]:
+        """Execute one step in the environment"""
+        # Rebuild spatial lookup cache for fast entity-at-location queries
+        self._rebuild_location_cache()
+        # Market price drifts back toward its base each tick (sales dip it).
+        self._update_market()
+        # Per-ship tick order (steps 1-2): apply shield maintenance + recharge gain
+        # to the player BEFORE its action so recharge energy is spendable this tick
+        # and validity/mask checks below see the post-recharge energy.
+        self._pre_action_tick(self.player_ship)
+        # Preserve the raw requested action for debugging
+        requested_action_raw = action
+
+        # Normalize action -> (action_type, target, energy). Scalar/legacy inputs yield
+        # (atype, None, None) so existing callers and AIs keep their auto-target behaviour.
+        action_target = None
+        action_energy = None
+        try:
+            action, action_target, action_energy = self._normalize_action(action)
+            action_valid = 0 <= action < self.num_action_types
+        except Exception as e:
+            # Normalization failed (e.g., non-int-like input). Default to WAIT
+            self.invalid_action_count += 1
     if self.warn_on_invalid_action:
-        logger.warning(f"Action {action} out of bounds [0, {self.num_action_types - 1}]. Defaulting to WAIT.")
+        logger.warning(f"Unable to normalize action {requested_action_raw!r}: {e}. Defaulting to WAIT.")
     action = int(ActionType.WAIT)
     action_valid = False
 
-# If player is destroyed, force RESPAWN action
-if self.player_ship['destroyed']:
-    if action != ActionType.RESPAWN:
-        # Override any other action to RESPAWN
+    # Apply action mapping from player's model spec
+    # This allows models with different action space sizes to compete
+    player_spec = self._get_ship_model_spec(self.player_ship)
+    mapped_action = player_spec.action_spec.map_action(action, env_action_space_size=self.num_action_types)
+    if action != mapped_action:
+        action = mapped_action
+
+    # Validate bounds; if out of range, default to WAIT
+    if not (0 <= action < self.num_action_types):
+        self.invalid_action_count += 1
         if self.warn_on_invalid_action:
-            logger.warning("Player is destroyed. Only RESPAWN action is allowed. Forcing RESPAWN.")
-        action = int(ActionType.RESPAWN)
+            logger.warning(f"Action {action} out of bounds [0, {self.num_action_types - 1}]. Defaulting to WAIT.")
+        action = int(ActionType.WAIT)
+        action_valid = False
 
-# If terminate_on_player_death is True, terminate after respawn action
-if self.terminate_on_player_death:
-    observation = self._get_observation()
-    return observation, 0.0, True, False, self._get_info()
+    # If player is destroyed, force RESPAWN action
+    if self.player_ship['destroyed']:
+        if action != ActionType.RESPAWN:
+            # Override any other action to RESPAWN
+            if self.warn_on_invalid_action:
+                logger.warning("Player is destroyed. Only RESPAWN action is allowed. Forcing RESPAWN.")
+            action = int(ActionType.RESPAWN)
 
-# With action masking, invalid actions should not be selected by the model
-# However, we still track them for diagnostics and ENFORCE the masking
-state_valid = True
-state_invalid_reason = ""
-if action_valid:  # Only check state validity if action code is valid
-    state_valid, state_invalid_reason = self._is_action_valid_for_state(action, self.player_ship, is_player=True)
-if not state_valid:
-    self.state_invalid_action_count += 1
-    if self.warn_on_invalid_action:
-        logger.warning(f"Action {ActionType(action).name} invalid for current state: {state_invalid_reason}. "
-                       f"This should not happen with action masking!")
+    # If terminate_on_player_death is True, terminate after respawn action
+    if self.terminate_on_player_death:
+        observation = self._get_observation()
+        return observation, 0.0, True, False, self._get_info()
 
-# ENFORCE action masking: force invalid action to appropriate valid action
-# This prevents the model from executing invalid actions. The rules, fallback priority and enforcement all live in the shared
-# action_masker utility (single source of truth with bot_v6).
-original_action = action
-state = self.build_mask_state(self.player_ship, is_player=True)
-mask = action_masker.get_action_mask(state)
-action = action_masker.mask_action(original_action, state, mask=mask)
-if self.warn_on_invalid_action and action != original_action:
-    logger.warning(f"Forcing {ActionType(original_action).name} -> {ActionType(action).name} (action mask enforcement)")
+    # With action masking, invalid actions should not be selected by the model
+    # However, we still track them for diagnostics and ENFORCE the masking
+    state_valid = True
+    state_invalid_reason = ""
+    if action_valid:  # Only check state validity if action code is valid
+        state_valid, state_invalid_reason = self._is_action_valid_for_state(action, self.player_ship, is_player=True)
+    if not state_valid:
+        self.state_invalid_action_count += 1
+        if self.warn_on_invalid_action:
+            logger.warning(f"Action {ActionType(action).name} invalid for current state: {state_invalid_reason}. "
+                           f"This should not happen with action masking!")
 
-reward = 0.0
-self.current_step += 1
-self.action_counter += 1  # Increment action counter (tracks actions taken this episode)
+    # ENFORCE action masking: force invalid action to appropriate valid action
+    # This prevents the model from executing invalid actions. The rules, fallback priority and enforcement all live in the shared
+    # action_masker utility (single source of truth with bot_v6).
+    original_action = action
+    state = self.build_mask_state(self.player_ship, is_player=True)
+    mask = action_masker.get_action_mask(state)
+    action = action_masker.mask_action(original_action, state, mask=mask)
+    if self.warn_on_invalid_action and action != original_action:
+        logger.warning(f"Forcing {ActionType(original_action).name} -> {ActionType(action).name} (action mask enforcement)")
 
-# Execute player action
-self.last_player_action = int(action) if action is not None else None
-# Provide previous position for reward components that rely on positional delta
-prev_position = (self.player_ship['x'], self.player_ship['y'])
-# Clear just_recharged flag when executing a non-RECHARGE action to prevent recharge loops
-if action != int(ActionType.RECHARGE):
-    self.player_ship['just_recharged'] = False
-action_reward, action_info = self._execute_action(action, self.player_ship, is_player=True, target=action_target, energy=action_energy)
-# Per-ship tick order (step 4): drain DRAINING shields after the player's action.
-self.post_action_tick(self.player_ship)
-# Expose previous position so RewardComponents (e.g., DistanceToAsteroidReward) can compute deltas
-action_info['prev_position'] = prev_position
+    reward = 0.0
+    self.current_step += 1
+    self.action_counter += 1  # Increment action counter (tracks actions taken this episode)
 
-# Annotate action_info with validation/debug fields
-action_info['requested_action'] = str(requested_action_raw)
-action_info['valid_action'] = bool(action_valid)
-# After enforcement, the executed action is valid even if the original was not
-action_info['state_valid'] = True
-if not state_valid:
-    action_info['state_invalid_reason'] = state_invalid_reason
-    action_info['state_enforced'] = True  # Flag that enforcement was applied
-# keep raw reward in action_info for transparency/debugging
-action_info['raw_reward'] = float(action_reward)
+    # Execute player action
+    self.last_player_action = int(action) if action is not None else None
+    # Provide previous position for reward components that rely on positional delta
+    prev_position = (self.player_ship['x'], self.player_ship['y'])
+    # Clear just_recharged flag when executing a non-RECHARGE action to prevent recharge loops
+    if action != int(ActionType.RECHARGE):
+        self.player_ship['just_recharged'] = False
+    action_reward, action_info = self._execute_action(action, self.player_ship, is_player=True, target=action_target, energy=action_energy)
+    # Per-ship tick order (step 4): drain DRAINING shields after the player's action.
+    self.post_action_tick(self.player_ship)
+    # Expose previous position so RewardComponents (e.g., DistanceToAsteroidReward) can compute deltas
+    action_info['prev_position'] = prev_position
 
-# Will compute scaled reward below; store scaled in action_info for renderer
-# compute final reward via RewardCalculator; pass env and ship for optional shaping
-scaled = self.reward_calc.compute(action_reward, action, action_info, env=self, ship=self.player_ship)
-reward += scaled
-# record scaled reward in action_info for rendering/debug
-action_info['scaled_reward'] = float(scaled)
-# Save last player action result for rendering
-try:
-    # shallow copy of relevant fields, include optional payload
-    self.last_player_action_result = {
-        'action': action_info.get('action'),
-        'success': action_info.get('success'),
-        'raw_reward': float(action_info.get('raw_reward', 0.0)),
-        'scaled_reward': float(action_info.get('scaled_reward', 0.0)),
-        'state_valid': action_info.get('state_valid', True),
-        'state_invalid_reason': action_info.get('state_invalid_reason', ''),
-'payload': action_info.get('payload', None)
-}
-except Exception:
-    self.last_player_action_result = None
+    # Annotate action_info with validation/debug fields
+    action_info['requested_action'] = str(requested_action_raw)
+    action_info['valid_action'] = bool(action_valid)
+    # After enforcement, the executed action is valid even if the original was not
+    action_info['state_valid'] = True
+    if not state_valid:
+        action_info['state_invalid_reason'] = state_invalid_reason
+        action_info['state_enforced'] = True  # Flag that enforcement was applied
+    # keep raw reward in action_info for transparency/debugging
+    action_info['raw_reward'] = float(action_reward)
 
-# Execute opponent actions (simple AI)
-for i, opponent in enumerate(self.opponent_ships):
-    if not opponent['destroyed']:
-        # Per-ship tick order (steps 1-2): maintenance + recharge before action.
-        self._pre_action_tick(opponent)
-        opponent_action = self._get_opponent_action(opponent)
-        # Response-bot opponents (BOT_V2/BOT_V3) stash their own target/
-        # energy so the simulator executes exactly what the bot asked for
-        # (no auto-targeting). Other AIs leave these unset -> None -> the
-        # action falls back to its legacy auto-target selection.
-        op_target = opponent.pop('_pending_action_target', None)
-        op_energy = opponent.pop('_pending_action_energy', None)
-        # Clear just_recharged flag for opponents (same as player) to prevent recharge lock
-        if opponent_action != int(ActionType.RECHARGE):
-            opponent['just_recharged'] = False
-        # store action id
-        try:
-            self.last_opponent_actions[i] = int(opponent_action)
-        except Exception:
+    # Will compute scaled reward below; store scaled in action_info for renderer
+    # compute final reward via RewardCalculator; pass env and ship for optional shaping
+    scaled = self.reward_calc.compute(action_reward, action, action_info, env=self, ship=self.player_ship)
+    reward += scaled
+    # record scaled reward in action_info for rendering/debug
+    action_info['scaled_reward'] = float(scaled)
+    # Save last player action result for rendering
+    try:
+        # shallow copy of relevant fields, include optional payload
+        self.last_player_action_result = {
+            'action': action_info.get('action'),
+            'success': action_info.get('success'),
+            'raw_reward': float(action_info.get('raw_reward', 0.0)),
+            'scaled_reward': float(action_info.get('scaled_reward', 0.0)),
+            'state_valid': action_info.get('state_valid', True),
+            'state_invalid_reason': action_info.get('state_invalid_reason', ''),
+    'payload': action_info.get('payload', None)
+    }
+    except Exception:
+        self.last_player_action_result = None
+
+    # Execute opponent actions (simple AI)
+    for i, opponent in enumerate(self.opponent_ships):
+        if not opponent['destroyed']:
+            # Per-ship tick order (steps 1-2): maintenance + recharge before action.
+            self._pre_action_tick(opponent)
+            opponent_action = self._get_opponent_action(opponent)
+            # Response-bot opponents (BOT_V2/BOT_V3) stash their own target/
+            # energy so the simulator executes exactly what the bot asked for
+            # (no auto-targeting). Other AIs leave these unset -> None -> the
+            # action falls back to its legacy auto-target selection.
+            op_target = opponent.pop('_pending_action_target', None)
+            op_energy = opponent.pop('_pending_action_energy', None)
+            # Clear just_recharged flag for opponents (same as player) to prevent recharge lock
+            if opponent_action != int(ActionType.RECHARGE):
+                opponent['just_recharged'] = False
+            # store action id
+            try:
+                self.last_opponent_actions[i] = int(opponent_action)
+            except Exception:
+                self.last_opponent_actions[i] = None
+            # execute and capture result
+            r_op, info_op = self._execute_action(
+                opponent_action, opponent, is_player=False,
+                target=op_target, energy=op_energy,
+            )
+            # Per-ship tick order (step 4): drain DRAINING shields after action.
+            self.post_action_tick(opponent)
+            # store a compact result for rendering, include optional payload
+            try:
+                self.last_opponent_action_results[i] = {
+                    'action': info_op.get('action'),
+                    'success': info_op.get('success'),
+                    'raw_reward': float(r_op),
+                    'payload': info_op.get('payload', None)
+                }
+            except Exception:
+                self.last_opponent_action_results[i] = None
+        else:
             self.last_opponent_actions[i] = None
-        # execute and capture result
-        r_op, info_op = self._execute_action(
-            opponent_action, opponent, is_player=False,
-            target=op_target, energy=op_energy,
-        )
-        # Per-ship tick order (step 4): drain DRAINING shields after action.
-        self.post_action_tick(opponent)
-        # store a compact result for rendering, include optional payload
-        try:
-            self.last_opponent_action_results[i] = {
-                'action': info_op.get('action'),
-                'success': info_op.get('success'),
-                'raw_reward': float(r_op),
-                'payload': info_op.get('payload', None)
-            }
-        except Exception:
             self.last_opponent_action_results[i] = None
+
+    # Update combat states based on current positions (set COMBAT when ships share a zone)
+    try:
+        self._update_combat_states()
+    except Exception:
+        # Non-fatal: if update_combat_states fails for any reason, log and continue
+        logger.exception("Failed to update combat states")
+
+    # Check termination conditions
+    # Only terminate on player death if flag is set (for training)
+    # Otherwise, let the game run to max_steps (for full simulation)
+    if self.terminate_on_player_death:
+        terminated = self.player_ship['destroyed']
     else:
-        self.last_opponent_actions[i] = None
-        self.last_opponent_action_results[i] = None
+        terminated = False  # Never terminate early in simulation mode
 
-# Update combat states based on current positions (set COMBAT when ships share a zone)
-try:
-    self._update_combat_states()
-except Exception:
-    # Non-fatal: if update_combat_states fails for any reason, log and continue
-    logger.exception("Failed to update combat states")
+    truncated = self.current_step >= self.max_steps
 
-# Check termination conditions
-# Only terminate on player death if flag is set (for training)
-# Otherwise, let the game run to max_steps (for full simulation)
-if self.terminate_on_player_death:
-    terminated = self.player_ship['destroyed']
-else:
-    terminated = False  # Never terminate early in simulation mode
+    observation = self._get_observation()
+    info = self._get_info()
+    info.update(action_info)
 
-truncated = self.current_step >= self.max_steps
+    return observation, reward, terminated, truncated, info
 
-observation = self._get_observation()
-info = self._get_info()
-info.update(action_info)
-
-return observation, reward, terminated, truncated, info
-
-def close(self):
-    """Clean up resources"""
-    pass
+    def close(self):
+        """Clean up resources"""
+        pass
 
 
-# Register the environment with Gymnasium
-gym.register(
-    id='ProspectorsPirates-v0',
-    entry_point='pnp_env:ProspectorsPiratesEnv',
-)
+    # Register the environment with Gymnasium
+    gym.register(
+        id='ProspectorsPirates-v0',
+        entry_point='pnp_env:ProspectorsPiratesEnv',
+    )
