@@ -118,19 +118,19 @@ class EnvSetupMixin:
             seen = set()
             for i, asteroid_data in enumerate(asteroids_data):
                 if not all(k in asteroid_data for k in ['x', 'y', 'mass', 'nutrinium']):
-                    logger.warning(f"Invalid asteroid data at index {i}: {astereoid_data}")
+                    logger.warning(f"Invalid asteroid data at index {i}: {asteroid_data}")
                     continue
 
                 # Validate coordinates
-                ax = int(astereoid_data['x'])
-                ay = int(astereoid_data['y'])
+                ax = int(asteroid_data['x'])
+                ay = int(asteroid_data['y'])
                 if not (0 <= ax < self.map_width and 0 <= ay < self.map_height):
-                    logger.warning(f"Asteroid at index {i} has out-of-bounds coordinates: ({astereoid_data['x']}, {astereoid_data['y']})")
+                    logger.warning(f"Asteroid at index {i} has out-of-bounds coordinates: ({asteroid_data['x']}, {asteroid_data['y']})")
                     continue
 
                 # Ensure nutrinium doesn't exceed mass
-                mass = int(astereoid_data['mass'])
-                nutrinium = int(min(astereoid_data['nutrinium'], mass))
+                mass = int(asteroid_data['mass'])
+                nutrinium = int(min(asteroid_data['nutrinium'], mass))
 
                 key = (ax, ay)
                 if key in seen:
@@ -165,7 +165,7 @@ class EnvSetupMixin:
             logger.warning(f"  Falling back to random asteroid generation.")
             return None
 
-    def load_predefined_trading_posts(self) -> Optional[List[dict]]:
+    def _load_predefined_trading_posts(self) -> Optional[List[dict]]:
         """
         Load predefined trading posts from the same asteroid configuration file.
 
@@ -252,8 +252,7 @@ class EnvSetupMixin:
             logger.warning(f"Error loading predefined trading posts: {e}")
             return None
 
-
-    def load_predefined_start_position(self) -> Optional[dict]:
+    def _load_predefined_start_position(self) -> Optional[dict]:
         """
         Load predefined starting position from configuration file.
 
@@ -284,7 +283,7 @@ class EnvSetupMixin:
         try:
             if not os.path.exists(self.start_position_config_path):
                 logger.warning(f"Start position config file not found: {self.start_position_config_path}")
-                logger.warning(f"Falling back to random starting position.")
+                logger.warning(f"  Falling back to random starting position.")
                 return None
 
             with open(self.start_position_config_path, 'r', encoding='utf-8') as f:
@@ -292,8 +291,8 @@ class EnvSetupMixin:
 
             if dimension_key not in config:
                 logger.warning(f"No start position configuration found for dimension '{dimension_key}' in {self.start_position_config_path}")
-                logger.warning(f"Available dimensions: {list(config.keys())}")
-                logger.warning(f"Falling back to random starting position.")
+                logger.warning(f"  Available dimensions: {list(config.keys())}")
+                logger.warning(f"  Falling back to random starting position.")
                 return None
 
             start_data = config[dimension_key]
@@ -301,7 +300,7 @@ class EnvSetupMixin:
             # Validate start position data
             if not all(k in start_data for k in ['player_x', 'player_y']):
                 logger.warning(f"Invalid start position data (missing player_x or player_y): {start_data}")
-                logger.warning(f"Falling back to random starting position.")
+                logger.warning(f"  Falling back to random starting position.")
                 return None
 
             # Validate coordinates
@@ -323,13 +322,13 @@ class EnvSetupMixin:
 
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in start position config file {self.start_position_config_path}: {e}")
-            logger.warning(f"Falling back to random starting position.")
+            logger.warning(f"  Falling back to random starting position.")
 
             return None
         except Exception as e:
             logger.error(f"Error loading start position config: {e}")
-            logger.warning(f"Falling back to random starting position.")
-        return None
+            logger.warning(f"  Falling back to random starting position.")
+            return None
 
     def _parse_enemy_model_entry(self, raw_entry: str) -> Tuple[Optional[str], Optional[str]]:
         """Parse enemy model config token.
@@ -350,20 +349,20 @@ class EnvSetupMixin:
             return None, None
         return model_path, (spec_name or None)
 
-    def load_enemy_model_entries(self) -> Optional[List[Dict[str, Optional[str]]]]:
+    def _load_enemy_model_entries(self) -> Optional[List[Dict[str, Optional[str]]]]:
         """Load parsed enemy model entries from config.
 
         Config file supports both formats:
         - models/v1/ppo_pnp_model_v74
         - models/v1/ppo_pnp_model_v74::DEFAULT_COMPACT_SPEC
         """
-        if self.enemy_model_entries is not None:
+        if self._enemy_model_entries is not None:
             return self._enemy_model_entries
 
         try:
             if not os.path.exists(self.enemy_models_config_path):
                 logger.info(f"Enemy models config file not found: {self.enemy_models_config_path}")
-                logger.info("No model-based enemies will be created.")
+                logger.info("  No model-based enemies will be created.")
                 return None
 
             entries: List[Dict[str, Optional[str]]] = []
@@ -378,7 +377,7 @@ class EnvSetupMixin:
                         logger.warning(
                             "Ignoring invalid enemy model config entry at line %d: '%s'",
                             line_num,
-                            line
+                            line,
                         )
                         continue
 
@@ -386,7 +385,7 @@ class EnvSetupMixin:
 
             if not entries:
                 logger.info(f"No model paths found in {self.enemy_models_config_path}")
-                logger.info("No model-based enemies will be created.")
+                logger.info("  No model-based enemies will be created.")
                 return None
 
             self._enemy_model_entries = entries
@@ -400,6 +399,7 @@ class EnvSetupMixin:
         except Exception as e:
             logger.warning(f"Error loading enemy model entries: {e}")
             return None
+
     def _load_enemy_model_paths(self) -> Optional[List[str]]:
         """
         Load enemy model paths from configuration file.
@@ -422,12 +422,14 @@ class EnvSetupMixin:
         self._enemy_model_paths = [entry['path'] for entry in entries if entry.get('path')]
         return self._enemy_model_paths or None
 
-
     def _skill_weight_profile(self, archetype: str, strength: str) -> dict:
-        """
-        Build a `skill -> selection weight` map for an archetype/strength.
+        """Build a ``skill -> selection weight`` map for an archetype/strength.
 
-        Each skill inherits the weight of its group's tier ('favored' / 'neutral' / 'reduced') under the chosen ``strength``. Groups not mentioned by the archetype, and any skill not covered by a group, are treated as neutral. All weights are strictly positive so every skill remains reachable.
+        Each skill inherits the weight of its group's tier ('favored' /
+        'neutral' / 'reduced') under the chosen ``strength``. Groups not
+        mentioned by the archetype, and any skill not covered by a group, are
+        treated as neutral. All weights are strictly positive so every skill
+        remains reachable.
         """
         tier_weights = _SKILL_BIAS_STRENGTHS.get(strength, _SKILL_BIAS_STRENGTHS['moderate'])
         group_tiers = _SKILL_ARCHETYPES.get(archetype, {})
@@ -441,15 +443,24 @@ class EnvSetupMixin:
                     weights[name] = weight
         return weights
 
-
     def _distribute_skill_points(self, budget: int, ai_type=None) -> dict:
-        """
-        Distribute a skill-point budget randomly across the 19 spec skills,
+        """Distribute a skill-point budget randomly across the 19 spec skills,
         biased toward the ship's behavioural archetype.
 
-        Every ship receives the same `budget` each episode, but the allocation is independent and random per ship. The archetype is derived from ``ai_type`` (e.g., PIRATE/BOT_V4 lean toward attack & defense, while PROSPECTOR/BOT_V3 lean toward mining & mobility); the player ship passes ``ai_type=None`` and is given a random archetype each episode so the agent trains against varied loadouts. The bias strength (mild / moderate / strong) is also chosen at random per allocation.
+        Every ship receives the same ``budget`` each episode, but the allocation
+        is independent and random per ship. The archetype is derived from
+        ``ai_type`` (e.g., PIRATE/BOT_V4 lean toward attack & defense, while
+        PROSPECTOR/BOT_V3 lean toward mining & mobility); the player ship passes
+        ``ai_type=None`` and is given a random archetype each episode so the
+        agent trains against varied loadouts. The bias strength (mild / moderate
+        / strong) is also chosen at random per allocation.
 
-        Starting from all-zero, a not-yet-capped skill is drawn with probability proportional to its archetype weight and incremented by 1 until the budget is fully consumed. Each skill is capped at 10, so the effective maximum spend is `19 * 10 = 190`; budgets above that are clamped (all skills reach 10). Because every weight is positive, all 19 skills remain reachable and the returned dict's values always sum to ``min(budget, 190)``.
+        Starting from all-zero, a not-yet-capped skill is drawn with probability
+        proportional to its archetype weight and incremented by 1 until the
+        budget is fully consumed. Each skill is capped at 10, so the effective
+        maximum spend is `19 * 10 = 190`; budgets above that are clamped (all
+        skills reach 10). Because every weight is positive, all 19 skills remain
+        reachable and the returned dict's values always sum to ``min(budget, 190)``.
         """
         cap = 10
         skills = list(self.config['abilities'].keys())
@@ -475,28 +486,36 @@ class EnvSetupMixin:
         return abilities
 
 
-    def generate_episode_modules(self) -> list:
+    def _generate_episode_modules(self) -> list:
         """
         Choose which module-locked actions are installed this episode.
 
-        All ships share the same module set (a level playing field). Default mode 'all' installs every module so jump/repair/salvage-heavy training is unaffected; mode 'random' installs each module with 50% probability to train module-gated behaviour; 'none' installs nothing. Controlled by self.module_grant_mode.
+        All ships share the same module set (a level playing field). Default mode
+        'all' installs every module so jump/repair/salvage-heavy training is
+        unaffected; mode 'random' installs each module with 50% probability to
+        train module-gated behaviour; 'none' installs nothing. Controlled by
+        self.module_grant_mode.
         """
         all_modules = ['JUMP', 'REPAIR', 'SALVAGE']
         mode = getattr(self, 'module_grant_mode', 'all')
         if mode == 'random':
             return [m for m in all_modules if random.random() < 0.5]
         if mode == 'none':
-    def skill(self, ship: dict, name: str) -> int:
+            return []
+        return list(all_modules)
+
+    def _skill(self, ship: dict, name: str) -> int:
         """Return the effective level (0-10) of a skill for a ship.
 
-        Skills live in ship['abilities']; missing skills default to 0. This is the single accessor every mechanic uses so skill effects are applied uniformly.
+        Skills live in ship['abilities']; missing skills default to 0. This is the
+        single accessor every mechanic uses so skill effects are applied uniformly.
         """
         try:
             return int(ship.get('abilities', {}).get(name, 0) or 0)
         except (TypeError, ValueError):
             return 0
 
-    def shield_state(self, ship: dict) -> str:
+    def _shield_state(self, ship: dict) -> str:
         """Return the shield state string ('POWERED'|'DRAINING'|'DOWN')."""
         shield = ship.get('shield')
         if isinstance(shield, dict):
@@ -504,10 +523,12 @@ class EnvSetupMixin:
         # Legacy fallback: shields_up flag maps to POWERED/DOWN.
         return 'POWERED' if ship.get('shields_up') else 'DOWN'
 
-    def action_allowed(self, ship: dict, action_name: str) -> bool:
+    def _action_allowed(self, ship: dict, action_name: str) -> bool:
         """Honor metadata.actionRestrictions for a ship's current state.
 
-        Checks allowedWhileRecharging (when ship is recharging) and allowedWithShieldsUp (when shields are POWERED). Unknown actions default to allowed so new actions are not accidentally blocked.
+        Checks allowedWhileRecharging (when ship is recharging) and
+        allowedWithShieldsUp (when shields are POWERED). Unknown actions default
+        to allowed so new actions are not accidentally blocked.
         """
         restrictions = self.config.get('action_restrictions', {})
         rule = restrictions.get(action_name)
@@ -519,32 +540,35 @@ class EnvSetupMixin:
             return False
         return True
 
-    def has_module(self, ship: dict, module_name: str) -> bool:
+    def _has_module(self, ship: dict, module_name: str) -> bool:
         """Whether a ship has a given equipable module (e.g. JUMP, REPAIR, SALVAGE)."""
         modules = ship.get('modules')
         if not modules:
             return False
         return module_name in modules
 
-    def assign_negotiate_objectives(self) -> None:
+    def _assign_negotiate_objectives(self) -> None:
         """Assign each ship a random negotiate objective pointing at a trading post.
 
-        Mirrors the spec: every ship starts a round with a negotiate objective (me.objectives.negotiate -> {tradingPostName, tradingPostId}). No-op if there are no trading posts.
+        Mirrors the spec: every ship starts a round with a negotiate objective
+        (me.objectives.negotiate -> {tradingPostName, tradingPostId}). No-op if
+        there are no trading posts.
         """
-        if not hasattr(self, 'trading_posts', None):
+        if not getattr(self, 'trading_posts', None):
             return
         ships = [self.player_ship] + list(getattr(self, 'opponent_ships', []))
         for ship in ships:
             if ship is None:
                 continue
             post = random.choice(self.trading_posts)
-            ship.setdefault('objectives', {})[['negotiate'] = {
+            ship.setdefault('objectives', {})['negotiate'] = {
                 'tradingPostName': post.get('name'),
                 'tradingPostId': post.get('id'),
             }
 
     def _load_enemy_model(self, model_path: str):
-        """Load a trained model for enemy AI.
+        """
+        Load a trained model for enemy AI.
 
         Args:
             model_path: Path to the model file
@@ -577,125 +601,125 @@ class EnvSetupMixin:
                     pass
 
             # Try DQN if PPO failed
-    if temp_model is None and 'dqn' in model_path.lower():
-        try:
-            temp_model = DQN.load(model_path)
-        except Exception:
-            pass
+            if temp_model is None and 'dqn' in model_path.lower():
+                try:
+                    temp_model = DQN.load(model_path)
+                except Exception:
+                    pass
 
-    # Try A2C if both failed
-    if temp_model is None:
-        try:
-            temp_model = A2C.load(model_path)
-        except Exception:
-            pass
+            # Try A2C if both failed
+            if temp_model is None:
+                try:
+                    temp_model = A2C.load(model_path)
+                except Exception:
+                    pass
 
-    # If we couldn't load the model at all, return None
-    if temp_model is None:
-        self.mark_enemy_model_unavailable(model_path, "unable to deserialize with PPO/DQN/A2C loaders")
-        return None
+            # If we couldn't load the model at all, return None
+            if temp_model is None:
+                self.mark_enemy_model_unavailable(model_path, "unable to deserialize with PPO/DQN/A2C loaders")
+                return None
 
-    # Check action space compatibility. The env now uses a structured Dict action
-    # space (action_type + target + energy); legacy enemy models are scalar
-    # Discrete(14/15). Their scalar prediction is still a valid *action type* in the
-    # new 19-type space, so we accept them through the compat wrapper (which maps
-    # model action ids into the env action-type set). Structured-action models (no
-    # ``.n``) and oversized spaces are rejected.
-    model_action_space = getattr(temp_model.action_space, 'n', None)
-    env_action_space = self.num_action_types
+            # Check action space compatibility. The env now uses a structured Dict action
+            # space (action_type + target + energy); legacy enemy models are scalar
+            # Discrete(14/15). Their scalar prediction is still a valid *action type* in the
+            # new 19-type space, so we accept them through the compat wrapper (which maps
+            # model action ids into the env action-type set). Structured-action models (no
+            # ``.n``) and oversized spaces are rejected.
+            model_action_space = getattr(temp_model.action_space, 'n', None)
+            env_action_space = self.num_action_types
 
-    if model_action_space is None:
-        self.mark_enemy_model_unavailable(
-            model_path, "model action space is not Discrete; structured-action models unsupported")
-        return None
-    if model_action_space > env_action_space:
-        self.mark_enemy_model_unavailable(
-            model_path,
-            f"incompatible action space {model_action_space} vs {env_action_space}")
-        return None
-    if model_action_space != env_action_space:
-        logger.info(
-            f"Enemy model {model_path} has a smaller action space ({model_action_space} vs "
-            f"{env_action_space}); using compatibility mapping")
+            if model_action_space is None:
+                self.mark_enemy_model_unavailable(
+                    model_path, "model action space is not Discrete; structured-action models unsupported")
+                return None
+            if model_action_space > env_action_space:
+                self.mark_enemy_model_unavailable(
+                    model_path,
+                    f"incompatible action space {model_action_space} vs {env_action_space}")
+                return None
+            if model_action_space != env_action_space:
+                logger.info(
+                    f"Enemy model {model_path} has a smaller action space ({model_action_space} vs "
+                    f"{env_action_space}); using compatibility mapping")
 
-    # Reload model WITH environment binding for proper normalization and prediction.
-    # First check observation/action space compatibility before binding.
-    obs_compat = True
-    try:
-        from gymnasium import spaces as _spaces
-        # A scalar-Discrete model cannot be env-bound to the structured MultiDiscrete
-        # action space, so skip binding and drive it via the compat wrapper instead.
-        if not isinstance(self.action_space, _spaces.Discrete):
-            obs_compat = False
-            logger.info(
-                "Enemy model %s is scalar-Discrete while env uses a structured action space; "
-                "skipping env binding and using the compat wrapper",
-                model_path,
-            )
-        model_obs_space = temp_model.observation_space
-        if isinstance(model_obs_space, _spaces.Box) and isinstance(self.observation_space, _spaces.Dict):
-            obs_compat = False
-            logger.info(
-                "Enemy model %s expects flat Box observation while env provides Dict; skipping env binding",
-                model_path,
-            )
-        if (isinstance(model_obs_space, _spaces.Dict) and
-                isinstance(self.observation_space, _spaces.Dict) and
-                'observation' in model_obs_space.spaces and
-                'observation' in self.observation_space.spaces):
-            if model_obs_space['observation'].shape != self.observation_space['observation'].shape:
-                obs_compat = False
-                logger.info(f"Enemy model {model_path} has different obs size "
-                           f"{model_obs_space['observation'].shape[0]} vs "
-                           f"{self.observation_space['observation'].shape[0]}, ",
-                           "skipping env binding")
-    except Exception:
-        pass
+            # Reload model WITH environment binding for proper normalization and prediction.
+            # First check observation/action space compatibility before binding.
+            obs_compat = True
+            try:
+                from gymnasium import spaces as _spaces
+                # A scalar-Discrete model cannot be env-bound to the structured MultiDiscrete
+                # action space, so skip binding and drive it via the compat wrapper instead.
+                if not isinstance(self.action_space, _spaces.Discrete):
+                    obs_compat = False
+                    logger.info(
+                        "Enemy model %s is scalar-Discrete while env uses a structured action space; "
+                        "skipping env binding and using the compat wrapper",
+                        model_path,
+                    )
+                model_obs_space = temp_model.observation_space
+                if isinstance(model_obs_space, _spaces.Box) and isinstance(self.observation_space, _spaces.Dict):
+                    obs_compat = False
+                    logger.info(
+                        "Enemy model %s expects flat Box observation while env provides Dict; skipping env binding",
+                        model_path,
+                    )
+                if (isinstance(model_obs_space, _spaces.Dict) and
+                        isinstance(self.observation_space, _spaces.Dict) and
+                        'observation' in model_obs_space.spaces and
+                        'observation' in self.observation_space.spaces):
+                    if model_obs_space['observation'].shape != self.observation_space['observation'].shape:
+                        obs_compat = False
+                        logger.info(f"Enemy model {model_path} has different obs size "
+                                   f"{model_obs_space['observation'].shape[0]} vs "
+                                   f"{self.observation_space['observation'].shape[0]}, ",
+                                   "skipping env binding")
+            except Exception:
+                pass
 
-    if not obs_compat:
-        wrapped_model = wrap_model_with_compat(
-            temp_model,
-            env_action_space_size=self.num_action_types,
-            enable_action_masking=True,
-        )
-        self.enemy_models[model_path] = wrapped_model
-        logger.info(f"Loaded enemy model without env binding: {model_path} (action space: {model_action_space})")
-        return wrapped_model
+            if not obs_compat:
+                wrapped_model = wrap_model_with_compat(
+                    temp_model,
+                    env_action_space_size=self.num_action_types,
+                    enable_action_masking=True,
+                )
+                self.enemy_models[model_path] = wrapped_model
+                logger.info(f"Loaded enemy model without env binding: {model_path} (action space: {model_action_space})")
+                return wrapped_model
 
-    try:
-        # Determine which algorithm to use for reload
-        final_model = None
-        if 'ppo' in model_path.lower() or isinstance(temp_model, PPO):
-            final_model = PPO.load(model_path, env=self)
-        elif 'dqn' in model_path.lower() or isinstance(temp_model, DQN):
-            final_model = DQN.load(model_path, env=self)
-        else:
-            final_model = A2C.load(model_path, env=self)
+            try:
+                # Determine which algorithm to use for reload
+                final_model = None
+                if 'ppo' in model_path.lower() or isinstance(temp_model, PPO):
+                    final_model = PPO.load(model_path, env=self)
+                elif 'dqn' in model_path.lower() or isinstance(temp_model, DQN):
+                    final_model = DQN.load(model_path, env=self)
+                else:
+                    final_model = A2C.load(model_path, env=self)
 
-        wrapped_model = wrap_model_with_compat(
-            final_model,
-            env_action_space_size=self.num_action_types,
-            enable_action_masking=True,
-        )
-    # Cache the environment-bound wrapped model
-    self._enemy_models[model_path] = wrapped_model
-    logger.info(f"Loaded enemy model with env binding: {model_path} (action space: {model_action_space})")
-    return wrapped_model
-    except Exception as e:
-        # Fallback to model without env binding if reload fails
-        logger.warning(f"Failed to reload model with env binding ({e}), using original model without binding")
-        wrapped_model = wrap_model_with_compat(
-            temp_model,
-            env_action_space_size=self.num_action_types,
-            enable_action_masking=True,
-        )
-        self._enemy_models[model_path] = wrapped_model
-        logger.info(f"Loaded enemy model without env binding: {model_path} (action space: {model_action_space})")
-        return wrapped_model
+                wrapped_model = wrap_model_with_compat(
+                    final_model,
+                    env_action_space_size=self.num_action_types,
+                    enable_action_masking=True,
+                )
+                # Cache the environment-bound wrapped model
+                self._enemy_models[model_path] = wrapped_model
+                logger.info(f"Loaded enemy model with env binding: {model_path} (action space: {model_action_space})")
+                return wrapped_model
+            except Exception as e:
+                # Fallback to model without env binding if reload fails
+                logger.warning(f"Failed to reload model with env binding ({e}), using original model without binding")
+                wrapped_model = wrap_model_with_compat(
+                    temp_model,
+                    env_action_space_size=self.num_action_types,
+                    enable_action_masking=True,
+                )
+                self._enemy_models[model_path] = wrapped_model
+                logger.info(f"Loaded enemy model without env binding: {model_path} (action space: {model_action_space})")
+                return wrapped_model
 
-    except Exception as e:
-        self._mark_enemy_model_unavailable(model_path, f"{e}")
-    return None
+        except Exception as e:
+            self._mark_enemy_model_unavailable(model_path, f"{e}")
+            return None
 
     def _mark_enemy_model_unavailable(self, model_path: str, reason: str) -> None:
         """Cache a model path as unavailable and emit a warning only once."""

@@ -285,10 +285,10 @@ tid = me.get("teamId")
 self.team_id = int(tid) if tid is not None else 0
 
 shield = me.get("shield", {}) or {}
-self.shield_state = str(shield.get("state", "DOWN") or "DOWN").upper()
+self._shield_state = str(shield.get("state", "DOWN") or "DOWN").upper()
 self.shield_value = float(shield.get("value", 0) or 0)
 self.shield_capacity = float(shield.get("capacity", 0) or 0)
-self.shields_up = self.shield_state == "POWERED"
+self.shields_up = self._shield_state == "POWERED"
 
 self.modules = set()
 for m in me.get("modules", []) or []:
@@ -579,9 +579,9 @@ o.append(ab(sk, "negotiate_ambition", 0) / 10.0)
 scap = ctx.shield_capacity
 sval = ctx.shield_value
 max_capacity = ctx.base_shield_capacity + 10 * 10  # base + max_abil shield_capacity*10
-o.append(1.0 if ctx.shield_state == "POWERED" else 0.0)
-o.append(1.0 if ctx.shield_state == "DRAINING" else 0.0)
-o.append(1.0 if ctx.shield_state == "DOWN" else 0.0)
+o.append(1.0 if ctx._shield_state == "POWERED" else 0.0)
+o.append(1.0 if ctx._shield_state == "DRAINING" else 0.0)
+o.append(1.0 if ctx._shield_state == "DOWN" else 0.0)
 o.append((sval / scap) if scap > 0 else 0.0)
 o.append(scap / max(1.0, max_capacity))
 
@@ -750,7 +750,7 @@ def _mask_state(ctx):
         destroyed=(ctx.state == "DESTROYED"),
         recharging=ctx.recharging,
         just_recharged=False,
-        shield_state=ctx.shield_state,
+        shield_state=ctx._shield_state,
         shield_value=ctx.shield_value,
         shield_capacity=ctx.shield_capacity,
         shields_up=ctx.shields_up,

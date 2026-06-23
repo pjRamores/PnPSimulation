@@ -401,7 +401,7 @@ return True, ""
 
 # RAISE_SHIELDS - shields not full, energy, and an enemy threat in zone
 if action == RAISE_SHIELDS:
-    if st.shield_state == 'POWERED' and st.shield_value >= st.shield_capacity:
+    if st._shield_state == 'POWERED' and st.shield_value >= st.shield_capacity:
         return False, "shields already fully powered"
     if st.energy < costs['shields']:
         return False, "insufficient energy for shields"
@@ -458,7 +458,7 @@ return True, ""
 
 # LOWER_SHIELDS - valid only when shields are not already DOWN
 if action == LOWER_SHIELDS:
-    if st.shield_state == 'DOWN':
+    if st._shield_state == 'DOWN':
         return False, "shields already down"
 return True, ""
 

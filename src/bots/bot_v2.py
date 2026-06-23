@@ -636,7 +636,7 @@ self.shields_cost = int(energy_costs.get("shields", 5))
 self.salvage_energy_cost = int(energy_costs.get("salvage", 999))
 self.max_health = int(ship_config.get("maxHealth", 100))
 shield = self.me.get("shield", {} or {})
-self.shield_state = str(shield.get("state", "DOWN")).upper()
+self._shield_state = str(shield.get("state", "DOWN")).upper()
 self.shield_value = ShipUtils.safe_int(shield.get("value", shield.get("strength", 0)))
 self.shield_capacity = ShipUtils.safe_int(shield.get("capacity", shield.get("maxStrength", 0)))
 
@@ -1522,7 +1522,7 @@ def build_mask_state(ctx, masker):
         destroyed=(ctx.state == "DESTROYED"),
         recharging=ctx.recharging,
         just_recharged=False,
-        shield_state=ctx.shield_state,
+        shield_state=ctx._shield_state,
         shield_value=ctx.shield_value,
         shield_capacity=ctx.shield_capacity,
         shields_up=ctx.shields_up,
