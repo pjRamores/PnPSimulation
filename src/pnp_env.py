@@ -156,11 +156,11 @@ class ProspectorsPiratesEnv(
                 'guaranteed_hit_chance': 0.05,
                 'attack_shield_damage': 1.5,  # attackShieldDamage: shieldDmg = round(dmg*1.5)
                 'base_shield_resistance': 0.25,  # +shield_strength/20, max 0.75
-                'recharge_penalty': 0.2,        # target recharging -> easier to hit
-                'shield_recharge_rate': 10,     # DRAINING decay/tick + RAISE_SHIELDS cost divisor
-                'base_shield_capacity': 100,    # +shield_capacity*10
-                'damage_variance': 0.5,         # +-50% damage spread (energy*0.5..1.5)
-                'default_attack_payload': 20,   # energy committed per ATTACK when no bin chosen (scalar action space)
+                'recharge_penalty': 0.2,       # target recharging -> easier to hit
+                'shield_recharge_rate': 10,    # DRAINING decay/tick + RAISE_SHIELDS cost divisor
+                'base_shield_capacity': 100,   # +shield_capacity*10
+                'damage_variance': 0.5,        # +-50% damage spread (energy*0.5..1.5)
+                'default_attack_payload': 20,  # energy committed per ATTACK when no bin chosen (scalar action space)
             },
             'mining': {
                 'payout_modifier': 0.01,      # mining.payoutModifier: max % of remaining nutrinium per mine
@@ -205,19 +205,19 @@ class ProspectorsPiratesEnv(
             #   max(trading_post_min, round(density * map_width * map_height))
             # unless ``trading_post_count`` is set to an explicit (non-None) override.
             'trading_post_count': None,         # explicit override; None -> derive from density
-            'trading_post_density': 0.0015360,  # posts per cell (production: 244/15625)
+            'trading_post_density': 0.0015360,  # posts per cell (production: 24/15625)
             'trading_post_min': 4,              # floor for small maps
             'sensor_range': 5,              # base; extended by sensor_range skill
             # Nutrinium distribution (production concentration model).
             # Each asteroid's nutrinium = round(concentration * mass), where
             #   concentration = nutrinium_min_percent
-            #      + Beta(alpha, beta) * (nutrinium_max_percent - nutrinium_min_percent).
+            #       + Beta(alpha, beta) * (nutrinium_max_percent - nutrinium_min_percent).
             # Total nutrinium therefore scales with the number of asteroids (and
             # hence with map area), mirroring the production mapConfig where
-            # minNutriniumPercent=0.08 and maxNutrinium=1.0
-            'nutrinium_min_percent': 0.08,     # production mapConfig.minNutriniumPercent
-            'nutrinium_max_percent': 1.0,      # production mapConfig.maxNutriniumPercent
-            # Beta distribution shape parameters for nutribium concentration per asteroid.
+            # minNutriniumPercent=0.08 and maxNutriniumPercent=1.0.
+            'nutrinium_min_percent': 0.08,      # production mapConfig.minNutriniumPercent
+            'nutrinium_max_percent': 1.0,       # production mapConfig.maxNutriniumPercent
+            # Beta distribution shape parameters for nutrinium concentration per asteroid.
             # alpha < beta -> skew toward lower concentrations (more poor asteroids).
             # With alpha=1.5, beta=8: ~30% poor, ~50% medium, ~20% rich asteroids.
             # The few rich asteroids become high-value strategic targets.
@@ -230,21 +230,21 @@ class ProspectorsPiratesEnv(
             # {allowedWhileRecharging, allowedWithShieldsUp}. Used by validation/tick logic.
             # Values mirror the production game config (logs/action_request.json mapConfig).
             'action_restrictions': {
-                'WAIT':          {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
-                'MINE':          {'allowedWhileRecharging': True, 'allowedWithShieldsUp': False},
-                'MOVE':          {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
+                'WAIT':          {'allowedWhileRecharging': True,  'allowedWithShieldsUp': True},
+                'MINE':          {'allowedWhileRecharging': True,  'allowedWithShieldsUp': False},
+                'MOVE':          {'allowedWhileRecharging': True,  'allowedWithShieldsUp': True},
                 'RECHARGE':      {'allowedWhileRecharging': False, 'allowedWithShieldsUp': False},
-                'RECHARGE_END':  {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
+                'RECHARGE_END':  {'allowedWhileRecharging': True,  'allowedWithShieldsUp': True},
                 'ATTACK':        {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
                 'JUMP':          {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
                 'SELL':          {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
                 'RAISE_SHIELDS': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': False},
-                'LOWER_SHIELDS': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
-                'PLUNDER':       {'allowedWhileRecharging': True, 'allowedWithShieldsUp': False},
-                'SALVAGE':       {'allowedWhileRecharging': True, 'allowedWithShieldsUp': False},
+                'LOWER_SHIELDS': {'allowedWhileRecharging': True,  'allowedWithShieldsUp': True},
+                'PLUNDER':       {'allowedWhileRecharging': True,  'allowedWithShieldsUp': False},
+                'SALVAGE':       {'allowedWhileRecharging': True,  'allowedWithShieldsUp': False},
                 'REPAIR':        {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
                 'NEGOTIATE':     {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
-                'RESPAWN':       {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True}
+                'RESPAWN':       {'allowedWhileRecharging': True,  'allowedWithShieldsUp': True}
             },
             # Ship abilities max values for normalization (all 19 skills, 0-10).
             'abilities': {
@@ -278,7 +278,7 @@ class ProspectorsPiratesEnv(
         # always starts from a known-good baseline.
         self._base_action_restrictions = copy.deepcopy(self.config['action_restrictions'])
 
-        # Reward shaping - configurable; allow injectino of custom RewardConfig
+        # Reward shaping - configurable; allow injection of custom RewardConfig
         self.reward_config = reward_config if reward_config is not None else RewardConfig()
         # By default use the simple RewardCalculator; if user requested a composite, build it
         if getattr(self.reward_config, 'use_composite', False):
@@ -430,8 +430,8 @@ class ProspectorsPiratesEnv(
         #   - Weakest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
         # Total enemy info: 14 values
 
-        ship_state_size = 24         # Complete ship state (including action counter)
-        strategic_context_size = 8   # High-signal strategic features
+        ship_state_size = 24        # Complete ship state (including action counter)
+        strategic_context_size = 8  # High-signal strategic features
         sensor_grid_size = (2 * self.config['sensor_range'] + 1) ** 2
         top_asteroids_size = self.config['top_asteroids_count'] * 6  # 5 asteroids * 6 features each
         # Spec-fidelity features (appended so legacy offsets stay stable):
@@ -476,7 +476,7 @@ class ProspectorsPiratesEnv(
 
         # Initialize state variables
         self.current_step = 0
-        self.action_counter = 0   # Track actions taken in current episode (max ~300 for 5 min @ 1 action/sec)
+        self.action_counter = 0  # Track actions taken in current episode (max ~300 for 5 min @ 1 action/sec)
         self.player_ship = None
         self.opponent_ships = []
         self.asteroids = []
