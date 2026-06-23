@@ -156,11 +156,11 @@ class ProspectorsPiratesEnv(
                 'guaranteed_hit_chance': 0.05,
                 'attack_shield_damage': 1.5,  # attackShieldDamage: shieldDmg = round(dmg*1.5)
                 'base_shield_resistance': 0.25,  # +shield_strength/20, max 0.75
-                'recharge_penalty': 0.2,       # target recharging -> easier to hit
-                'shield_recharge_rate': 10,    # DRAINING decay/tick + RAISE_SHIELDS cost divisor
-                'base_shield_capacity': 100,   # +shield_capacity*10
-                'damage_variance': 0.5,        # +-50% damage spread (energy*0.5..1.5)
-                'default_attack_payload': 20,  # energy committed per ATTACK when no bin chosen (scalar action space)
+                'recharge_penalty': 0.2,      # target recharging -> easier to hit
+                'shield_recharge_rate': 10,   # DRAINING decay/tick + RAISE_SHIELDS cost divisor
+                'base_shield_capacity': 100,  # +shield_capacity*10
+                'damage_variance': 0.5,       # +-50% damage spread (energy*0.5..1.5)
+                'default_attack_payload': 20, # energy committed per ATTACK when no bin chosen (scalar action space)
             },
             'mining': {
                 'payout_modifier': 0.01,      # mining.payoutModifier: max % of remaining nutrinium per mine
@@ -244,7 +244,7 @@ class ProspectorsPiratesEnv(
                 'SALVAGE':       {'allowedWhileRecharging': True,  'allowedWithShieldsUp': False},
                 'REPAIR':        {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
                 'NEGOTIATE':     {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
-                'RESPAWN':       {'allowedWhileRecharging': True,  'allowedWithShieldsUp': True}
+                'RESPAWN':       {'allowedWhileRecharging': True,  'allowedWithShieldsUp': True},
             },
             # Ship abilities max values for normalization (all 19 skills, 0-10).
             'abilities': {
@@ -430,7 +430,7 @@ class ProspectorsPiratesEnv(
         #   - Weakest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
         # Total enemy info: 14 values
 
-        ship_state_size = 24        # Complete ship state (including action counter)
+        ship_state_size = 24  # Complete ship state (including action counter)
         strategic_context_size = 8  # High-signal strategic features
         sensor_grid_size = (2 * self.config['sensor_range'] + 1) ** 2
         top_asteroids_size = self.config['top_asteroids_count'] * 6  # 5 asteroids * 6 features each
