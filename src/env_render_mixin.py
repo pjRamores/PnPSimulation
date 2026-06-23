@@ -111,9 +111,9 @@ class EnvRenderMixin:
 
         # Build box-drawing borders so each cell is enclosed (for the window width):
         segment = '-' * (cell_width + 2)
-        top_border = '   ' + '+' + ''.join([segment] * x_count) + '+'
-        mid_border = '   ' + '+' + ''.join([segment] * x_count) + '+'
-        bottom_border = '   ' + '+' + ''.join([segment] * x_count) + '+'
+        top_border = '   ' + '+' + '+'.join([segment] * x_count) + '+'
+        mid_border = '   ' + '+' + '+'.join([segment] * x_count) + '+'
+        bottom_border = '   ' + '+' + '+'.join([segment] * x_count) + '+'
 
         print(top_border)
 
@@ -132,7 +132,7 @@ class EnvRenderMixin:
                 row_cells.append(cell_text.center(cell_width + 2))
 
             # Print row with left index and vertical separators
-            print(f" {str(y % 10)} | " + ''.join(row_cells) + '|')
+            print(f" {str(y % 10)}  |" + '|'.join(row_cells) + '|')
 
             # Print middle separator between rows (except after last rendered row)
             if y < y_max:
