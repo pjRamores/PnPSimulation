@@ -106,7 +106,7 @@ class EnvActionsMixin:
         return reward, info
 
     def _apply_action_result(self, result, info: dict) -> float:
-        """Unpack a ``__action__*`` return value into ``info`` and return its reward.
+        """Unpack a ``_action_*`` return value into ``info`` and return its reward.
 
         Handlers return either ``(reward, success)`` or ``(reward, success, payload)``;
         this consolidates the shared unpacking the dispatcher used to repeat per branch.
@@ -649,7 +649,7 @@ class EnvActionsMixin:
         fail = max(ncfg['min_fail_chance'], ncfg['base_fail_chance'] - skill * 0.05)
         if succ + fail > 1.0:
             fail = max(0.0, 1.0 - succ)
-    
+
         team_id = ship.get('team_id', 0)
         current = self.team_bonuses.get(team_id, 0.0)
         max_bonus = ncfg['max_team_bonus']
@@ -779,7 +779,7 @@ class EnvActionsMixin:
 
             if not same_zone_targets:
                 return -0.1, False, None
-    
+
             # Select the weakest target (lowest combat score)
             scored = [(self._calculate_enemy_combat_score(t, raw=True), t) for t in same_zone_targets]
             scored.sort(key=lambda x: x[0])  # ascending -> weakest first
@@ -978,11 +978,11 @@ class EnvActionsMixin:
                 # Shields are NOT auto-lowered here: they persist under the POWERED/
                 # DRAINING/DOWN state machine and only change via RAISE/LOWER actions,
                 # per-tick maintenance, or being broken in combat.
-    
+
             # Always clear combat flags for next turn
             s['in_combat'] = False
             s['combat_opponent_positions'] = set()
-    
+
     def _effective_max_energy(self, ship: dict) -> int:
         """Energy cap for a ship: base maxEnergy + energy_max skill (+10 per point)."""
         return int(self.config['max_energy'] + self._skill(ship, 'energy_max') * 10)
