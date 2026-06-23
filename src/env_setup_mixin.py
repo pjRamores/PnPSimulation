@@ -316,7 +316,7 @@ class EnvSetupMixin:
 
             # Cache the loaded data
             self._predefined_start_cache = start_position
-            logger.info(f"Loaded predefined start position from {self.start_position_config_path} for dimension {dimension_key}: {{start_position['player_x']}, {start_position['player_y']}}")
+            logger.info(f"Loaded predefined start position from {self.start_position_config_path} for dimension {dimension_key}: ({start_position['player_x']}, {start_position['player_y']})")
 
             return start_position
 
