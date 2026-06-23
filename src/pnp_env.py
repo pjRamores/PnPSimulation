@@ -123,10 +123,10 @@ class ProspectorsPiratesEnv(
         # See docs_game/game_concepts.md and docs_game/actions.md for the source of
         # every constant below. Values match the production server defaults.
         self.config = {
-            'max_energy': 100,          # metadata.shipConfig.maxEnergy
-            'energy_per_recharge': 10,   # metadata.shipConfig.energyPerRecharge (+recharge_energy*2/tick)
+            'max_energy': 100,            # metadata.shipConfig.maxEnergy
+            'energy_per_recharge': 10,    # metadata.shipConfig.energyPerRecharge (+recharge_energy*2/tick)
             'max_health': 100,
-            'max_jump_distance': 50,    # metadata.shipConfig.maxJumpDistance (+jump_distance*10)
+            'max_jump_distance': 50,      # metadata.shipConfig.maxJumpDistance (+jump_distance*10)
             'max_nutrinium_cargo': 1000,
             'max_credits': 10000,
             # Skill-point budget allocated to EVERY ship each episode. The budget
@@ -139,34 +139,34 @@ class ProspectorsPiratesEnv(
             'max_skill_points': 24,
             'energy_costs': {
                 # metadata.shipConfig.energyCosts
-                'mine': 10,           # reduced by mine_cost skill (min 0)
-                'move': 0,            # MOVE is free (recharge while moving)
-                'jump': 1,            # per unit euclidean distance
-                'jump_min_cost': 75,  # jumpMinCost; reduced by jump_cost skill (-5/pt, floor 0)
-                'attack': 1,
-                'plunder': 5,         # PLUNDER fixed cost (even on miss)
-                'negotiate': 5,
-                'sell': 0,            # SELL is free
+                'mine': 10,             # reduced by mine_cost skill (min 0)
+                'move': 0,              # MOVE is free (recharge while moving)
+                'jump': 1,              # per unit euclidean distance
+                'jump_min_cost': 75,    # jumpMinCost; reduced by jump_cost skill (-5/pt, floor 0)
+                'attack': 1,            # minimum payload; ATTACK spends its payload energy
+                'plunder': 5,           # PLUNDER fixed cost (even on miss)
+                'negotiate': 5,         # NEGOTIATE cost
+                'sell': 0,              # SELL is free
                 'shield_maintenance': 1,  # per-tick cost while shields POWERED
-                'shields': 1,         # legacy alias (binary-shield code path; removed in P6)
+                'shields': 1,           # legacy alias (binary-shield code path; removed in P6)
             },
             'combat': {
-                'base_target_number': 0.5,   # roll-to-hit threshold (attack_accuracy -5%/pt, evade +5%/pt)
+                'base_target_number': 0.5,    # roll-to-hit threshold (attack_accuracy -5%/pt, evade +5%/pt)
                 'guaranteed_miss_chance': 0.05,
                 'guaranteed_hit_chance': 0.05,
                 'attack_shield_damage': 1.5,  # attackShieldDamage: shieldDmg = round(dmg*1.5)
-                'base_shield_resistance': 0.25,   # +shield_strength/20, max 0.75
-                'recharge_penalty': 0.2,         # target recharging -> easier to hit
-                'shield_recharge_rate': 10,      # DRAINING decay/tick + RAISE_SHIELDS cost divisor
-                'base_shield_capacity': 100,     # +shield_capacity*10
-                'damage_variance': 0.5,          # +=-50% damage spread (energy*0.5..1.5)
-                'default_attack_payload': 20,    # energy committed per ATTACK when no bin chosen (scalar action space)
+                'base_shield_resistance': 0.25,  # +shield_strength/20, max 0.75
+                'recharge_penalty': 0.2,        # target recharging -> easier to hit
+                'shield_recharge_rate': 10,     # DRAINING decay/tick + RAISE_SHIELDS cost divisor
+                'base_shield_capacity': 100,    # +shield_capacity*10
+                'damage_variance': 0.5,         # +-50% damage spread (energy*0.5..1.5)
+                'default_attack_payload': 20,   # energy committed per ATTACK when no bin chosen (scalar action space)
             },
             'mining': {
-                'payout_modifier': 0.01,       # mining.payoutModifier: max % of remaining nutrinium per mine
-                'base_success_chance': 0.5,    # legacy alias (old density path; removed in P3)
-                'min_payout': -1,
-                'max_payout': 10,
+                'payout_modifier': 0.01,      # mining.payoutModifier: max % of remaining nutrinium per mine
+                'base_success_chance': 0.5,   # legacy alias (old density path; removed in P3)
+                'min_payout': 1,
+                'max_payout': 10,             # legacy alias
                 # Beta shape for the biased-low random payout (reuses asteroid-budget skew).
                 'payout_beta_alpha': 1.5,
                 'payout_beta_beta': 8.0,
@@ -174,12 +174,12 @@ class ProspectorsPiratesEnv(
             'market': {
                 'sell_nutrinium': 98,         # metadata.market.sell.nutrinium (base; fluctuates)
                 'repair': 50,                 # metadata.market.buy.repair (REPAIR credit cost)
-                'nutrinium_price': 98,        # legacy alias of sell_nutrinium
-                'ship_cost': 100,
+                'nutrinium_price': 98,         # legacy alias of sell_nutrinium
+                'ship_cost': 100,             # legacy alias (old respawn path; removed in P8)
                 # Dynamic market: price drifts toward base, dips on simultaneous sells.
-                'price_recovery_rate': 0.05,   # fraction of gap to base recovered per tick
-                'price_dip_per_sale': 0.02,    # fractional dip applied per sale in a tick
-                'price_min_factor': 0.5,       # floor as a fraction of base price
+                'price_recovery_rate': 0.05,  # fraction of gap to base recovered per tick
+                'price_dip_per_sale': 0.02,   # fractional dip applied per sale in a tick
+                'price_min_factor': 0.5,      # floor as a fraction of base price
             },
             'team_insurance': {
                 # metadata.teamInsurance: respawn cost per member = base*(1+escalation*N)
@@ -198,55 +198,55 @@ class ProspectorsPiratesEnv(
                 'wreckage_percent': 0.5,      # portion of destroyed nutrinium left as wreckage
                 'energy_cost': 5,             # metadata.salvage.energyCost
             },
-            'asteroid_density': 0.11,
-            #
-            #
-            #
-            #
-            #
-            'trading_post_count': None,
-            'trading_post_density': 0.0015360,
-            'trading_post_min': 4,
-            'sensor_range': 5,
-            #
-            #
-            #
-            #
-            #
-            #
-            #
-            'nutrinium_min_percent': 0.08,
-            'nutrinium_max_percent': 1.0,
-            #
-            #
-            #
-            #
+            'asteroid_density': 0.11,      # production mapConfig.asteroidDensity
+            # Trading posts scale with map area. ``trading_post_density`` is derived
+            # from production (24 posts on a 125x125 map = 24/15625 ~= 0.0015360
+            # posts/cell, ~1 per 651 cells). The per-episode target is
+            #   max(trading_post_min, round(density * map_width * map_height))
+            # unless ``trading_post_count`` is set to an explicit (non-None) override.
+            'trading_post_count': None,         # explicit override; None -> derive from density
+            'trading_post_density': 0.0015360,  # posts per cell (production: 244/15625)
+            'trading_post_min': 4,              # floor for small maps
+            'sensor_range': 5,              # base; extended by sensor_range skill
+            # Nutrinium distribution (production concentration model).
+            # Each asteroid's nutrinium = round(concentration * mass), where
+            #   concentration = nutrinium_min_percent
+            #      + Beta(alpha, beta) * (nutrinium_max_percent - nutrinium_min_percent).
+            # Total nutrinium therefore scales with the number of asteroids (and
+            # hence with map area), mirroring the production mapConfig where
+            # minNutriniumPercent=0.08 and maxNutrinium=1.0
+            'nutrinium_min_percent': 0.08,     # production mapConfig.minNutriniumPercent
+            'nutrinium_max_percent': 1.0,      # production mapConfig.maxNutriniumPercent
+            # Beta distribution shape parameters for nutribium concentration per asteroid.
+            # alpha < beta -> skew toward lower concentrations (more poor asteroids).
+            # With alpha=1.5, beta=8: ~30% poor, ~50% medium, ~20% rich asteroids.
+            # The few rich asteroids become high-value strategic targets.
             'nutrinium_beta_alpha': 1.5,
             'nutrinium_beta_beta': 8.0,
-            #
+            # Mass range for asteroids (production mapConfig.minMass/maxMass).
             'asteroid_mass_min': 50,
             'asteroid_mass_max': 500,
-            #
-            #
-            #
+            # Default action restrictions (metadata.actionRestrictions). Each action maps to
+            # {allowedWhileRecharging, allowedWithShieldsUp}. Used by validation/tick logic.
+            # Values mirror the production game config (logs/action_request.json mapConfig).
             'action_restrictions': {
-                'WAIT': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
-                'MINE': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': False},
-                'MOVE': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
-                'RECHARGE': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': False},
-                'RECHARGE_END': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
-                'ATTACK': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
-                'JUMP': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
-                'SELL': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
+                'WAIT':          {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
+                'MINE':          {'allowedWhileRecharging': True, 'allowedWithShieldsUp': False},
+                'MOVE':          {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
+                'RECHARGE':      {'allowedWhileRecharging': False, 'allowedWithShieldsUp': False},
+                'RECHARGE_END':  {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
+                'ATTACK':        {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
+                'JUMP':          {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
+                'SELL':          {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
                 'RAISE_SHIELDS': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': False},
                 'LOWER_SHIELDS': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True},
-                'PLUNDER': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': False},
-                'SALVAGE': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': False},
-                'REPAIR': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
-                'NEGOTIATE': {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
-                'RESPAWN': {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True}
+                'PLUNDER':       {'allowedWhileRecharging': True, 'allowedWithShieldsUp': False},
+                'SALVAGE':       {'allowedWhileRecharging': True, 'allowedWithShieldsUp': False},
+                'REPAIR':        {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
+                'NEGOTIATE':     {'allowedWhileRecharging': False, 'allowedWithShieldsUp': True},
+                'RESPAWN':       {'allowedWhileRecharging': True, 'allowedWithShieldsUp': True}
             },
-            #
+            # Ship abilities max values for normalization (all 19 skills, 0-10).
             'abilities': {
                 'energy_max': 10,
                 'recharge_energy': 10,
@@ -265,25 +265,25 @@ class ProspectorsPiratesEnv(
                 'sensor_range': 10,
                 'salvage_yield': 10,
                 'negotiate_skill': 10,
-                'negotiate_cautious': 10,
-                'negotiate_ambition': 10
+                'negotiate_caution': 10,
+                'negotiate_ambition': 10,
             },
-            #
-            'top_asteroids_count': 5
+            # Observation parameters
+            'top_asteroids_count': 5  # Number of top asteroids to include in observation
         }
 
-        #
-        #
-        #
-        #
-        self.base_action_restrictions = copy.deepcopy(self.config['action_restrictions'])
+        # Immutable baseline of the production action-restriction matrix. reset()
+        # restores this each episode (or derives a randomized variant from it when
+        # randomize_action_restrictions is set) so config['action_restrictions']
+        # always starts from a known-good baseline.
+        self._base_action_restrictions = copy.deepcopy(self.config['action_restrictions'])
 
-        #
+        # Reward shaping - configurable; allow injectino of custom RewardConfig
         self.reward_config = reward_config if reward_config is not None else RewardConfig()
-        #
+        # By default use the simple RewardCalculator; if user requested a composite, build it
         if getattr(self.reward_config, 'use_composite', False):
             try:
-                #
+                # Import component classes locally to avoid top-level import issues
                 from reward_utils import (
                     RewardCalculatorComposite,
                     DistanceToAsteroidReward,
@@ -361,10 +361,10 @@ class ProspectorsPiratesEnv(
                         EarlyDeathPenaltyReward(),       # Penalizes early death proportional to remaining episode
                         InappropriateActionPenalty(),
                         # --- new components (analysis-driven fixes) ---
-                        PlacementReward(),              # Strong terminal reward based on final rank vs opponents
-                        SellBonusReward(),              # Reinforces the mine -> sell loop
-                        EnergyStarvationPenalty(),      # Discourages low-energy drifting / chronic energy starvation
-                        OverriddenActionPenalty(),      # Penalty when env had to override an infeasible chosen action
+                        PlacementReward(),               # Strong terminal reward based on final rank vs opponents
+                        SellBonusReward(),               # Reinforces the mine -> sell loop
+                        EnergyStarvationPenalty(),       # Discourages low-energy drifting / chronic energy starvation
+                        OverriddenActionPenalty(),       # Penalty when env had to override an infeasible chosen action
                     ]
 
                 self.reward_calc = RewardCalculatorComposite(self.reward_config, comps)
@@ -389,7 +389,7 @@ class ProspectorsPiratesEnv(
         # Action space: structured MultiDiscrete faithful to the game server, and
         # trainable by stable-baselines3 (which supports MultiDiscrete but not Dict action
         # spaces). The policy emits a length-4 vector:
-        #  [action_type, target_x, target_y, energy_bin]
+        #   [action_type, target_x, target_y, energy_bin]
         # - action_type: 0..18 (see ActionType)
         # - target:      (x, y) grid coordinate (coordinate JUMP; explicit ATTACK/PLUNDER
         #                target preference)
@@ -398,7 +398,7 @@ class ProspectorsPiratesEnv(
         # compatibility (auto-target, default energy), so the heuristic AIs and legacy
         # scalar-Discrete callers continue to work unchanged.
         self.num_action_types = len(ActionType)   # 19 discrete action types
-        self.energy_bins = 11                     # 0 = default payload, 1..10 = 10%..100%
+        self.energy_bins = 11                      # 0 = default payload, 1..10 = 10%..100%
         self.action_space = spaces.MultiDiscrete(
             [self.num_action_types, self.map_width, self.map_height, self.energy_bins]
         )
@@ -430,8 +430,8 @@ class ProspectorsPiratesEnv(
         #   - Weakest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
         # Total enemy info: 14 values
 
-        ship_state_size = 24          # Complete ship state (including action counter)
-        strategic_context_size = 8    # High-signal strategic features
+        ship_state_size = 24         # Complete ship state (including action counter)
+        strategic_context_size = 8   # High-signal strategic features
         sensor_grid_size = (2 * self.config['sensor_range'] + 1) ** 2
         top_asteroids_size = self.config['top_asteroids_count'] * 6  # 5 asteroids * 6 features each
         # Spec-fidelity features (appended so legacy offsets stay stable):
@@ -439,8 +439,8 @@ class ProspectorsPiratesEnv(
         #   + 3 negotiate-objective + 3 nearest-wreckage
         spec_fidelity_size = 24
 
-        trading_post_size = 3         # Nearest trading post (x, y, distance)
-        enemy_info_size = 14          # Strongest + weakest enemy at player location (7 each)
+        trading_post_size = 3   # Nearest trading post (x, y, distance)
+        enemy_info_size = 14    # Strongest + weakest enemy at player location (7 each)
 
         # Action-restriction matrix (appended last): 2 flags per action id
         # (allowedWhileRecharging, allowedWithShieldsUp) so the policy can adapt to
@@ -476,7 +476,7 @@ class ProspectorsPiratesEnv(
 
         # Initialize state variables
         self.current_step = 0
-        self.action_counter = 0    # Track actions taken in current episode (max ~300 for 5 min @ 1 action/sec)
+        self.action_counter = 0   # Track actions taken in current episode (max ~300 for 5 min @ 1 action/sec)
         self.player_ship = None
         self.opponent_ships = []
         self.asteroids = []
@@ -492,9 +492,9 @@ class ProspectorsPiratesEnv(
     def _compute_trading_post_target(self) -> int:
         """Number of trading posts to place this episode, scaled by map area.
 
-        Uses `trading_post_count` as an explicit override when set (non-None);
-        otherwise derives the count from `trading_post_density` (posts per cell)
-        and clamps to at least `trading_post_min`. Production reference: 24 posts
+        Uses ``trading_post_count`` as an explicit override when set (non-None);
+        otherwise derives the count from ``trading_post_density`` (posts per cell)
+        and clamps to at least ``trading_post_min``. Production reference: 24 posts
         on a 125x125 map -> density ~= 0.0015360 (1 per 651 cells).
         """
         explicit = self.config.get('trading_post_count')
@@ -508,10 +508,10 @@ class ProspectorsPiratesEnv(
     def _generate_episode_action_restrictions(self) -> dict:
         """Derive a randomized action-restriction matrix from the baseline.
 
-        Randomly flips the `allowedWhileRecharging` / `allowedWithShieldsUp`
+        Randomly flips the ``allowedWhileRecharging`` / ``allowedWithShieldsUp``
         flags of most actions so the policy must read the encoded restriction
-        features to adapt. A small set of invariants is preserved to guarantee
-        the episode stays solvable (no deadlocks):
+        features to adapt. A small set of invariants is preserved to guarantee the
+        episode stays solvable (no deadlocks):
 
         * WAIT is always allowed (idle fallback).
         * RECHARGE_END.allowedWhileRecharging stays True (must be able to stop
@@ -656,6 +656,8 @@ class ProspectorsPiratesEnv(
                     ai_type = OpponentAIType.BOT_V6
                 elif forced_upper == 'BOT_V7':
                     ai_type = OpponentAIType.BOT_V7
+                elif forced_upper == 'BOT_V8':
+                    ai_type = OpponentAIType.BOT_V8
                 else:
                     # Treat as model path or "model_path::SPEC_NAME"
                     ai_type = OpponentAIType.MODEL
@@ -673,7 +675,6 @@ class ProspectorsPiratesEnv(
                         )
                     if resolved_spec is not None:
                         model_spec = resolved_spec
-
             else:
                 # No forced type - use random selection
                 if enemy_model_entries and len(enemy_model_entries) > 0:
@@ -691,22 +692,22 @@ class ProspectorsPiratesEnv(
                             )
                         if resolved_spec is not None:
                             model_spec = resolved_spec
-                            ai_type = OpponentAIType.MODEL
+                        ai_type = OpponentAIType.MODEL
 
                 if ai_type is None:
                     # Randomly assign an algorithm-based AI type, chosen uniformly
                     # from every OpponentAIType except MODEL (needs a model path,
                     # handled in the enemy-model branch above) and the model-backed
                     # bots BOT_V6 / BOT_V8 (per-tick model inference and the
-                    # ont-time model load materially slow training). Driving this
+                    # one-time model load materially slow training). Driving this
                     # off the enum means any new non-model opponent type added in
                     # the future is automatically included in training.
-                    _exclude = (
+                    _excluded = (
                         OpponentAIType.MODEL,
                         OpponentAIType.BOT_V6,
-                        OpponentAIType.BOT_V8
+                        OpponentAIType.BOT_V8,
                     )
-                    algorithmic_ai_types = [t for t in OpponentAIType if t not in _exclude]
+                    algorithmic_ai_types = [t for t in OpponentAIType if t not in _excluded]
                     ai_type = random.choice(algorithmic_ai_types)
 
             # This opponent's own randomized skill allocation + derived shield capacity.
@@ -737,7 +738,7 @@ class ProspectorsPiratesEnv(
                 'skill_points_spent': sum(opp_abilities.values()),
                 # Ship abilities - this ship's own randomized allocation of the budget
                 'abilities': opp_abilities,
-                # Spec-accurate fields (PO)
+                # Spec-accurate fields (P0)
                 'team_id': (i + 1) % 4,
                 'modules': list(self._episode_modules),
                 'shield': {'state': 'DOWN', 'capacity': opp_shield_capacity, 'value': 0},
@@ -889,7 +890,7 @@ class ProspectorsPiratesEnv(
         # If not enough trading posts (or none), generate remaining using jittered-grid
         # to ensure good spatial coverage and avoid clustering. Trading posts will
         # never overlap asteroids or each other.
-        self.trading_post_target = self.compute_trading_post_target()
+        self.trading_post_target = self._compute_trading_post_target()
         needed = self.trading_post_target - len(self.trading_posts)
         if needed > 0:
             # Build set of occupied positions (asteroids + already placed posts)
@@ -1031,7 +1032,7 @@ class ProspectorsPiratesEnv(
             if action != ActionType.RESPAWN:
                 # Override any other action to RESPAWN
                 if self.warn_on_invalid_action:
-                    logger.warning("Player is destroyed. Only RESPAWN action is allowed. Forcing RESPAWN.")
+                    logger.warning(f"Player is destroyed. Only RESPAWN action is allowed. Forcing RESPAWN.")
                 action = int(ActionType.RESPAWN)
 
             # If terminate_on_player_death is True, terminate after respawn action
@@ -1049,7 +1050,7 @@ class ProspectorsPiratesEnv(
                 self.state_invalid_action_count += 1
                 if self.warn_on_invalid_action:
                     logger.warning(f"Action {ActionType(action).name} invalid for current state: {state_invalid_reason}. "
-                                   f"This should not happen with action masking!")
+                                 f"This should not happen with action masking!")
 
                 # ENFORCE action masking: force invalid action to appropriate valid action
                 # This prevents the model from executing invalid actions. The
@@ -1075,7 +1076,7 @@ class ProspectorsPiratesEnv(
             self.player_ship['just_recharged'] = False
         action_reward, action_info = self._execute_action(action, self.player_ship, is_player=True, target=action_target, energy=action_energy)
         # Per-ship tick order (step 4): drain DRAINING shields after the player's action.
-        self.post_action_tick(self.player_ship)
+        self._post_action_tick(self.player_ship)
         # Expose previous position so RewardComponents (e.g., DistanceToAsteroidReward) can compute deltas
         action_info['prev_position'] = prev_position
 
@@ -1106,8 +1107,8 @@ class ProspectorsPiratesEnv(
                 'scaled_reward': float(action_info.get('scaled_reward', 0.0)),
                 'state_valid': action_info.get('state_valid', True),
                 'state_invalid_reason': action_info.get('state_invalid_reason', ''),
-        'payload': action_info.get('payload', None)
-        }
+                'payload': action_info.get('payload', None)
+            }
         except Exception:
             self.last_player_action_result = None
 
@@ -1137,7 +1138,7 @@ class ProspectorsPiratesEnv(
                     target=op_target, energy=op_energy,
                 )
                 # Per-ship tick order (step 4): drain DRAINING shields after action.
-                self.post_action_tick(opponent)
+                self._post_action_tick(opponent)
                 # store a compact result for rendering, include optional payload
                 try:
                     self.last_opponent_action_results[i] = {
