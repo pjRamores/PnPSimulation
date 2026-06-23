@@ -196,7 +196,7 @@ class EnvOpponentMixin:
         """Lazily import the balanced miner-trader bot (bot_v5) used by BOT_V5 opponents.
 
         Like bot_v2/bot_v3/bot_v4, bot_v5 lives in the sibling
-        ``r680329-pnp-lambda`` folder and is pure stdlib. (it emits MOVE
+        ``r680329-pnp-lambda`` folder and is pure stdlib. it emits MOVE
         directions in this environment's (live server) frame, so no axis
         pinning is needed. The resolved module (or None when unavailable) is
         cached on the instance.
@@ -327,7 +327,7 @@ class EnvOpponentMixin:
 
         Shared by all bot opponents (BOT_V2/BOT_V3/BOT_V4/BOT_V5) -- the schema
         mirrors the live-server ActionRequest the bots parse in production (see
-        ``logs/action_request.json``): ``actionId``, ``ActionResult``,
+        ``logs/action_request.json``): ``actionId``, ``actionResult``,
         ``eventLog``, ``gameState`` (with full ``metadata``), ``leaderboard``,
         ``me`` and ``sensors``. The controlled ship becomes ``me``; nearby
         entities (within sensor range) become ``sensors``; environment config
@@ -542,7 +542,7 @@ class EnvOpponentMixin:
         """Map a bot_v2 MOVE direction directly onto an env MOVE action.
 
         The bot runs in this environment's (live server) coordinate frame --
-        its axis is pinned to N=y+1/E=x+1 in `_get_bot_v2_module` -- so its
+        its axis is pinned to N=y+1/E=x+1 in ``_get_bot_v2_module`` -- so its
         compass directions align one-to-one with the env's MOVE actions and
         need no inversion: N->MOVE_NORTH, S->MOVE_SOUTH, E->MOVE_EAST,
         W->MOVE_WEST.
@@ -801,12 +801,13 @@ class EnvOpponentMixin:
         """BOT_V8 AI: delegate the decision to the legacy model-backed bot.
 
         Reuses the generic ActionRequest composer and structured response
-        translator (the bot_v7 response schema matches bot_v2's). bot_v7 only
-        ever mines, recharges or wanders (random but on-map), so its response is
-        always a simple MINE/RECHARGE/RECHARGE_END/MOVE/WAIT. The bot's own
-        target/energy are honored verbatim (no auto-targeting); an action that
-        is invalid for the current state simply does nothing. Falls back to
-        BOT_V2 only when the bot itself is unavailable or errors.
+        translator (the bot_v8 response schema matches bot_v2's). bot_v8 only
+        the legacy 128-dim / Discrete(14) v65 model: it reconstructs the legacy
+        observation from the request, predicts a scalar action, axis-corrects the
+        v1 training frame, and enforces the current action mask. The bot's own
+        target/energy are honored verbatim (no auto-targeting); an action that is
+        invalid for the current state simply does nothing. Falls back to BOT_V2
+        only when the bot itself is unavailable or errors.
         """
         bot = self._get_bot_v8_module()
         if bot is None:
@@ -829,7 +830,7 @@ class EnvOpponentMixin:
             ship['_pending_action_energy'] = None
             return self._ai_bot_v2(ship)
 
-    def enforce_enemy_action_mask(self, ship: dict, action: int) -> int:
+    def _enforce_enemy_action_mask(self, ship: dict, action: int) -> int:
         """Enforce action masking for an enemy ship, replacing invalid actions with valid ones.
 
         This gives MODEL enemies the same action enforcement the player gets,
@@ -841,7 +842,7 @@ class EnvOpponentMixin:
 
         # Invalid action - apply fallback logic similar to player enforcement
         if ship.get('recharging', False):
-            if ship['energy'] >= self.config['max energy']:
+            if ship['energy'] >= self.config['max_energy']:
                 return int(ActionType.RECHARGE_END)
             elif action not in (int(ActionType.WAIT), int(ActionType.RECHARGE_END)):
                 return int(ActionType.RECHARGE_END)
@@ -870,10 +871,10 @@ class EnvOpponentMixin:
                     ActionType.RECHARGE, ActionType.ATTACK,
                     ActionType.RAISE_SHIELDS, ActionType.WAIT,
                 ]
-        for fb in preferred:
-            if mask[int(fb)] == 1:
-                return int(fb)
-        return int(ActionType.WAIT)
+            for fb in preferred:
+                if mask[int(fb)] == 1:
+                    return int(fb)
+            return int(ActionType.WAIT)
 
     def _get_enemy_observation(self, enemy_ship: dict) -> Dict[str, np.ndarray]:
         """
