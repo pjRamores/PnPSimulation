@@ -1,4 +1,4 @@
-"""Opponent / AI dispatch mixin for :class:`ProspectorsPiratesEnv`
+"""Opponent / AI dispatch mixin for :class:`ProspectorsPiratesEnv`.
 
 Holds opponent action selection: the dispatch table, the model-driven AI, the
 delegating bot loaders (bot_v2..v6) plus their request composer / response
@@ -115,7 +115,7 @@ class EnvOpponentMixin:
             # the frame bot_v2 self-calibrates to in production. Pin its axis to
             # that frame so its compass directions map DIRECTLY onto the env's
             # MOVE actions (no inversion) and it never has to spend a move
-            # learning the orientation. `_axis` is a module-level global the
+            # learning the orientation. ``_axis`` is a module-level global the
             # bot exposes for this purpose.
             if hasattr(bot_v2, '_axis'):
                 bot_v2._axis['ns'] = 1
@@ -133,7 +133,7 @@ class EnvOpponentMixin:
     def _get_bot_v3_module(self):
         """Lazily import the prospector-economy bot (bot_v3) used by BOT_V3 opponents.
 
-        Like bot_v2, bot_v3 lives in the sibling `r680329-pnp-lambda` folder
+        Like bot_v2, bot_v3 lives in the sibling ``r680329-pnp-lambda`` folder
         and is pure stdlib. It emits MOVE directions in this environment's
         (live server) frame, so no axis pinning is needed. The resolved module
         (or None when unavailable) is cached on the instance.
@@ -164,10 +164,10 @@ class EnvOpponentMixin:
     def _get_bot_v4_module(self):
         """Lazily import the pirate-raider bot (bot_v4) used by BOT_V4 opponents.
 
-        Like bot_v2/bot_v3, bot_v4 lives in the sibling `r680329-pnp-lambda` folder
-        and is pure stdlib. It emits MOVE directions in this environment's
-        (live server) frame, so no axis pinning is needed. The resolved module
-        (or None when unavailable) is cached on the instance.
+        Like bot_v2/bot_v3, bot_v4 lives in the sibling ``r680329-pnp-lambda``
+        folder and is pure stdlib. It emits MOVE directions in this
+        environment's (live server) frame, so no axis pinning is needed. The
+        resolved module (or None when unavailable) is cached on the instance.
         """
         cached = getattr(self, '_bot_v4_module', 'unset')
         if cached != 'unset':
@@ -187,20 +187,19 @@ class EnvOpponentMixin:
             logger.warning(
                 f"bot_v4 unavailable for BOT_V4 opponent AI: {e}. Falling back to HEURISTIC."
             )
-        module = None
+            module = None
 
         self._bot_v4_module = module
         return module
 
     def _get_bot_v5_module(self):
-        """Lazily import the model-backed bot (bot_v5) used by BOT_V5 opponents.
+        """Lazily import the balanced miner-trader bot (bot_v5) used by BOT_V5 opponents.
 
-        Like the other delegating bots, bot_v5 lives in the sibling
-        ``r680329-pnp-lambda`` folder; unlike them it is NOT pure stdlib (it
-        loads a trained model via numpy / stable_baselines3) and reconstructs
-        the observation from the ActionRequest. It emits MOVE directions in this
-        environment's (live server) frame, so no axis pinning is needed. The
-        resolved module (or None when unavailable) is cached on the instance.
+        Like bot_v2/bot_v3/bot_v4, bot_v5 lives in the sibling
+        ``r680329-pnp-lambda`` folder and is pure stdlib. (it emits MOVE
+        directions in this environment's (live server) frame, so no axis
+        pinning is needed. The resolved module (or None when unavailable) is
+        cached on the instance.
         """
         cached = getattr(self, '_bot_v5_module', 'unset')
         if cached != 'unset':
@@ -225,9 +224,8 @@ class EnvOpponentMixin:
         self._bot_v5_module = module
         return module
 
-
     def _get_bot_v6_module(self):
-        """ Lazily import the model-backed bot (bot_v6) used by BOT_V6 opponents.
+        """Lazily import the model-backed bot (bot_v6) used by BOT_V6 opponents.
 
         Like the other delegating bots, bot_v6 lives in the sibling
         ``r680329-pnp-lambda`` folder; unlike them it is NOT pure stdlib (it
@@ -259,9 +257,8 @@ class EnvOpponentMixin:
         self._bot_v6_module = module
         return module
 
-
     def _get_bot_v7_module(self):
-        """ Lazily import the dummy-miner bot (bot_v7) used by BOT_V7 opponents.
+        """Lazily import the dummy-miner bot (bot_v7) used by BOT_V7 opponents.
 
         Like bot_v2..bot_v5, bot_v7 is pure stdlib and lives in the sibling
         ``bots`` folder. It emits MOVE directions in this environment's (live
@@ -271,7 +268,7 @@ class EnvOpponentMixin:
         cached = getattr(self, '_bot_v7_module', 'unset')
         if cached != 'unset':
             return cached
-    
+
         module = None
         try:
             import sys
@@ -287,10 +284,10 @@ class EnvOpponentMixin:
                 f"bot_v7 unavailable for BOT_V7 opponent AI: {e}. Falling back to HEURISTIC."
             )
             module = None
-    
+
         self._bot_v7_module = module
         return module
-        
+
     def _get_bot_v8_module(self):
         """Lazily import the legacy model-backed bot (bot_v8) used by BOT_V8 opponents.
 
@@ -300,7 +297,7 @@ class EnvOpponentMixin:
         v65 model. It already axis-corrects the v1 training frame internally and
         emits MOVE directions in this environment's (live server) frame, so no
         axis pinning is needed here. The resolved module (or None when
-        unavailable( is cached on the instance.
+        unavailable) is cached on the instance.
         """
         cached = getattr(self, '_bot_v8_module', 'unset')
         if cached != 'unset':
@@ -322,22 +319,21 @@ class EnvOpponentMixin:
             )
             module = None
 
-        self._bot_v5_module = module
+        self._bot_v8_module = module
         return module
 
-
     def _compose_action_request(self, ship: dict) -> dict:
-        """Compose a full ActionRequest dict for `ship` for the delegating bots.
+        """Compose a full ActionRequest dict for ``ship`` for the delegating bots.
 
         Shared by all bot opponents (BOT_V2/BOT_V3/BOT_V4/BOT_V5) -- the schema
         mirrors the live-server ActionRequest the bots parse in production (see
-        ``logs/action_request.json``): 'actionId', 'ActionResult',
-        'eventLog', 'gameState' (with full `metadata`), 'leaderboard',
-        'me' and 'sensors'. The controlled ship becomes 'me'; nearby
-        entities (within sensor range) become 'sensors'; environment config
-        becomes 'gameState.metadata'. Fields the simulation does not track
+        ``logs/action_request.json``): ``actionId``, ``ActionResult``,
+        ``eventLog``, ``gameState`` (with full ``metadata``), ``leaderboard``,
+        ``me`` and ``sensors``. The controlled ship becomes ``me``; nearby
+        entities (within sensor range) become ``sensors``; environment config
+        becomes ``gameState.metadata``. Fields the simulation does not track
         (transport/cosmetic: ``hue``, ``imageId``, ``requestConfig``,
-        ``roundScores``, `stats`) are emitted with neutral defaults so the
+        ``roundScores``, ``stats``) are emitted with neutral defaults so the
         shape matches production while the bots' consumed fields stay intact.
         """
         sensor_range = self.config['sensor_range']
@@ -350,7 +346,7 @@ class EnvOpponentMixin:
             return max(abs(ex - sx), abs(ey - sy)) <= sensor_range
 
         def ship_view(s: dict) -> dict:
-            """Server-shaped view of a ship (used for `me` and ship sensors)."""
+            """Server-shaped view of a ship (used for ``me`` and ship sensors)."""
             return {
                 '_id': str(s.get('id', '')),
                 'credits': int(s.get('credits', 0)),
@@ -363,16 +359,16 @@ class EnvOpponentMixin:
                 'modules': list(s.get('modules', []) or []),
                 'name': s.get('name'),
                 'nutrinium': int(s.get('nutrinium', 0)),
-                'objectives': dict(s.get('objectives', {})) or {},
+                'objectives': dict(s.get('objectives', {}) or {}),
                 'playerId': s.get('id'),
                 'recharging': bool(s.get('recharging', False)),
                 'roundScores': list(s.get('round_scores', []) or []),
-                'shield': dict(s.get('shield', {})) or {},
+                'shield': dict(s.get('shield', {}) or {}),
                 'skillPointsSpent': int(s.get('skill_points_spent', 0)),
                 'skillPointsTotal': int(s.get('skill_points_total', 0)),
-                'skills': dict(s.get('abilities', {})) or {},
+                'skills': dict(s.get('abilities', {}) or {}),
                 'state': s.get('state', 'READY'),
-                'stats': dict(s.get('stats', {})) or {},
+                'stats': dict(s.get('stats', {}) or {}),
                 'teamId': s.get('team_id'),
                 'type': 'ship',
             }
@@ -420,7 +416,7 @@ class EnvOpponentMixin:
             sensors.append(ship_view(other))
 
         me = ship_view(ship)
-        me['requestConfig'] = dict(ship.get('request_config', {})) or {}
+        me['requestConfig'] = dict(ship.get('request_config', {}) or {})
 
         costs = self.config['energy_costs']
         mining = self.config['mining']
@@ -429,7 +425,6 @@ class EnvOpponentMixin:
         salvage = self.config.get('salvage', {})
         market = self.config.get('market', {})
         insurance = self.config.get('team_insurance', {})
-
         sell_price = round(
             getattr(self, 'market_price', market.get('sell_nutrinium', 0)), 2
         )
@@ -460,7 +455,7 @@ class EnvOpponentMixin:
                     'ship': market.get('ship_cost', 100),
                 },
                 # Current nutrinium sell price (drives bot_v5's market-timing).
-                # The env updates `market_price` as cargo is sold; fall back to
+                # The env updates ``market_price`` as cargo is sold; fall back to
                 # the configured base price before the first sale.
                 'sell': {'nutrinium': sell_price},
             },
@@ -529,7 +524,7 @@ class EnvOpponentMixin:
             },
             'eventLog': list(getattr(self, 'event_log', []) or []),
             'gameState': {
-                # `gameId` is unique and stable per ship+episode (ship objects
+                # ``gameId`` is unique and stable per ship+episode (ship objects
                 # are recreated each reset). The bot keys its self-calibration /
                 # move-history globals on gameId; a per-ship id keeps interleaved
                 # opponents from clobbering each other's (pinned) axis mid-decision.
@@ -539,15 +534,18 @@ class EnvOpponentMixin:
                 'tick': tick,
             },
             'leaderboard': leaderboard,
-        }
-        'me': me,
-        'sensors': sensors,
+            'me': me,
+            'sensors': sensors,
         }
 
     def _translate_bot_v2_move(self, ship: dict, payload: dict) -> int:
-        """Map a bot v2 MOVE direction directly onto an env MOVE action.
+        """Map a bot_v2 MOVE direction directly onto an env MOVE action.
 
-        The bot runs in this environment's (live server) coordinate frame -- its axis is pinned to N=y+1/E=x+1 in `_get_bot_v2_module` -- so its compass directions align one-to-one with the env's MOVE actions and need no inversion: N->MOVE_NORTH, S->MOVE_SOUTH, E->MOVE_EAST, W->MOVE_WEST.
+        The bot runs in this environment's (live server) coordinate frame --
+        its axis is pinned to N=y+1/E=x+1 in `_get_bot_v2_module` -- so its
+        compass directions align one-to-one with the env's MOVE actions and
+        need no inversion: N->MOVE_NORTH, S->MOVE_SOUTH, E->MOVE_EAST,
+        W->MOVE_WEST.
         """
         direction = str(payload.get('direction', '')).upper()
         mapping = {
@@ -560,12 +558,20 @@ class EnvOpponentMixin:
             return int(mapping[direction])
         return int(ActionType.WAIT)
 
-    def _translate_bot_action(self, ship: dict, response: dict) -> Tuple[int, Optional[Tuple[int, int]], Optional[int]]:
-        """Translate a bot response dict into a structured `(action, target, energy)`.
+    def _translate_bot_action(
+        self, ship: dict, response: dict
+    ) -> Tuple[int, Optional[Tuple[int, int]], Optional[int]]:
+        """Translate a bot response dict into a structured ``(action, target, energy)``.
 
-        The simulator processes EXACTLY what the bot asks for -- there is no auto-targeting. A JUMP is sent to the bot's own `target_location` coordinate (mapped to the generic coordinate-jump action, whatever sits at that cell), and an ATTACK carries the bot's requested energy payload. When a request cannot be carried out (out of jump range, insufficient energy, no asteroid/cargo, etc.) the underlying action simply fails and the ship does nothing that tick.
+        The simulator processes EXACTLY what the bot asks for -- there is no
+        auto-targeting. A JUMP is sent to the bot's own ``target_location``
+        coordinate (mapped to the generic coordinate-jump action, whatever sits
+        at that cell), and an ATTACK carries the bot's requested energy payload.
+        When a request cannot be carried out (out of jump range, insufficient
+        energy, no asteroid/cargo, etc.) the underlying action simply fails and
+        the ship does nothing that tick.
 
-        Returns `(action_int, target_xy_or_None, energy_or_None)`.
+        Returns ``(action_int, target_xy_or_None, energy_or_None)``.
         """
         response = response or {}
         action_type = str(response.get('actionType', 'WAIT')).upper()
@@ -590,7 +596,9 @@ class EnvOpponentMixin:
             target = payload.get('target_location') or {}
             tx, ty = target.get('x'), target.get('y')
             if tx is None or ty is None:
-                return int(ActionType.WAIT), None, None  # Coordinate jump to the bot's chosen cell (asteroid OR post); no nearest-post / best-asteroid substitution.
+                return int(ActionType.WAIT), None, None
+            # Coordinate jump to the bot's chosen cell (asteroid OR post); no
+            # nearest-post / best-asteroid substitution.
             return int(ActionType.JUMP_TO_ASTEROID), (int(tx), int(ty)), None
         if action_type == 'ATTACK':
             energy = payload.get('energy')
@@ -603,10 +611,16 @@ class EnvOpponentMixin:
             return int(simple[action_type]), None, None
         return int(ActionType.WAIT), None, None
 
-    def ai_bot_v2(self, ship: dict) -> int:
-        """BOT V2 AI: delegate the decision to the production heuristic bot.
+    def _ai_bot_v2(self, ship: dict) -> int:
+        """BOT_V2 AI: delegate the decision to the production heuristic bot.
 
-        Composes an ActionRequest from the environment state, calls `bot_v2.get_action`, and translates the response into a structured action. The bot's own target/energy are honored verbatim (no auto-targeting) and stashed on the ship for the step loop to execute; an action that is invalid for the current state simply does nothing (the underlying action method no-ops). Returns WAIT only when the bot itself is unavailable or errors.
+        Composes an ActionRequest from the environment state, calls
+        ``bot_v2.get_action``, and translates the response into a structured
+        action. The bot's own target/energy are honored verbatim (no
+        auto-targeting) and stashed on the ship for the step loop to execute;
+        an action that is invalid for the current state simply does nothing
+        (the underlying action method no-ops). Returns WAIT only when the bot
+        itself is unavailable or errors.
         """
         bot = self._get_bot_v2_module()
         if bot is None:
@@ -620,25 +634,29 @@ class EnvOpponentMixin:
             action, target, energy = self._translate_bot_action(ship, response)
             ship['_pending_action_target'] = target
             ship['_pending_action_energy'] = energy
-        return action
-    except Exception as e:
-        logger.warning(
-            f"Error using bot_v2 for ship {ship.get('name')}: {e}. Returning WAIT."
-        )
-        ship['_pending_action_target'] = None
-        ship['_pending_action_energy'] = None
-        return int(ActionType.WAIT)
+            return action
+        except Exception as e:
+            logger.warning(
+                f"Error using bot_v2 for ship {ship.get('name')}: {e}. Returning WAIT."
+            )
+            ship['_pending_action_target'] = None
+            ship['_pending_action_energy'] = None
+            return int(ActionType.WAIT)
 
-    def ai_bot_v3(self, ship: dict) -> int:
+    def _ai_bot_v3(self, ship: dict) -> int:
         """BOT_V3 AI: delegate the decision to the prospector-economy bot.
 
-        Reuses the generic ActionRequest composer and structured response translator (the bot_v3 response schema matches bot_v2's). The bot's own target/energy are honored verbatim (no auto-targeting); an action that is invalid for the current state simply does nothing. Falls back to BOT_V2 only when the bot itself is unavailable or errors.
+        Reuses the generic ActionRequest composer and structured response
+        translator (the bot_v3 response schema matches bot_v2's). The bot's own
+        target/energy are honored verbatim (no auto-targeting); an action that
+        is invalid for the current state simply does nothing. Falls back to
+        BOT_V2 only when the bot itself is unavailable or errors.
         """
         bot = self._get_bot_v3_module()
         if bot is None:
             ship['_pending_action_target'] = None
             ship['_pending_action_energy'] = None
-            return self.ai_bot_v2(ship)
+            return self._ai_bot_v2(ship)
 
         try:
             request = self._compose_action_request(ship)
@@ -653,18 +671,22 @@ class EnvOpponentMixin:
             )
             ship['_pending_action_target'] = None
             ship['_pending_action_energy'] = None
-            return self.ai_bot_v2(ship)
+            return self._ai_bot_v2(ship)
 
-    def ai_bot_v4(self, ship: dict) -> int:
+    def _ai_bot_v4(self, ship: dict) -> int:
         """BOT_V4 AI: delegate the decision to the pirate-raider bot.
 
-        Reuses the generic ActionRequest composer and structured response translator (the bot_v4 response schema matches bot_v2's). The bot's own target/energy are honored verbatim (no auto-targeting); an action that is invalid for the current state simply does nothing. Falls back to BOT_V2 only when the bot itself is unavailable or errors.
+        Reuses the generic ActionRequest composer and structured response
+        translator (the bot_v4 response schema matches bot_v2's). The bot's own
+        target/energy are honored verbatim (no auto-targeting); an action that
+        is invalid for the current state simply does nothing. Falls back to
+        BOT_V2 only when the bot itself is unavailable or errors.
         """
         bot = self._get_bot_v4_module()
         if bot is None:
             ship['_pending_action_target'] = None
             ship['_pending_action_energy'] = None
-            return self.ai_bot_v2(ship)
+            return self._ai_bot_v2(ship)
 
         try:
             request = self._compose_action_request(ship)
@@ -679,18 +701,22 @@ class EnvOpponentMixin:
             )
             ship['_pending_action_target'] = None
             ship['_pending_action_energy'] = None
-            return self.ai_bot_v2(ship)
+            return self._ai_bot_v2(ship)
 
-    def ai_bot_v5(self, ship: dict) -> int:
+    def _ai_bot_v5(self, ship: dict) -> int:
         """BOT_V5 AI: delegate the decision to the balanced miner-trader bot.
 
-        Reuses the generic ActionRequest composer and structured response translator (the bot_v5 response schema matches bot_v2's). The bot's own target/energy are honored verbatim (no auto-targeting); an action that is invalid for the current state simply does nothing. Falls back to BOT_V2 only when the bot itself is unavailable or errors.
+        Reuses the generic ActionRequest composer and structured response
+        translator (the bot_v5 response schema matches bot_v2's). The bot's own
+        target/energy are honored verbatim (no auto-targeting); an action that
+        is invalid for the current state simply does nothing. Falls back to
+        BOT_V2 only when the bot itself is unavailable or errors.
         """
         bot = self._get_bot_v5_module()
         if bot is None:
             ship['_pending_action_target'] = None
             ship['_pending_action_energy'] = None
-            return self.ai_bot_v2(ship)
+            return self._ai_bot_v2(ship)
 
         try:
             request = self._compose_action_request(ship)
@@ -705,105 +731,149 @@ class EnvOpponentMixin:
             )
             ship['_pending_action_target'] = None
             ship['_pending_action_energy'] = None
-            return self.ai_bot_v2(ship)
+            return self._ai_bot_v2(ship)
 
-    def ai_bot_v6(self, ship: dict) -> int:
-    """BOT_V6 AI: delegate the decision to the model-backed bot.
+    def _ai_bot_v6(self, ship: dict) -> int:
+        """BOT_V6 AI: delegate the decision to the model-backed bot.
 
-    Reuses the generic ActionRequest composer and structured response translator (the bot_v6 response schema matches bot_v2's). bot_v6 loads a trained model and reconstructs the observation from the request, so its choices are model-driven rather than heuristic. The bot's own target/energy are honored verbatim (no auto-targeting); an action that is invalid for the current state simply does nothing. Falls back to BOT_V2 only when the bot itself is unavailable or errors.
-    """
-    bot = self._get_bot_v6_module()
-    if bot is None:
-        ship['_pending_action_target'] = None
-        ship['_pending_action_energy'] = None
-        return self._ai_bot_v2(ship)
+        Reuses the generic ActionRequest composer and structured response
+        translator (the bot_v6 response schema matches bot_v2's). bot_v6 loads a
+        trained model and reconstructs the observation from the request, so its
+        choices are model-driven rather than heuristic. The bot's own
+        target/energy are honored verbatim (no auto-targeting); an action that
+        is invalid for the current state simply does nothing. Falls back to
+        BOT_V2 only when the bot itself is unavailable or errors.
+        """
+        bot = self._get_bot_v6_module()
+        if bot is None:
+            ship['_pending_action_target'] = None
+            ship['_pending_action_energy'] = None
+            return self._ai_bot_v2(ship)
 
-    try:
-        request = self._compose_action_request(ship)
-        response = bot.get_action(request)
-        action, target, energy = self._translate_bot_action(ship, response)
-        ship['_pending_action_target'] = target
-        ship['_pending_action_energy'] = energy
-        return action
-    except Exception as e:
-        logger.warning(
-            f"Error using bot_v6 for ship {ship.get('name')}: {e}. Falling back to BOT_V2."
-        )
-        ship['_pending_action_target'] = None
-        ship['_pending_action_energy'] = None
-        return self._ai_bot_v2(ship)
+        try:
+            request = self._compose_action_request(ship)
+            response = bot.get_action(request)
+            action, target, energy = self._translate_bot_action(ship, response)
+            ship['_pending_action_target'] = target
+            ship['_pending_action_energy'] = energy
+            return action
+        except Exception as e:
+            logger.warning(
+                f"Error using bot_v6 for ship {ship.get('name')}: {e}. Falling back to BOT_V2."
+            )
+            ship['_pending_action_target'] = None
+            ship['_pending_action_energy'] = None
+            return self._ai_bot_v2(ship)
 
-    def ai_bot_v7(self, ship: dict) -> int:
+    def _ai_bot_v7(self, ship: dict) -> int:
         """BOT_V7 AI: delegate the decision to the dummy-miner bot.
 
-    Reuses the generic ActionRequest composer and structured response translator (the bot_v7 response schema matches bot_v2's). bot_v7 only ever mines, recharges or wanders (random but on-map), so its response is always a simple MINE/RECHARGE/RECHARGE_END/MOVE/WAIT. The bot's own target/energy are honored verbatim (no auto-targeting); an action that is invalid for the current state simply does nothing. Falls back to BOT_V2 only when the bot itself is unavailable or errors.
-    """
-    bot = self._get_bot_v7_module()
-    if bot is None:
-        ship['_pending_action_target'] = None
-        ship['_pending_action_energy'] = None
-        return self._ai_bot_v2(ship)
+        Reuses the generic ActionRequest composer and structured response
+        translator (the bot_v7 response schema matches bot_v2's). bot_v7 only
+        ever mines, recharges or wanders (random but on-map), so its response is
+        always a simple MINE/RECHARGE/RECHARGE_END/MOVE/WAIT. The bot's own
+        target/energy are honored verbatim (no auto-targeting); an action that
+        is invalid for the current state simply does nothing. Falls back to
+        BOT_V2 only when the bot itself is unavailable or errors.
+        """
+        bot = self._get_bot_v7_module()
+        if bot is None:
+            ship['_pending_action_target'] = None
+            ship['_pending_action_energy'] = None
+            return self._ai_bot_v2(ship)
 
-    try:
-        request = self._compose_action_request(ship)
-        response = bot.get_action(request)
-        action, target, energy = self._translate_bot_action(ship, response)
-        ship['_pending_action_target'] = target
-        ship['_pending_action_energy'] = energy
-        return action
-    except Exception as e:
-        logger.warning(
-            f"Error using bot_v7 for ship {ship.get('name')}: {e}. Falling back to BOT_V2."
-        )
-        ship['_pending_action_target'] = None
-        ship['_pending_action_energy'] = None
-        return self._ai_bot_v2(ship)
+        try:
+            request = self._compose_action_request(ship)
+            response = bot.get_action(request)
+            action, target, energy = self._translate_bot_action(ship, response)
+            ship['_pending_action_target'] = target
+            ship['_pending_action_energy'] = energy
+            return action
+        except Exception as e:
+            logger.warning(
+                f"Error using bot_v7 for ship {ship.get('name')}: {e}. Falling back to BOT_V2."
+            )
+            ship['_pending_action_target'] = None
+            ship['_pending_action_energy'] = None
+            return self._ai_bot_v2(ship)
+
+    def _ai_bot_v8(self, ship: dict) -> int:
+        """BOT_V8 AI: delegate the decision to the legacy model-backed bot.
+
+        Reuses the generic ActionRequest composer and structured response
+        translator (the bot_v7 response schema matches bot_v2's). bot_v7 only
+        ever mines, recharges or wanders (random but on-map), so its response is
+        always a simple MINE/RECHARGE/RECHARGE_END/MOVE/WAIT. The bot's own
+        target/energy are honored verbatim (no auto-targeting); an action that
+        is invalid for the current state simply does nothing. Falls back to
+        BOT_V2 only when the bot itself is unavailable or errors.
+        """
+        bot = self._get_bot_v8_module()
+        if bot is None:
+            ship['_pending_action_target'] = None
+            ship['_pending_action_energy'] = None
+            return self._ai_bot_v2(ship)
+
+        try:
+            request = self._compose_action_request(ship)
+            response = bot.get_action(request)
+            action, target, energy = self._translate_bot_action(ship, response)
+            ship['_pending_action_target'] = target
+            ship['_pending_action_energy'] = energy
+            return action
+        except Exception as e:
+            logger.warning(
+                f"Error using bot_v8 for ship {ship.get('name')}: {e}. Falling back to BOT_V2."
+            )
+            ship['_pending_action_target'] = None
+            ship['_pending_action_energy'] = None
+            return self._ai_bot_v2(ship)
 
     def enforce_enemy_action_mask(self, ship: dict, action: int) -> int:
         """Enforce action masking for an enemy ship, replacing invalid actions with valid ones.
 
-    This gives MODEL enemies the same action enforcement the player gets, preventing them from wasting turns on invalid actions.
-    """
-    is_valid, reason = self._is_action_valid_for_state(action, ship, is_player=False)
-    if is_valid:
-        return action
+        This gives MODEL enemies the same action enforcement the player gets,
+        preventing them from wasting turns on invalid actions.
+        """
+        is_valid, reason = self._is_action_valid_for_state(action, ship, is_player=False)
+        if is_valid:
+            return action
 
-    # Invalid action - apply fallback logic similar to player enforcement
-    if ship.get('recharging', False):
-        if ship['energy'] >= self.config['max energy']:
-            return int(ActionType.RECHARGE_END)
-        elif action not in (int(ActionType.WAIT), int(ActionType.RECHARGE_END)):
-            return int(ActionType.RECHARGE_END)
+        # Invalid action - apply fallback logic similar to player enforcement
+        if ship.get('recharging', False):
+            if ship['energy'] >= self.config['max energy']:
+                return int(ActionType.RECHARGE_END)
+            elif action not in (int(ActionType.WAIT), int(ActionType.RECHARGE_END)):
+                return int(ActionType.RECHARGE_END)
+            else:
+                return int(ActionType.WAIT)
+        elif ship.get('destroyed', False):
+            return int(ActionType.RESPAWN)
         else:
-            return int(ActionType.WAIT)
-    elif ship.get('destroyed', False):
-        return int(ActionType.RESPAWN)
-    else:
-        # Pick the best valid action from the action mask
-        mask = self._get_action_mask(ship, is_player=False)
-        if ship['energy'] <= self.config['energy_costs'].get('move', 5):
-            preferred = [
-                ActionType.RECHARGE, ActionType.MINE, ActionType.SELL,
-                ActionType.WAIT, ActionType.JUMP_TO_ASTEROID,
-                ActionType.JUMP_TO_TRADING_POST,
-                ActionType.MOVE_NORTH, ActionType.MOVE_SOUTH,
-                ActionType.MOVE_EAST, ActionType.MOVE_WEST,
-                ActionType.ATTACK, ActionType.RAISE_SHIELDS,
-            ]
-        else:
-            preferred = [
-                ActionType.MINE, ActionType.SELL,
-                ActionType.JUMP_TO_ASTEROID, ActionType.JUMP_TO_TRADING_POST,
-                ActionType.MOVE_NORTH, ActionType.MOVE_SOUTH,
-    ActionType.MOVE_EAST, ActionType.MOVE_WEST,
-    ActionType.RECHARGE, ActionType.ATTACK,
-    ActionType.RAISE_SHIELDS, ActionType.WAIT,
-
-    ]
-    for fb in preferred:
-        if mask[int(fb)] == 1:
-            return int(fb)
-    return int(ActionType.WAIT)
+            # Pick the best valid action from the action mask
+            mask = self._get_action_mask(ship, is_player=False)
+            if ship['energy'] <= self.config['energy_costs'].get('move', 5):
+                preferred = [
+                    ActionType.RECHARGE, ActionType.MINE, ActionType.SELL,
+                    ActionType.WAIT, ActionType.JUMP_TO_ASTEROID,
+                    ActionType.JUMP_TO_TRADING_POST,
+                    ActionType.MOVE_NORTH, ActionType.MOVE_SOUTH,
+                    ActionType.MOVE_EAST, ActionType.MOVE_WEST,
+                    ActionType.ATTACK, ActionType.RAISE_SHIELDS,
+                ]
+            else:
+                preferred = [
+                    ActionType.MINE, ActionType.SELL,
+                    ActionType.JUMP_TO_ASTEROID, ActionType.JUMP_TO_TRADING_POST,
+                    ActionType.MOVE_NORTH, ActionType.MOVE_SOUTH,
+                    ActionType.MOVE_EAST, ActionType.MOVE_WEST,
+                    ActionType.RECHARGE, ActionType.ATTACK,
+                    ActionType.RAISE_SHIELDS, ActionType.WAIT,
+                ]
+        for fb in preferred:
+            if mask[int(fb)] == 1:
+                return int(fb)
+        return int(ActionType.WAIT)
 
     def _get_enemy_observation(self, enemy_ship: dict) -> Dict[str, np.ndarray]:
         """
@@ -820,7 +890,7 @@ class EnvOpponentMixin:
         """
         # Use the enemy's assigned model spec to generate observation
         spec = self._get_ship_model_spec(enemy_ship)
-        gen = self.get_observation_generator(spec.observation_spec)
+        gen = self._get_observation_generator(spec.observation_spec)
 
         # Temporarily swap player and enemy to get enemy's perspective
         original_player = self.player_ship
@@ -843,3 +913,4 @@ class EnvOpponentMixin:
             # Restore original state
             self.player_ship = original_player
             self.opponent_ships = original_opponents
+
