@@ -114,15 +114,15 @@ class ActionMaskWrapper(gym.Wrapper):
     """Wrapper that enforces action masking for standard PPO.
 
     Standard PPO ignores the action_mask in the observation dict.  This wrapper
-    intercepts invalid actions in `step()`, replaces them with a
+    intercepts invalid actions in ``step()``, replaces them with a
     randomly-sampled *valid* action, and applies a penalty so the model learns
     to avoid masked actions.
 
     The penalty-based approach is less efficient than true masked sampling,
     but is significantly better than the silent enforcement
     fallback that existed before, because:
-        - The model receives a consistent negative reward for invalid choices.
-        - The replacement action is random among valid ones (no bias toward a
+      - The model receives a consistent negative reward for invalid choices.
+      - The replacement action is random among valid ones (no bias toward a
           single fallback), so the model can't game the fallback.
     """
 
@@ -250,6 +250,7 @@ def set_cpu_mode(efficiency_mode=False, num_threads=None):
                 # High priority for performance mode
                 p.nice(psutil.HIGH_PRIORITY_CLASS)
                 settings['process_priority'] = 'high'
+            settings['priority_set'] = True
         except ImportError:
             settings['priority_set'] = False
         except Exception as e:
@@ -266,6 +267,7 @@ def set_cpu_mode(efficiency_mode=False, num_threads=None):
             else:
                 p.nice(-5)  # Higher priority (lower nice value, requires permissions)
                 settings['process_priority'] = 'nice_-5'
+            settings['priority_set'] = True
         except:
             settings['priority_set'] = False
 
@@ -330,7 +332,7 @@ class TrainingCallback(BaseCallback):
                 avg_credits = np.mean(self.episode_credits[-10:]) \
                     if len(self.episode_credits) >= 10 else (
                     np.mean(self.episode_credits) if self.episode_credits else 0)
-                print(f"\n[progress_milestone] Progress: {self.num_timesteps}/{self.total_timesteps} timesteps | "
+                print(f"\n[{progress_milestone}%] Progress: {self.num_timesteps}/{self.total_timesteps} timesteps | "
                       f"Episodes: {len(self.episode_credits)} | Avg Credits (last 10): {avg_credits:.1f}")
 
             # Check if episode is done
@@ -351,7 +353,6 @@ class TrainingCallback(BaseCallback):
                     if len(self.episode_credits) > self.max_episodes_to_track:
                         self.episode_rewards = self.episode_rewards[-self.max_episodes_to_track:]
                         self.episode_credits = self.episode_credits[-self.max_episodes_to_track:]
-
         except Exception as e:
             # Don't crash training on callback error
             if self.verbose > 0:
@@ -362,7 +363,7 @@ class TrainingCallback(BaseCallback):
 
 def _safe_model_save(model, path):
     """Save a model, working around platform.platform() crash in restricted environments.
-    
+
     SB3's model.save() internally calls platform.platform() to log system info.
     On some corporate/restricted Windows environments this subprocess call fails.
     We monkey-patch platform.platform temporarily to return a safe string.
@@ -444,7 +445,7 @@ def _get_next_version_number(algorithm, save_path='models/', is_transfer=False):
     if not os.path.exists(save_path):
         return 1
 
-    # Pattern: algorithm_pnp_model_v[number].zip
+    # Pattern: algorithm_pnp_model_v{number}.zip
     pattern = re.compile(rf'{algorithm.lower()}_pnp_model_v(\d+)\.zip', re.IGNORECASE)
 
     max_version = 0
@@ -496,7 +497,7 @@ def _freeze_early_layers(model, algorithm):
                         param.requires_grad = False
 
     except Exception as e:
-        print(f" Warning: Could not freeze layers: {e}")
+        print(f"  Warning: Could not freeze layers: {e}")
 
 
 def _print_performance_participant_stats(stats_list, opponents):
@@ -511,6 +512,10 @@ def _print_performance_participant_stats(stats_list, opponents):
 
     # Aggregate stats across all episodes
     for stats in stats_list:
+        # Rank participants for this episode: credits descending, then nutrinium
+        # descending, then shis destroyed (kills) descending, then energy
+        # ascending. Breaking ties this way avoids awarding 1st place to PLAYER
+        # purely because it was inserted first (stable-sort artifact).
         episode_rankings = []
         episode_rankings.append((
             'PLAYER',
@@ -519,7 +524,7 @@ def _print_performance_participant_stats(stats_list, opponents):
             stats.get('player_kills', 0) or 0,
             stats.get('player_energy', 0) or 0,
         ))
-        
+
         for enemy in stats.get('enemy_details', []):
             e_name = enemy.get('name', 'ENEMY')
             e_credits = enemy.get('credits', 0) or 0
@@ -536,7 +541,7 @@ def _print_performance_participant_stats(stats_list, opponents):
             participants['PLAYER'] = {
                 'name': 'PLAYER', 'role': 'PLAYER (new model)',
                 'total_credits': 0, 'max_credits': 0,
-                'survived': 0,  'episodes': 0,
+                'survived': 0, 'episodes': 0,
                 'placements': {},
             }
         p = participants['PLAYER']
@@ -570,14 +575,14 @@ def _print_performance_participant_stats(stats_list, opponents):
                 participants[e_name] = {
                     'name': e_name, 'role': role,
                     'total_credits': 0, 'max_credits': 0,
-                    'survived': 0,  'episodes': 0,
+                    'survived': 0, 'episodes': 0,
                     'placements': {},
                 }
             e = participants[e_name]
             e['episodes'] += 1
-            p_credits = enemy.get('credits', 0) or 0
-            e['total_credits'] += p_credits
-            e['max_credits'] = max(e['max_credits'], p_credits)
+            e_credits = enemy.get('credits', 0) or 0
+            e['total_credits'] += e_credits
+            e['max_credits'] = max(e['max_credits'], e_credits)
             if not enemy.get('destroyed', False):
                 e['survived'] += 1
             placement = placements.get(e_name, 0)
@@ -618,7 +623,7 @@ def _print_performance_participant_stats(stats_list, opponents):
         ranked_rows.append((
             str(i + 1),
             row['name'],
-            row['role'][0:25],  # Truncate long role names
+            row['role'][:25],  # Truncate long role names
             f"{row['avg_credits']:.1f}",
             str(row['max_credits']),
             f"{row['survival_rate']:.0f}%",
@@ -632,8 +637,8 @@ def _print_performance_participant_stats(stats_list, opponents):
     cols = list(zip(*all_rows))
     widths = [max(len(str(cell)) for cell in col) for col in cols]
 
-    header_line = "".join(h.ljust(w) for h, w in zip(headers, widths))
-    sep_line = "".join('-' * w for w in widths)
+    header_line = " ".join(h.ljust(w) for h, w in zip(headers, widths))
+    sep_line = " ".join('-' * w for w in widths)
     print(f"  {header_line}")
     print(f"  {sep_line}")
     for row in ranked_rows:  # Show all participants
@@ -648,14 +653,14 @@ def _test_model_performance(model_path, algorithm, num_episodes=100,
 
     Runs a simulation with the new model as PLAYER against opponents including
     existing models from enemy_models.config plus algorithmic AIs.
-    
+
     Args:
         model_path: Path to the newly trained model (without .zip extension)
         algorithm: Algorithm name (PPO, DQN, A2C)
         num_episodes: Number of episodes to simulate (default: 100)
         map_width: Width of the game map (must match the training map so the
-                   simulation env's MultiDiscrete action space matches the model)
-        map_height: Height of the game map (see `map_width`)
+            simulation env's MultiDiscrete action space matches the model)
+        map_height: Height of the game map (see ``map_width``)
         max_steps: Maximum steps per simulated episode
 
     Returns:
@@ -673,7 +678,7 @@ def _test_model_performance(model_path, algorithm, num_episodes=100,
         try:
             from game_simulator import GameSimulator
         except ImportError:
-            print("Could not import GameSimulator - skipping performance test")
+            print("  x Could not import GameSimulator - skipping performance test")
             return None
 
         # Load enemy models from config
@@ -688,13 +693,15 @@ def _test_model_performance(model_path, algorithm, num_episodes=100,
                         enemy_models.append(line)
 
         if not enemy_models:
-            print("No enemy models found in enemy_models.config - using only algorithmic AIs")
+            print("  ⚠️ No enemy models found in enemy_models.config - using only algorithmic AIs")
         else:
-            print(f"Loaded {len(enemy_models)} enemy models from config")
+            print(f"  Loaded {len(enemy_models)} enemy models from config")
 
         # Build opponent list: 2x of every algorithmic AI in OpponentAIType, then
         # enemy models. MODEL is excluded from the fixed list because those
-        # opponents are supplied by enemy_models (model paths) loaded above.
+        # opponents are supplied by enemy_models (model paths) loaded above. The
+        # model-backed bots BOT_V6 / BOT_V8 are also excluded because loading and
+        # running their trained models slows the post-training simulation.
         from pnp_env import OpponentAIType
 
         _excluded = (
@@ -752,7 +759,7 @@ def _test_model_performance(model_path, algorithm, num_episodes=100,
                 episode_stats.get('player_credits', 0) or 0,
                 episode_stats.get('player_nutrinium', 0) or 0,
                 episode_stats.get('player_kills', 0) or 0,
-                episode_stats.get('player_energy', 0) or 0
+                episode_stats.get('player_energy', 0) or 0,
             ))
 
             for enemy in episode_stats.get('enemy_details', []):
@@ -767,7 +774,7 @@ def _test_model_performance(model_path, algorithm, num_episodes=100,
             participants.sort(key=lambda x: (-x[1], -x[2], -x[3], x[4]))
 
             # Find PLAYER's placement
-            for rank, (name, *rest) in enumerate(participants):
+            for rank, (name, *_rest) in enumerate(participants):
                 if name == 'PLAYER':
                     if rank == 0:
                         first_place += 1
@@ -777,13 +784,13 @@ def _test_model_performance(model_path, algorithm, num_episodes=100,
                         third_place += 1
                     break
 
-        print(f"\n Performance Results ({num_episodes} episodes):")
-        print(f"  1st place: {first_place:3d} ({(first_place / num_episodes * 100:.1f) %})")
-        print(f"  2nd place: {second_place:3d} ({(second_place / num_episodes * 100:.1f) %})")
-        print(f"  3rd place: {third_place:3d} ({(third_place / num_episodes * 100:.1f) %})")
+        print(f"\n  Performance Results ({num_episodes} episodes):")
+        print(f"    1st place: {first_place:3d} ({first_place / num_episodes * 100:5.1f}%)")
+        print(f"    2nd place: {second_place:3d} ({second_place / num_episodes * 100:5.1f}%)")
+        print(f"    3rd place: {third_place:3d} ({third_place / num_episodes * 100:5.1f}%)")
 
         # Print participant stats for detailed comparison
-        print(f"\n Participant Stats:")
+        print(f"\n  Participant Stats:")
         _print_performance_participant_stats(stats_list, opponents)
 
         print(f"  {'=' * 70}")
@@ -795,9 +802,10 @@ def _test_model_performance(model_path, algorithm, num_episodes=100,
         }
 
     except Exception as e:
-        print(f" X Performance testing failed: {e}")
+        print(f"  X Performance testing failed: {e}")
         import traceback
         traceback.print_exc()
+        return None
 
 
 def _save_model_attributes_to_csv(model, algorithm, model_path, callback, is_transfer,
@@ -874,24 +882,24 @@ def _save_model_attributes_to_csv(model, algorithm, model_path, callback, is_tra
         attributes.update(algo_fields)
 
         # Add training performance metrics
-        if hasattr(callback, 'episode_rewards') and callback.episode_rewards:
+        if hasattr(callback, 'episode_credits') and callback.episode_credits:
             attributes.update({
-                'total_episodes': len(callback.episode_rewards),
-                'avg_reward': float(np.mean(callback.episode_rewards)),
-                'std_reward': float(np.std(callback.episode_rewards)),
-                'max_reward': float(np.max(callback.episode_rewards)),
-                'min_reward': float(np.min(callback.episode_rewards)),
-                'final_10_avg_reward': float(np.mean(callback.episode_rewards[-10:])) if len(
-                    callback.episode_rewards) >= 10 else float(np.mean(callback.episode_rewards)),
+                'total_episodes': len(callback.episode_credits),
+                'avg_credits': float(np.mean(callback.episode_credits)),
+                'std_credits': float(np.std(callback.episode_credits)),
+                'max_credits': float(np.max(callback.episode_credits)),
+                'min_credits': float(np.min(callback.episode_credits)),
+                'final_10_avg_credits': float(np.mean(callback.episode_credits[-10:])) if len(
+                    callback.episode_credits) >= 10 else float(np.mean(callback.episode_credits)),
             })
         else:
             attributes.update({
                 'total_episodes': 0,
-                'avg_reward': 0.0,
-                'std_reward': 0.0,
-                'max_reward': 0.0,
-                'min_reward': 0.0,
-                'final_10_avg_reward': 0.0,
+                'avg_credits': 0.0,
+                'std_credits': 0.0,
+                'max_credits': 0.0,
+                'min_credits': 0.0,
+                'final_10_avg_credits': 0.0,
             })
 
         # Add performance test results (simulation against existing models)
@@ -1001,7 +1009,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         composite_components: List of reward components for composite calculator
         efficiency_mode: If True, limit CPU usage for efficiency. If False, maximize CPU usage for faster training
         num_threads: Specific number of CPU threads to use (overrides efficiency_mode if set)
-        """
+    """
 
     if not SB3_AVAILABLE:
         print("Please install stable-baselines3 first:")
@@ -1030,13 +1038,14 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
     print(f"  Mode: {cpu_settings['mode']}")
     print(f"  Threads: {cpu_settings['threads']}/{cpu_settings['cpu_count']} CPUs")
     if cpu_settings.get('torch_configured'):
-        print(f" PyTorch: Configured for {cpu_settings['threads']} threads")
+        print(f"  PyTorch: Configured for {cpu_settings['threads']} threads")
     if cpu_settings.get('priority_set'):
-        print(f" Process Priority: {cpu_settings.get('process_priority', 'default')}")
+        print(f"  Process Priority: {cpu_settings.get('process_priority', 'default')}")
     if efficiency_mode:
-        print(f"  Efficiency Mode: Balanced CPU usage for background training")
+        print(f" ⚡️ Efficiency Mode: Balanced CPU usage for background training")
     else:
-        print(f"  Performance Mode: Maximum CPU usage for fastest training")
+        print(f" 🚀 Performance Mode: Maximum CPU usage for fastest training")
+    print()
 
     # Create environment
     # Build reward config to pass into the environment
@@ -1102,18 +1111,18 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
     # Transfer Learning: Load existing model
     if is_transfer:
         print(f"\nLoading pre-trained {algorithm} model for transfer learning...")
-        print(f"   Model path: {transfer_from}")
+        print(f"  Model path: {transfer_from}")
 
         # Check if model file exists
-        model_path_with_zip = transfer_from.endswith('.zip') else f"{transfer_from}.zip"
+        model_path_with_zip = transfer_from if transfer_from.endswith('.zip') else f"{transfer_from}.zip"
         if not os.path.exists(model_path_with_zip):
             print(f"x Model file not found: {model_path_with_zip}")
-            print("   Available models:")
+            print("  Available models:")
             if os.path.exists('../models'):
                 for f in os.listdir('../models'):
                     if f.endswith('.zip'):
-                        print(f" - models/{f.replace('.zip', '')}")
-            print("   Falling back to training from scratch...")
+                        print(f"    - models/{f.replace('.zip', '')}")
+            print("  Falling back to training from scratch...")
             is_transfer = False
         else:
             try:
@@ -1125,7 +1134,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                     # Regular PPO with MultiInputPolicy can handle Dict observations.
                     # Action masking is enforced by the ActionMaskWrapper.
                     model = PPO.load(transfer_from, env=env)
-                    print("   ✓ Loaded as regular PPO")
+                    print("  ✓ Loaded as regular PPO")
                 elif algorithm == 'DQN':
                     model = DQN.load(transfer_from, env=env)
                 elif algorithm == 'A2C':
@@ -1133,7 +1142,6 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                 else:
                     print(f"x  Unknown algorithm: {algorithm}")
                     return None
-
                 model.verbose = 0  # Disable verbose output during evaluation
 
                 # Fix clip_range schedule corruption:
@@ -1150,19 +1158,19 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                         try:
                             val = float(model.clip_range(1.0)) if callable(model.clip_range) else float(
                                 model.clip_range)
-                        except Exception as e:
+                        except Exception:
                             val = 0.2  # PPO default
                         model.clip_range = get_schedule_fn(val)
                     if hasattr(model, 'clip_range_vf') and model.clip_range_vf is not None:
                         try:
                             val = float(model.clip_range_vf(1.0)) if callable(model.clip_range_vf) else float(
                                 model.clip_range_vf)
-                        except Exception as e:
+                        except Exception:
                             val = None
                         model.clip_range_vf = get_schedule_fn(val) if val is not None else None
 
                 print(f"✓ Successfully loaded model from {transfer_from}")
-                print(f"   Model has {model.num_timesteps} training timesteps")
+                print(f"  Model has {model.num_timesteps} training timesteps")
 
                 # Set fine-tuning learning rate for transfer learning.
                 # IMPORTANT: Always use a fixed (non-schedule) learning rate.
@@ -1175,7 +1183,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                 if fine_tune_lr is not None:
                     # User explicitly provided a learning rate - use it as-is
                     model.learning_rate = fine_tune_lr
-                    print(f"   Using custom learning rate: {fine_tune_lr}")
+                    print(f"  Using custom learning rate: {fine_tune_lr}")
                 else:
                     original_lr = model.learning_rate
                     default_ft = _default_finetune_lr.get(algorithm, 3e-5)
@@ -1184,34 +1192,34 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                         # Learning rate is a schedule function from the saved model.
                         # Replace with a fixed rate to prevent decay across transfers.
                         model.learning_rate = default_ft
-                        print(f"   Replaced learning rate schedule with fixed rate: {default_ft:.2e}")
+                        print(f"  Replaced learning rate schedule with fixed rate: {default_ft:.2e}")
                     else:
                         # Use the larger of: stored_lr / 10, or the default fine-tune rate
-                        # (both floored at _min_lr). If the stored LR was already very
+                        # (both floored at _min_lr).  If the stored LR was already very
                         # small (from repeated transfers), fall back to the algorithm's
                         # standard fine-tuning rate.
                         candidate = max(original_lr / 10, _min_lr)
                         if candidate < default_ft:
                             model.learning_rate = default_ft
                             print(
-                                f"   Learning rate was too small ({original_lr:.2e}), using default fine-tuning rate: {default_ft:.2e}")
+                                f"  Learning rate was too small ({original_lr:.2e}), using default fine-tuning rate: {default_ft:.2e}")
                         else:
                             model.learning_rate = candidate
                             print(
-                                f" Reduced learning rate for fine-tuning: {original_lr:.2e} -> {model.learning_rate:.2e}"
+                                f"  Reduced learning rate for fine-tuning: {original_lr:.2e} -> {model.learning_rate:.2e}"
                             )
 
                 # Optionally freeze early layers
                 if freeze_layers:
-                    print(" Freezing early network layers...")
+                    print("  Freezing early network layers...")
                     _freeze_early_layers(model, algorithm)
-                    print(" ✓ Early layers frozen")
+                    print("  ✓ Early layers frozen")
 
             except Exception as e:
                 print(f"x Failed to load model: {e}")
                 import traceback
                 traceback.print_exc()
-                print(" Falling back to training from scratch...")
+                print("  Falling back to training from scratch...")
                 is_transfer = False
                 model = None
                 env = original_env  # Restore original env for fresh model creation
@@ -1239,7 +1247,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                     net_arch=dict(pi=[512, 256, 128], vf=[512, 256, 128]),
                     # Larger network for expanded sensor range (11x11 grid)
                 ),
-                tensorboard_log="./tensorboard_logs/ppo/"
+                tensorboard_log=f"./tensorboard_logs/ppo/"
             )
         elif algorithm == 'DQN':
             model = DQN(
@@ -1256,7 +1264,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                 exploration_fraction=0.1,
                 exploration_initial_eps=1.0,
                 exploration_final_eps=0.05,
-                tensorboard_log="./tensorboard_logs/dqn/"
+                tensorboard_log=f"./tensorboard_logs/dqn/"
             )
         elif algorithm == 'A2C':
             model = A2C(
@@ -1267,7 +1275,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                 n_steps=5,
                 gamma=0.99,
                 gae_lambda=1.0,
-                tensorboard_log="./tensorboard_logs/a2c/"
+                tensorboard_log=f"./tensorboard_logs/a2c/"
             )
         else:
             print(f"Unknown algorithm: {algorithm}")
@@ -1287,8 +1295,8 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
             verbose=1
         )
         callbacks.append(checkpoint_callback)
-    print(f"\n✓ Checkpoint saving enabled: every 1M timesteps")
-    print(f" Expected checkpoints: {total_timesteps // 1_000_000}")
+        print(f"\n✓ Checkpoint saving enabled: every 1M timesteps")
+        print(f"  Expected checkpoints: {total_timesteps // 1_000_000}")
 
     # Ensure model was created successfully
     if model is None:
@@ -1298,6 +1306,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
     # Train model
     training_type = "fine-tuning" if is_transfer else "training"
     print(f"\n{training_type.capitalize()} for {total_timesteps:,} timesteps...")
+
     try:
         # Always reset timestep counter so that total_timesteps means
         # "train for N additional steps" (not "train until N total").
@@ -1322,7 +1331,8 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
     # Save model
     # Get version number
     version = _get_next_version_number(algorithm, save_path, is_transfer)
-    model_path = os.path.join(save_path, f'{algorithm.lower()}_{pn_model_v[version]}')
+
+    model_path = os.path.join(save_path, f'{algorithm.lower()}_pn_model_v{version}')
 
     # Save model FIRST so it can be loaded for performance testing
     _safe_model_save(model, model_path)
@@ -1369,9 +1379,9 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         if len(callback.episode_credits) > window:
             moving_avg = np.convolve(callback.episode_credits,
                                      np.ones(window) / window, mode='valid')
-            plt.plot(range(window - 1, len(callback.episode_credits))),
-            moving_avg, 'r-', linewidth=2, label=f'{window}-episode MA')
-        plt.legend()
+            plt.plot(range(window - 1, len(callback.episode_credits)),
+                    moving_avg, 'r-', linewidth=2, label=f'{window}-episode MA')
+            plt.legend()
 
         plt.subplot(1, 2, 2)
         plt.hist(callback.episode_credits, bins=20, edgecolor='black')
@@ -1381,13 +1391,14 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         plt.grid(True, alpha=0.3)
 
         plt.tight_layout()
-        plot_filename = f'output/training_progress/{algorithm.lower()}_{version}_training_progress.png'
+        plot_filename = f'output/training_progress/{algorithm.lower()}_v{version}_training_progress.png'
         plt.savefig(plot_filename)
         print(f"Training plots saved to {plot_filename}")
         plt.close()
 
     env.close()
     return model
+
 
 def _parse_model_path_with_spec(raw_model_path: str):
     """Parse model path token supporting optional MODEL_PATH::SPEC_NAME syntax."""
@@ -1441,7 +1452,8 @@ def evaluate_model(model, num_episodes=10, render=False, min_opponents=2, max_op
     if use_dynamic_opponents:
         env = DynamicOpponentsWrapper(env, min_opponents, max_opponents)
 
-    # If the model expects a flat Box observation, wrap the env so observations match.
+    # If the model expects a flat Box observation, wrap the env so observations
+    # match.
     model_obs_space = getattr(model, 'observation_space', None)
     if model_obs_space is not None and not isinstance(model_obs_space, gym.spaces.Dict):
         env = FlattenDictObsWrapper(env)
@@ -1464,6 +1476,7 @@ def evaluate_model(model, num_episodes=10, render=False, min_opponents=2, max_op
 
             if render and step % 20 == 0:
                 env.render()
+
             step += 1
 
         if render:
@@ -1474,11 +1487,11 @@ def evaluate_model(model, num_episodes=10, render=False, min_opponents=2, max_op
         episode_nutrinium.append(info['player_nutrinium'])
 
         print(f"\nEpisode {episode + 1}/{num_episodes}:")
-        print(f"   Total Reward: {episode_reward:.2f}")
-        print(f"   Credits Earned: {info['player_credits']}")
-        print(f"   Final Nutrinium: {info['player_nutrinium']}")
-        print(f"   Steps: {step}")
-        print(f"   Destroyed: {info['player_destroyed']}")
+        print(f"  Total Reward: {episode_reward:.2f}")
+        print(f"  Credits Earned: {info['player_credits']}")
+        print(f"  Final Nutrinium: {info['player_nutrinium']}")
+        print(f"  Steps: {step}")
+        print(f"  Destroyed: {info['player_destroyed']}")
 
     print("\n" + "=" * 70)
     print("EVALUATION RESULTS")
@@ -1612,19 +1625,19 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='Train RL agent for Prospectors n Pirates',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=""""
+        epilog="""
 Examples:
-    # Train a new PPO model
-    python example_sb3.py --algorithm PPO --timesteps 100000
+  # Train a new PPO model
+  python example_sb3.py --algorithm PPO --timesteps 100000
     
-    # Long training with automatic checkpoints (saves every 1M timesteps)
-    python example_sb3.py --algorithm PPO --timesteps 50000000
+  # Long training with automatic checkpoints (saves every 1M timesteps)
+  python example_sb3.py --algorithm PPO --timesteps 50000000
     
-    # Train with efficiency mode (lower CPU usage, good for background training)
-    python example_sb3.py --algorithm PPO --timesteps 100000 --efficiency-mode
+  # Train with efficiency mode (lower CPU usage, good for background training)
+  python example_sb3.py --algorithm PPO --timesteps 100000 --efficiency-mode
     
-    # Train with maximum CPU usage (default - fastest training)
-    python example_sb3.py --algorithm PPO --timesteps 100000
+  # Train with maximum CPU usage (default - fastest training)
+  python example_sb3.py --algorithm PPO --timesteps 100000
     
     # Train with custom thread count
     python example_sb3.py --algorithm PPO --timesteps 100000 --num-threads 4
@@ -1649,8 +1662,8 @@ Examples:
 """
     )
     parser.add_argument('--algorithm', type=str, default='PPO',
-                       choices=['PPO', 'DQN', 'A2C', 'compare'],
-                       help='RL algorithm to use')
+                        choices=['PPO', 'DQN', 'A2C', 'compare'],
+                        help='RL algorithm to use')
     parser.add_argument('--timesteps', type=int, default=100000,
                         help='Total timesteps for training')
     parser.add_argument('--evaluate', action='store_true',
@@ -1695,11 +1708,13 @@ Examples:
                         help='Use predefined starting positions from config file')
     parser.add_argument('--start-position-config', type=str, default='start_positions.config',
                         help='Path to starting position configuration file (default: start_positions.config)')
+
     # CPU/Performance options
     parser.add_argument('--efficiency-mode', action='store_true',
                         help='Run in efficiency mode (lower CPU usage, slower training) - good for background training')
     parser.add_argument('--num-threads', type=int, default=None,
                         help='Specific number of CPU threads to use (overrides efficiency mode)')
+
     args = parser.parse_args()
 
     if args.evaluate:
@@ -1712,6 +1727,7 @@ Examples:
                     player_model_spec = resolved_spec
                 else:
                     print(f"WARNING: Unknown player MODEL_SPEC '{eval_spec_name}' in --model-path. Falling back to DEFAULT_FULL_SPEC.")
+
             if args.algorithm == 'PPO':
                 model = PPO.load(eval_model_path)
                 print("Loaded model as regular PPO")
