@@ -1,7 +1,8 @@
-"""
-Model compatibility and observation adapter utilities.
+"""Model compatibility and observation adapter utilities.
 
-This module centralizes model compatibility behavior so player and enemy models can each use the observation-construction logic that matches their trained observation space (Dict vs flat Box, and varying feature lengths).
+This module centralizes model compatibility behavior so player and enemy models
+can each use the observation-construction logic that matches their trained
+observation space (Dict vs flat Box, and varying feature lengths).
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ class DictObservationAdapter(BaseObservationAdapter):
         obs_arr = observation['observation']
         if hasattr(obs_arr, 'shape') and obs_arr.shape[-1] > self.target_obs_size:
             adapted = dict(observation)
-            adapted['observation'] = obs_arr[...,:self.target_obs_size]
+            adapted['observation'] = obs_arr[..., :self.target_obs_size]
             return adapted
 
         return observation
@@ -55,7 +56,7 @@ class FlatObservationAdapter(BaseObservationAdapter):
 
         if self.target_obs_size is not None and hasattr(observation, 'shape'):
             if observation.shape[-1] > self.target_obs_size:
-                observation = observation[...,:self.target_obs_size]
+                observation = observation[..., :self.target_obs_size]
 
         return observation
 
@@ -97,109 +98,110 @@ class ModelCompatibilityAdapter:
         self.masked_predict_calls = 0
         self.masked_overrides = 0
         self.masked_fallbacks = 0
-self._obs_adapter = ObservationAdapterFactory.from_model_space(
-    getattr(self.model, 'observation_space', None)
-)
+        self._obs_adapter = ObservationAdapterFactory.from_model_space(
+            getattr(self.model, 'observation_space', None)
+        )
 
-self._can_mask_logits = (
-    hasattr(self.model, 'policy')
-    and hasattr(self.model.policy, 'obs_to_tensor')
-    and hasattr(self.model.policy, 'get_distribution')
-)
+        self._can_mask_logits = (
+            hasattr(self.model, 'policy')
+            and hasattr(self.model.policy, 'obs_to_tensor')
+            and hasattr(self.model.policy, 'get_distribution')
+        )
 
-def _adapt_observation(self, observation: Any) -> Any:
-    return self._obs_adapter.adapt(observation)
+    def _adapt_observation(self, observation: Any) -> Any:
+        return self._obs_adapter.adapt(observation)
 
-def _remap_action(self, action_int: int) -> int:
-    if self.old_size > self.new_size:
-        if action_int == 12:
-            return 0
-        if action_int == 13:
-            return 12
-        if action_int == 14:
-            return 13
-    return action_int
+    def _remap_action(self, action_int: int) -> int:
+        if self.old_size > self.new_size:
+            if action_int == 12:
+                return 0
+            if action_int == 13:
+                return 12
+            if action_int == 14:
+                return 13
+        return action_int
 
-def masked_argmax(self, obs_for_model: Any, action_mask: Any, deterministic: bool) -> Optional[int]:
-    try:
+    def masked_argmax(self, obs_for_model: Any, action_mask: Any, deterministic: bool) -> Optional[int]:
+        try:
+            import torch
+
+            policy = self.model.policy
+            policy.set_training_mode(False)
+            obs_tensor, _ = policy.obs_to_tensor(obs_for_model)
+            with torch.no_grad():
+                dist = policy.get_distribution(obs_tensor)
+                logits = dist.distribution.logits
+        except Exception:
+            return None
+
+        n_actions_model = int(logits.shape[-1])
+        env_mask = np.asarray(action_mask, dtype=np.int8)
+
+        if self.old_size > self.new_size and n_actions_model == self.old_size:
+            model_mask = np.zeros(n_actions_model, dtype=np.int8)
+            limit = min(12, env_mask.shape[0])
+            model_mask[:limit] = env_mask[:limit]
+            if n_actions_model > 12:
+                model_mask[12] = 0
+            if n_actions_model > 13 and env_mask.shape[0] > 12:
+                model_mask[13] = env_mask[12]
+            if n_actions_model > 14 and env_mask.shape[0] > 13:
+                model_mask[14] = env_mask[13]
+        else:
+            if env_mask.shape[0] >= n_actions_model:
+                model_mask = env_mask[:n_actions_model]
+            else:
+                model_mask = np.zeros(n_actions_model, dtype=np.int8)
+                model_mask[:env_mask.shape[0]] = env_mask
+
+        if model_mask.sum() == 0:
+            return None
+
         import torch
 
-        policy = self.model.policy
-        policy.set_training_mode(False)
-        obs_tensor, _ = policy.obs_to_tensor(obs_for_model)
-        with torch.no_grad():
-            dist = policy.get_distribution(obs_tensor)
-            logits = dist.distribution.logits
-    except Exception:
-        return None
+        mask_t = torch.as_tensor(model_mask.astype(bool), device=logits.device).unsqueeze(0)
+        masked_logits = logits.masked_fill(~mask_t, float('-inf'))
 
-    n_actions_model = int(logits.shape[-1])
-    env_mask = np.asarray(action_mask, dtype=np.int8)
-
-    if self.old_size > self.new_size and n_actions_model == self.old_size:
-        model_mask = np.zeros(n_actions_model, dtype=np.int8)
-        limit = min(12, env_mask.shape[0])
-        model_mask[:limit] = env_mask[:limit]
-        if n_actions_model > 12:
-            model_mask[12] = 0
-        if n_actions_model > 13 and env_mask.shape[0] > 12:
-            model_mask[13] = env_mask[12]
-        if n_actions_model > 14 and env_mask.shape[0] > 13:
-            model_mask[14] = env_mask[13]
-    else:
-        if env_mask.shape[0] >= n_actions_model:
-            model_mask = env_mask[:n_actions_model]
-        else:
-            model_mask = np.zeros(n_actions_model, dtype=np.int8)
-            model_mask[:env_mask.shape[0]] = env_mask
-
-    if model_mask.sum() == 0:
-        return None
-
-    import torch
-
-    mask_t = torch.as_tensor(model_mask.astype(bool), device=logits.device).unsqueeze(0)
-    masked_logits = logits.masked_fill(~mask_t, float('-inf'))
-
-    if deterministic:
-        action_t = masked_logits.argmax(dim=-1)
-    else:
-        probs = torch.softmax(masked_logits, dim=-1)
-        if not torch.isfinite(probs).all() or probs.sum() <= 0:
+        if deterministic:
             action_t = masked_logits.argmax(dim=-1)
         else:
-            action_t = torch.multinomial(probs, 1).squeeze(-1)
+            probs = torch.softmax(masked_logits, dim=-1)
+            if not torch.isfinite(probs).all() or probs.sum() <= 0:
+                action_t = masked_logits.argmax(dim=-1)
+            else:
+                action_t = torch.multinomial(probs, 1).squeeze(-1)
 
-    return int(action_t.cpu().item())
+        return int(action_t.cpu().item())
 
-def predict(self, observation: Any, deterministic: bool = False):
-    action_mask = None
-    if (
-        self.enable_action_masking
-        and isinstance(observation, dict)
-        and 'action_mask' in observation
-    ):
-        action_mask = observation['action_mask']
+    def predict(self, observation: Any, deterministic: bool = False):
+        action_mask = None
+        if (
+            self.enable_action_masking
+            and isinstance(observation, dict)
+            and 'action_mask' in observation
+        ):
+            action_mask = observation['action_mask']
 
-    obs_for_model = self._adapt_observation(observation)
+        obs_for_model = self._adapt_observation(observation)
 
-    if action_mask is not None and self._can_mask_logits:
-        self.masked_predict_calls += 1
-        masked_action_model_space = self._masked_argmax(
-            obs_for_model,
-            action_mask,
-            deterministic,
-        )
-        if masked_action_model_space is not None:
-            raw_action, _ = self.model.predict(obs_for_model, deterministic=True)
-            raw_int = int(raw_action.item()) if hasattr(raw_action, 'item') else raw_action
-            if raw_int != masked_action_model_space:
-                self.masked_overrides += 1
-            action_int = self._remap_action(masked_action_model_space)
-def predict(self, observation: Any, deterministic: bool = False):
-    obs_for_model = self._obs_adapter.adapt(observation)
-    return self.model.predict(obs_for_model, deterministic=deterministic)
+        if action_mask is not None and self._can_mask_logits:
+            self.masked_predict_calls += 1
+            masked_action_model_space = self._masked_argmax(
+                obs_for_model,
+                action_mask,
+                deterministic,
+            )
+            if masked_action_model_space is not None:
+                raw_action, _ = self.model.predict(obs_for_model, deterministic=True)
+                raw_int = int(raw_action.item()) if hasattr(raw_action, 'item') else raw_action
+                if raw_int != masked_action_model_space:
+                    self.masked_overrides += 1
+                action_int = self._remap_action(masked_action_model_space)
+    def predict(self, observation: Any, deterministic: bool = False):
+        obs_for_model = self._obs_adapter.adapt(observation)
+        return self.model.predict(obs_for_model, deterministic=deterministic)
 
-def wrap_multidiscrete_model_with_obs_compat(model: Any) -> MultiDiscreteObsAdapter:
-    """Wrap a native Multidiscrete model so larger env observations are truncated."""
-    return MultiDiscreteObsAdapter(model)
+    def wrap_multidiscrete_model_with_obs_compat(model: Any) -> MultiDiscreteObsAdapter:
+        """Wrap a native MultiDiscrete model so larger env observations are truncated."""
+        return MultiDiscreteObsAdapter(model)
+

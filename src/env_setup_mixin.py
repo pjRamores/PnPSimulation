@@ -457,7 +457,7 @@ class EnvSetupMixin:
         Starting from all-zero, a not-yet-capped skill is drawn with probability
         proportional to its archetype weight and incremented by 1 until the
         budget is fully consumed. Each skill is capped at 10, so the effective
-        maximum spend is `19 * 10 = 190`; budgets above that are clamped (all
+        maximum spend is ``19 * 10 = 190``; budgets above that are clamped (all
         skills reach 10). Because every weight is positive, all 19 skills remain
         reachable and the returned dict's values always sum to
         ``min(budget, 190)``.
@@ -668,9 +668,9 @@ class EnvSetupMixin:
                     if model_obs_space['observation'].shape != self.observation_space['observation'].shape:
                         obs_compat = False
                         logger.info(f"Enemy model {model_path} has different obs size "
-                                   f"({model_obs_space['observation'].shape[0]} vs "
-                                   f"{self.observation_space['observation'].shape[0]}), "
-                                   f"skipping env binding")
+                                    f"({model_obs_space['observation'].shape[0]} vs "
+                                    f"{self.observation_space['observation'].shape[0]}), "
+                                    f"skipping env binding")
             except Exception:
                 pass
 
