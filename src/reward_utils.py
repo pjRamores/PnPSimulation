@@ -3,8 +3,8 @@ Modular reward utilities for Prospectors n Pirates.
 Contains RewardComponent base class, RewardCalculatorComposite, and example components.
 This module avoids importing pnp_env to prevent circular imports.
 """
-
 from typing import List, Optional
+
 
 class RewardComponent:
     """Base class for modular reward components.
@@ -16,6 +16,7 @@ class RewardComponent:
     def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
         raise NotImplementedError
 
+
 class RewardCalculatorComposite:
     """Composite reward calculator.
 
@@ -24,7 +25,7 @@ class RewardCalculatorComposite:
     """
 
     def __init__(self, config, components: Optional[List[RewardComponent]] = None):
-        # `config` is expected to have 'action_multipliers', 'success_bonus', 'failure_penalty' fields
+        # `config` is expected to have `action_multipliers`, `success_bonus`, `failure_penalty` fields
         self.config = config
         self.components = list(components) if components is not None else []
 
@@ -67,6 +68,7 @@ class RewardCalculatorComposite:
 
         return float(reward)
 
+
 class DistanceToAsteroidReward(RewardComponent):
     """Reward that encourages moving closer to the best target.
 
@@ -96,6 +98,15 @@ class DistanceToAsteroidReward(RewardComponent):
 
             if target is None:
                 return 0.0
+
+            cur_dist = env._calculate_distance(ship['x'], ship['y'], target['x'], target['y'])
+            prev_dist = env._calculate_distance(prev[0], prev[1], target['x'], target['y'])
+            delta = prev_dist - cur_dist
+            return float(delta) * self.weight
+        except Exception:
+            return 0.0
+
+
 class SurvivalReward(RewardComponent):
     """Small reward for maintaining ship health above a threshold.
 
@@ -115,6 +126,7 @@ class SurvivalReward(RewardComponent):
             return self.bonus if health_frac >= self.threshold else 0.0
         except Exception:
             return 0.0
+
 
 class PenaltyNearEnemyReward(RewardComponent):
     """Penalty when the player is too close to an active enemy ship.
@@ -146,10 +158,12 @@ class PenaltyNearEnemyReward(RewardComponent):
         except Exception:
             return 0.0
 
+
 class SellBonusReward(RewardComponent):
     """Provide an additional bonus when selling nutrinium successfully.
 
-    The component uses the raw_reward passed to the composite (which for SELL is credits earned * 0.1). We amplify that by 'extra_frac' to provide a bonus.
+    The component uses the raw_reward passed to the composite (which for SELL
+    is credits earned * 0.1). We amplify that by `extra_frac` to provide a bonus.
     """
 
     def __init__(self, extra_frac: float = 0.5):
@@ -171,6 +185,7 @@ class SellBonusReward(RewardComponent):
         except Exception:
             return 0.0
 
+
 class MiningQualityReward(RewardComponent):
     """Reward extra when a mining action yields a particularly good payout.
 
@@ -182,28 +197,30 @@ class MiningQualityReward(RewardComponent):
         # raw_threshold is in the same units as action raw_reward (e.g., payout*0.1)
         self.raw_threshold = float(raw_threshold)
         self.bonus = float(bonus)
-def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
-    try:
-        if int(action) != 1:  # MINE
+
+    def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
+        try:
+            if int(action) != 1:  # MINE
+                return 0.0
+            if not action_info.get('success'):
+                return 0.0
+            raw = action_info.get('raw_reward')
+            if raw is None:
+                return 0.0
+            if float(raw) >= self.raw_threshold:
+                # provide a small additive bonus proportional to excess
+                excess = float(raw) - self.raw_threshold
+                return self.bonus + excess * 0.1
             return 0.0
-        if not action_info.get('success'):
+        except Exception:
             return 0.0
-        raw = action_info.get('raw_reward')
-        if raw is None:
-            return 0.0
-        if float(raw) >= self.raw_threshold:
-            # provide a small additive bonus proportional to excess
-            excess = float(raw) - self.raw_threshold
-            return self.bonus + excess * 0.1
-        return 0.0
-    except Exception:
-        return 0.0
+
 
 class InappropriateActionPenalty(RewardComponent):
     """Penalize the agent when executing inappropriate actions based on current state.
 
     Hard-invalid actions (wrong zone, missing module, no target, insufficient energy, etc.)
-    are flagged by the action masker and surfaced via `action_info['state_valid']`; this
+    are flagged by the action masker and surfaced via ``action_info['state_valid']``; this
     component applies the base penalty whenever that flag is False, which covers the full
     19-action space without per-action duplication.
 
@@ -211,10 +228,12 @@ class InappropriateActionPenalty(RewardComponent):
     the masker still permits (e.g. raising shields with no enemy nearby, idling on a rich
     asteroid). All thresholds are derived from the env config so they scale to large maps.
     """
-    
+
     def __init__(self, penalty: float = -0.05):
+        """
         Args:
             penalty: Base penalty for inappropriate actions (should be negative)
+        """
         self.penalty = float(penalty)
 
     def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
@@ -247,16 +266,16 @@ class InappropriateActionPenalty(RewardComponent):
                     if active_enemies:
                         nearest = env._get_nearest_entity(ship['x'], ship['y'], active_enemies)
                         if nearest:
-                            dist = env.calculate_distance(
+                            dist = env._calculate_distance(
                                 ship['x'], ship['y'], nearest['x'], nearest['y']
                             )
                             sensor_range = getattr(env, 'config', {}).get('sensor_range', 5)
                             if dist > sensor_range:
                                 return self.penalty * 0.4  # No threat in sensor range
-                        else:
-                            return self.penalty * 0.4  # No enemies at all
-                    except Exception:
-                        pass
+                    else:
+                        return self.penalty * 0.4  # No enemies at all
+                except Exception:
+                    pass
 
             # WAIT while sitting on a minable asteroid with enough energy to mine.
             elif action_int == WAIT:
@@ -269,65 +288,72 @@ class InappropriateActionPenalty(RewardComponent):
                                 return self.penalty * 0.3  # Should mine instead of wait
 
             return 0.0  # No inappropriate action detected
+
         except Exception:
             return 0.0
+
 
 class EndOfEpisodeNutriniumReward(RewardComponent):
     """Reward/penalty based on nutrinium state at end of episode.
 
     This component encourages the agent to sell all nutrinium before the episode ends:
     - Bonus reward if all nutrinium is converted to credits (nutrinium = 0)
-def __init__(self, success_bonus: float = 2.0, failure_penalty_per_unit: float = -0.05):
-    """
-    Args:
-        success_bonus: Bonus reward for selling all nutrinium (zero nutrinium at end)
-        failure_penalty_per_unit: Penalty per unit of unsold nutrinium at episode end
-    """
-    self.success_bonus = float(success_bonus)
-    self.failure_penalty_per_unit = float(failure_penalty_per_unit)
+    - Penalty if the agent still holds unsold nutrinium at episode end
 
-def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
+    The reward/penalty is only applied when the episode terminates (either by
+    reaching max_steps or player ship destroyed).
     """
-    Check if episode is ending and reward/penalize based on nutrinium state.
 
-    The reward is only applied on the final step of an episode. We detect this by
-    checking if the current step equals max_steps (truncation) or if there are
-    flags in action_info indicating terminal state.
-    """
-    try:
-        if ship is None or env is None:
+    def __init__(self, success_bonus: float = 2.0, failure_penalty_per_unit: float = -0.05):
+        """
+        Args:
+            success_bonus: Bonus reward for selling all nutrinium (zero nutrinium at end)
+            failure_penalty_per_unit: Penalty per unit of unsold nutrinium at episode end
+        """
+        self.success_bonus = float(success_bonus)
+        self.failure_penalty_per_unit = float(failure_penalty_per_unit)
+
+    def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
+        """
+        Check if episode is ending and reward/penalize based on nutrinium state.
+
+        The reward is only applied on the final step of an episode. We detect this by
+        checking if the current step equals max_steps (truncation) or if there are
+        flags in action_info indicating terminal state.
+        """
+        try:
+            if ship is None or env is None:
+                return 0.0
+
+            # Check if this is the last step of the episode
+            # Episode ends when: current_step >= max_steps or player destroyed
+            current_step = getattr(env, 'current_step', 0)
+            max_steps = getattr(env, 'max_steps', 300)
+            player_destroyed = ship.get('destroyed', False)
+
+            # Check if episode is ending (about to terminate/truncate)
+            is_episode_ending = (current_step >= max_steps) or player_destroyed
+
+            if not is_episode_ending:
+                return 0.0  # Only apply reward/penalty at episode end
+
+            # Get player's current nutrinium amount
+            nutrinium = ship.get('nutrinium', 0)
+
+            if nutrinium == 0:
+                # Success! All nutrinium has been sold/converted to credits
+                return self.success_bonus
+            else:
+                # Penalty for unsold nutrinium - scaled by amount held
+                penalty = nutrinium * self.failure_penalty_per_unit
+                return penalty  # Will be negative
+
+        except Exception:
             return 0.0
-
-        # Check if this is the last step of the episode
-        # Episode ends when: current_step >= max_steps or player destroyed
-        current_step = getattr(env, 'current_step', 0)
-        max_steps = getattr(env, 'max_steps', 300)
-        player_destroyed = ship.get('destroyed', False)
-
-        # Check if episode is ending (about to terminate/truncate)
-        is_episode_ending = (current_step >= max_steps) or player_destroyed
-
-        if not is_episode_ending:
-            return 0.0  # Only apply reward/penalty at episode end
-
-        # Get player's current nutrinium amount
-        nutrinium = ship.get('nutrinium', 0)
-
-        if nutrinium == 0:
-            # Success! All nutrinium has been sold/converted to credits
-            return self.success_bonus
-        else:
-            # Penalty for unsold nutrinium - scaled by amount held
-            penalty = nutrinium * self.failure_penalty_per_unit
-            return penalty  # Will be negative
-
-    except Exception:
-        return 0.0
 
 
 class EarlyDeathPenaltyReward(RewardComponent):
-    """
-    Penalty when agent is destroyed, proportionate to how early in the episode it occurs.
+    """Penalty when agent is destroyed, proportionate to how early in the episode it occurs.
 
     This component discourages the agent from getting destroyed, especially early in the episode.
     The penalty is scaled based on the fraction of the episode remaining:
@@ -343,11 +369,12 @@ class EarlyDeathPenaltyReward(RewardComponent):
         - Destroyed at step 150: penalty = -50 * (150/300) = -25.0
         - Destroyed at step 290: penalty = -50 * (10/300) = -1.67
     """
+
     def __init__(self, base_penalty: float = 50.0):
         """
         Args:
             base_penalty: Base penalty value when destroyed at the very start of episode.
-                          The actual penalty is scaled by the fraction of episode remaining.
+                         The actual penalty is scaled by the fraction of episode remaining.
         """
         self.base_penalty = float(base_penalty)
 
@@ -371,19 +398,19 @@ class EarlyDeathPenaltyReward(RewardComponent):
             max_steps = getattr(env, 'max_steps', 300)
 
             # Calculate fraction of episode remaining
-# More remaining = earlier death = larger penalty
-steps_remaining = max(0, max_steps - current_step)
-remaining_fraction = steps_remaining / max(1, max_steps)
+            # More remaining = earlier death = larger penalty
+            steps_remaining = max(0, max_steps - current_step)
+            remaining_fraction = steps_remaining / max(1, max_steps)
 
-# Scale penalty by how early the death occurred
-# Early death (high remaining_fraction) = large penalty
-# Late death (low remaining_fraction) = small penalty
-penalty = -self.base_penalty * remaining_fraction
+            # Scale penalty by how early the death occurred
+            # Early death (high remaining_fraction) = large penalty
+            # Late death (low remaining_fraction) = small penalty
+            penalty = -self.base_penalty * remaining_fraction
 
-return penalty
+            return penalty
 
-except Exception:
-    return 0.0
+        except Exception:
+            return 0.0
 
 
 class CreditProgressReward(RewardComponent):
@@ -449,10 +476,10 @@ class IdleLoopPenalty(RewardComponent):
     """Penalty for getting stuck in non-productive action loops.
 
     Detects when the agent repeats the same action multiple times in a row
-    without making progress (e.g., JUMP TO ASTEROID at same location,
+    without making progress (e.g., JUMP_TO_ASTEROID at same location,
     WAIT repeatedly, ATTACK with no enemy).
 
-    This addresses agents getting stuck doing JUMP TO ASTEROID -> same spot -> repeat,
+    This addresses agents getting stuck doing JUMP_TO_ASTEROID -> same spot -> repeat,
     or WAIT -> WAIT -> WAIT without any productive activity.
     """
 
@@ -471,37 +498,37 @@ class IdleLoopPenalty(RewardComponent):
         try:
             if ship is None or env is None:
                 return 0.0
-action_int = int(action)
+            action_int = int(action)
 
-# Reset at start of new episode
-current_step = getattr(env, 'current_step', 0)
-if current_step <= 1:
-    self._action_history = []
+            # Reset at start of new episode
+            current_step = getattr(env, 'current_step', 0)
+            if current_step <= 1:
+                self._action_history = []
 
-# Track action history
-self._action_history.append(action_int)
-if len(self._action_history) > self.max_history:
-    self._action_history = self._action_history[-self.max_history:]
+            # Track action history
+            self._action_history.append(action_int)
+            if len(self._action_history) > self._max_history:
+                self._action_history = self._action_history[-self._max_history:]
 
-# Check for repeated same action
-if len(self._action_history) >= self.repeat_threshold:
-    recent = self._action_history[-self.repeat_threshold:]
-    if all(a == recent[0] for a in recent):
-        # Same action repeated - check if it's non-productive
-        # WAIT (0), JUMP_TO_ASTEROID (9), RAISE_SHIELDS (11) are suspect when repeated
-        if recent[0] in {0, 9, 11}:
-            return self.penalty
+            # Check for repeated same action
+            if len(self._action_history) >= self.repeat_threshold:
+                recent = self._action_history[-self.repeat_threshold:]
+                if all(a == recent[0] for a in recent):
+                    # Same action repeated - check if it's non-productive
+                    # WAIT (0), JUMP_TO_ASTEROID (9), RAISE_SHIELDS (11) are suspect when repeated
+                    if recent[0] in (0, 9, 11):
+                        return self.penalty
 
-        # ATTACK (8) is suspect when there's no enemy in same zone
-        if recent[0] == 8:
-            # Check if attack was unsuccessful (no target)
-            if not action_info.get('success', False):
-                return self.penalty
+                    # ATTACK (8) is suspect when there's no enemy in same zone
+                    if recent[0] == 8:
+                        # Check if attack was unsuccessful (no target)
+                        if not action_info.get('success', False):
+                            return self.penalty
 
-return 0.0
+            return 0.0
 
-except Exception:
-    return 0.0
+        except Exception:
+            return 0.0
 
 
 class EndOfEpisodeCreditReward(RewardComponent):
@@ -516,6 +543,7 @@ class EndOfEpisodeCreditReward(RewardComponent):
     """
 
     def __init__(self, credit_scale: float = 0.5, zero_credit_penalty: float = -10.0):
+        """
         Args:
             credit_scale: Reward per credit at episode end
             zero_credit_penalty: Flat penalty for ending episode with zero credits
@@ -559,82 +587,85 @@ class PlacementReward(RewardComponent):
     episode, ranking the player against all opponent ships by credits.
 
     Reward structure (for N participants total):
-        - 1st place: +first_place_bonus   (default +20)
-        - Top 3 (podium): +podium_bonus     (default +10)
-        - Linear placement reward: +scale * (N - rank) / (N - 1) in [0, scale]
-        - Bottom 3:    +bottom_penalty      (default -10, additional)
-        - Last place:   +last_place_penalty (default -10, additional)
+        - 1st place:                +first_place_bonus  (default +20)
+        - Top 3 (podium):           +podium_bonus       (default +10)
+        - Linear placement reward:  +scale * (N - rank) / (N - 1)  in [0, scale]
+        - Bottom 3:                 +bottom_penalty      (default -10, additional)
+        - Last place:               +last_place_penalty (default -10, additional)
 
-    These stack: e.g. finishing 1st gives +first + podium + scale,
+    These stack: e.g. finishing 1st gives +first + +podium + +scale,
     finishing last with 10 players gives +0 + bottom + last = -20.
     """
-def __init__(self,
-             scale: float = 20.0,
-             first_place_bonus: float = 20.0,
-             podium_bonus: float = 10.0,
-             bottom_penalty: float = -10.0,
-             last_place_penalty: float = -10.0):
-    self.scale = float(scale)
-    self.first_place_bonus = float(first_place_bonus)
-    self.podium_bonus = float(podium_bonus)
-    self.bottom_penalty = float(bottom_penalty)
-    self.last_place_penalty = float(last_place_penalty)
-    self._applied_step = -1  # avoid double-apply on terminal step
 
-def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
-    try:
-        if ship is None or env is None:
+    def __init__(self,
+                 scale: float = 20.0,
+                 first_place_bonus: float = 20.0,
+                 podium_bonus: float = 10.0,
+                 bottom_penalty: float = -10.0,
+                 last_place_penalty: float = -10.0):
+        self.scale = float(scale)
+        self.first_place_bonus = float(first_place_bonus)
+        self.podium_bonus = float(podium_bonus)
+        self.bottom_penalty = float(bottom_penalty)
+        self.last_place_penalty = float(last_place_penalty)
+        self._applied_step = -1  # avoid double-apply on terminal step
+
+    def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
+        try:
+            if ship is None or env is None:
+                return 0.0
+            current_step = getattr(env, 'current_step', 0)
+            max_steps = getattr(env, 'max_steps', 300)
+            player_destroyed = ship.get('destroyed', False)
+
+            is_episode_ending = (current_step >= max_steps) or player_destroyed
+            if not is_episode_ending:
+                return 0.0
+
+            # Ensure we only apply once per episode
+            if self._applied_step == current_step:
+                return 0.0
+            # Reset detection for new episode
+            if current_step <= 1:
+                self._applied_step = -1
+
+            opponents = getattr(env, 'opponent_ships', []) or []
+            participants = [('PLAYER', int(ship.get('credits', 0)))]
+            for op in opponents:
+                participants.append((op.get('name', 'E?'), int(op.get('credits', 0))))
+
+            n = len(participants)
+            if n < 2:
+                return 0.0
+
+            # Sort by credits descending; player's rank (1-based)
+            participants.sort(key=lambda t: t[1], reverse=True)
+            rank = next((i + 1 for i, (name, _) in enumerate(participants) if name == 'PLAYER'), n)
+
+            reward = 0.0
+            # Linear placement reward in [0, scale]
+            reward += self.scale * (n - rank) / max(1, (n - 1))
+
+            if rank == 1:
+                reward += self.first_place_bonus
+            if rank <= 3:
+                reward += self.podium_bonus
+            if rank >= n - 2:  # bottom 3
+                reward += self.bottom_penalty
+            if rank == n:
+                reward += self.last_place_penalty
+
+            self._applied_step = current_step
+            return reward
+        except Exception:
             return 0.0
-        current_step = getattr(env, 'current_step', 0)
-        max_steps = getattr(env, 'max_steps', 300)
-        player_destroyed = ship.get('destroyed', False)
-
-        is_episode_ending = (current_step >= max_steps) or player_destroyed
-        if not is_episode_ending:
-            return 0.0
-
-        # Ensure we only apply once per episode
-        if self._applied_step == current_step:
-            return 0.0
-        # Reset detection for new episode
-        if current_step <= 1:
-            self._applied_step = -1
-
-        opponents = getattr(env, 'opponent_ships', []) or []
-        participants = [('PLAYER', int(ship.get('credits', 0)))]
-        for op in opponents:
-            participants.append((op.get('name', 'E?'), int(op.get('credits', 0))))
-
-        n = len(participants)
-        if n < 2:
-            return 0.0
-
-        # Sort by credits descending; player's rank (1-based)
-        participants.sort(key=lambda t: t[1], reverse=True)
-        rank = next((i + 1 for i, (name, _) in enumerate(participants) if name == 'PLAYER'), n)
-
-        reward = 0.0
-        # Linear placement reward in [0, scale]
-        reward += self.scale * (n - rank) / max(1, (n - 1))
-
-        if rank == 1:
-            reward += self.first_place_bonus
-        if rank <= 3:
-            reward += self.podium_bonus
-        if rank >= n - 2:  # bottom 3
-            reward += self.bottom_penalty
-        if rank == n:
-            reward += self.last_place_penalty
-
-        self._applied_step = current_step
-        return reward
-    except Exception:
-        return 0.0
 
 
 class EnergyStarvationPenalty(RewardComponent):
     """Per-step penalty when energy is dangerously low and the agent is not recharging.
-    Encourages proactive recharging instead of drifting into energy-starved combat loops where the agent can't move, mine, or sell effectively.
+
+    Encourages proactive recharging instead of drifting into energy-starved combat loops
+    where the agent can't move, mine, or sell effectively.
     """
 
     def __init__(self, threshold_frac: float = 0.15, penalty: float = -0.05):
@@ -665,13 +696,22 @@ class EnergyStarvationPenalty(RewardComponent):
 
 class OverriddenActionPenalty(RewardComponent):
     """Penalty when the env had to override the agent's chosen action.
-def __init__(self, penalty: float = -0.1):
-    self.penalty = float(penalty)
 
-def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
-    try:
-        if action_info.get('state_enforced'):
-            return self.penalty
-        return 0.0
-    except Exception:
-        return 0.0
+    The env's step() function enforces action masking by replacing infeasible chosen
+    actions with a valid fallback, but sets action_info['state_valid']=True so
+    InappropriateActionPenalty does not fire. This component reads
+    action_info['state_enforced'] to give the policy a learning signal that its
+    original choice was infeasible (e.g., SELL with 0 nutrinium, JUMP with no energy,
+    RAISE_SHIELDS already up).
+    """
+
+    def __init__(self, penalty: float = -0.1):
+        self.penalty = float(penalty)
+
+    def compute(self, env: object, ship: Optional[dict], action: int, action_info: dict) -> float:
+        try:
+            if action_info.get('state_enforced'):
+                return self.penalty
+            return 0.0
+        except Exception:
+            return 0.0
