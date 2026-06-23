@@ -362,7 +362,7 @@ class EnvObservationMixin:
         restrictions = self.config.get('action_restrictions', {})
         feats: List[float] = []
         for action_id in range(self.num_action_types):
-            key = action_masker._ACTION_RESTRICTION_NAME.get(action_id)
+            key = action_masker.ACTION_RESTRICTION_NAME.get(action_id)
             rule = restrictions.get(key, {}) if key is not None else {}
             feats.append(1.0 if rule.get('allowedWhileRecharging', True) else 0.0)
             feats.append(1.0 if rule.get('allowedWithShieldsUp', True) else 0.0)

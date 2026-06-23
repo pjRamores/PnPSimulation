@@ -1,5 +1,4 @@
-"""
-Prospectors & Pirates bot (v2).
+"""Prospectors & Pirates bot (v2).
 
 An object-oriented implementation of the heuristic described in
 ``docs_game/bot_algorithm_heuristic.txt``. The logic is split into small,
@@ -58,10 +57,12 @@ logger.setLevel(logging.DEBUG)
 # path; the bot's logs are only ever consumed from the per-game files below.
 logger.propagate = False
 
+
 def _truthy(value):
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
-def logging_enabled():
+
+def _logging_enabled():
     """Whether per-game diagnostic logging is active.
 
     Logging is automatically DISABLED when running inside AWS Lambda -- the
@@ -86,7 +87,7 @@ def _refresh_logging_enabled():
     log records, file handlers or writer threads are ever created.
     """
     global _LOGGING_ENABLED
-    _LOGGING_ENABLED = logging_enabled()
+    _LOGGING_ENABLED = _logging_enabled()
     logger.disabled = not _LOGGING_ENABLED
     return _LOGGING_ENABLED
 
