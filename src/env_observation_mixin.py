@@ -398,7 +398,7 @@ class EnvObservationMixin:
             raw_score = concentration * nutrinium / (dist + 1)
 
             # Normalize score to 0-1 range (approximate max score)
-            max_score = 50.0 # Reasonable max for normalization
+            max_score = 50.0  # Reasonable max for normalization
             normalized_score = min(1.0, raw_score / max_score)
 
             scored_asteroids.append({
