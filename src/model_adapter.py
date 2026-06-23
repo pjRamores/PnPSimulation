@@ -98,6 +98,7 @@ class ModelCompatibilityAdapter:
         self.masked_predict_calls = 0
         self.masked_overrides = 0
         self.masked_fallbacks = 0
+
         self._obs_adapter = ObservationAdapterFactory.from_model_space(
             getattr(self.model, 'observation_space', None)
         )
@@ -121,7 +122,7 @@ class ModelCompatibilityAdapter:
                 return 13
         return action_int
 
-    def masked_argmax(self, obs_for_model: Any, action_mask: Any, deterministic: bool) -> Optional[int]:
+    def _masked_argmax(self, obs_for_model: Any, action_mask: Any, deterministic: bool) -> Optional[int]:
         try:
             import torch
 
@@ -193,15 +194,51 @@ class ModelCompatibilityAdapter:
             )
             if masked_action_model_space is not None:
                 raw_action, _ = self.model.predict(obs_for_model, deterministic=True)
-                raw_int = int(raw_action.item()) if hasattr(raw_action, 'item') else raw_action
+                raw_int = int(raw_action.item() if hasattr(raw_action, 'item') else raw_action)
                 if raw_int != masked_action_model_space:
                     self.masked_overrides += 1
                 action_int = self._remap_action(masked_action_model_space)
-    def predict(self, observation: Any, deterministic: bool = False):
-        obs_for_model = self._obs_adapter.adapt(observation)
-        return self.model.predict(obs_for_model, deterministic=deterministic)
+                return np.array(action_int), None
+            self.masked_fallbacks += 1
 
-    def wrap_multidiscrete_model_with_obs_compat(model: Any) -> MultiDiscreteObsAdapter:
-        """Wrap a native MultiDiscrete model so larger env observations are truncated."""
-        return MultiDiscreteObsAdapter(model)
+        action, state = self.model.predict(obs_for_model, deterministic=deterministic)
+        action_int = int(action) if hasattr(action, '__int__') else int(action.item())
+        action_int = self._remap_action(action_int)
+        return np.array(action_int), state
+
+    def wrap_model_with_compat(model: Any, env_action_space_size: int, enable_action_masking: bool = True) -> ModelCompatibilityAdapter:
+        """Wrap a raw model in compatibility behavior used by player and enemy paths."""
+        model_action_space = getattr(getattr(model, 'action_space', None), 'n', env_action_space_size)
+        return ModelCompatibilityAdapter(
+            model,
+            old_action_space_size=model_action_space,
+            new_action_space_size=env_action_space_size,
+            enable_action_masking=enable_action_masking,
+        )
+
+
+    class MultiDiscreteObsAdapter:
+        """Truncating wrapper for native MultiDiscrete models on a larger env obs.
+
+        Native models use a MultiDiscrete action space whose vector output the env
+        consumes directly, so the scalar-oriented :class:`ModelCompatibilityAdapter`
+        cannot wrap them. When the environment observation grows (e.g. appended
+        action-restriction features) but the model was trained on the shorter vector,
+        this adapter truncates the observation to the model's expected size and passes
+        the model's vector action though unchanged.
+        """
+
+        def __init__(self, model: Any):
+            self.model = model
+            self._obs_adapter = ObservationAdapterFactory.from_model_space(
+                getattr(self.model, 'observation_space', None)
+            )
+
+        def predict(self, observation: Any, deterministic: bool = False):
+            obs_for_model = self._obs_adapter.adapt(observation)
+            return self.model.predict(obs_for_model, deterministic=deterministic)
+
+def wrap_multidiscrete_model_with_obs_compat(model: Any) -> MultiDiscreteObsAdapter:
+    """Wrap a native MultiDiscrete model so larger env observations are truncated."""
+    return MultiDiscreteObsAdapter(model)
 
