@@ -206,6 +206,7 @@ class ModelCompatibilityAdapter:
         action_int = self._remap_action(action_int)
         return np.array(action_int), state
 
+
 def wrap_model_with_compat(model: Any, env_action_space_size: int, enable_action_masking: bool = True) -> ModelCompatibilityAdapter:
     """Wrap a raw model in compatibility behavior used by player and enemy paths."""
     model_action_space = getattr(getattr(model, 'action_space', None), 'n', env_action_space_size)
