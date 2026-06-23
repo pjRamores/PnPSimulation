@@ -1628,34 +1628,34 @@ if __name__ == "__main__":
 Examples:
   # Train a new PPO model
   python example_sb3.py --algorithm PPO --timesteps 100000
-
+  
   # Long training with automatic checkpoints (saves every 1M timesteps)
   python example_sb3.py --algorithm PPO --timesteps 50000000
-
+  
   # Train with efficiency mode (lower CPU usage, good for background training)
   python example_sb3.py --algorithm PPO --timesteps 100000 --efficiency-mode
-
+  
   # Train with maximum CPU usage (default - fastest training)
   python example_sb3.py --algorithm PPO --timesteps 100000
-
+  
   # Train with custom thread count
   python example_sb3.py --algorithm PPO --timesteps 100000 --num-threads 4
-
+  
   # Train with custom map size and opponents
   python example_sb3.py --algorithm PPO --timesteps 100000 --map-width 15 --map-height 15 --min-opponents 1 --max-opponents 5
-
+  
   # Train with predefined asteroids
   python example_sb3.py --algorithm PPO --timesteps 100000 --predefined-asteroids --asteroid-config asteroids.config
-
+  
   # Transfer learning: fine-tune an existing model
   python example_sb3.py --algorithm PPO --timesteps 50000 --transfer-from models/ppo_pnp_model
-
+  
   # Transfer learning with frozen layers and custom learning rate
   python example_sb3.py --algorithm PPO --timesteps 50000 --transfer-from models/ppo_pnp_model --freeze-layers --learning-rate 0.00001
-
+  
   # Train on larger map with more opponents and predefined asteroids
   python example_sb3.py --algorithm PPO --timesteps 200000 --map-width 20 --map-height 20 --min-opponents 3 --max-opponents 5 --max-steps 500 --predefined-asteroids
-
+  
   # Evaluate a trained model
   python example_sb3.py --algorithm PPO --evaluate --model-path models/ppo_pnp_model --render
 """
