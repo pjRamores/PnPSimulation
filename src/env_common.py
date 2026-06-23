@@ -67,14 +67,14 @@ class ActionType(IntEnum):
 
 class OpponentAIType(IntEnum):
     """AI behavior types for opponent ships"""
-    MODEL = 0     # Uses a trained RL model for decision-making
-    BOT_V2 = 1    # Delegates to the production heuristic bot (bot_v2.get_action)
-    BOT_V3 = 2    # Delegates to the prospector-economy bot (bot_v3.get_action)
-    BOT_V4 = 3    # Delegates to the pirate-raider bot (bot_v4.get_action)
-    BOT_V5 = 4    # Delegates to the balanced miner-trader bot (bot_v5.get_action)
-    BOT_V6 = 5    # Delegates to the model-backed bot (bot_v6.get_action)
-    BOT_V7 = 6    # Delegates to the dummy-miner bot (bot_v7.get_action)
-    BOT_V8 = 7    # Delegates to the legacy model-backed bot (bot_v8.get_action)
+    MODEL = 0       # Uses a trained RL model for decision-making
+    BOT_V2 = 1      # Delegates to the production heuristic bot (bot_v2.get_action)
+    BOT_V3 = 2      # Delegates to the prospector-economy bot (bot_v3.get_action)
+    BOT_V4 = 3      # Delegates to the pirate-raider bot (bot_v4.get_action)
+    BOT_V5 = 4      # Delegates to the balanced miner-trader bot (bot_v5.get_action)
+    BOT_V6 = 5      # Delegates to the model-backed bot (bot_v6.get_action)
+    BOT_V7 = 6      # Delegates to the dummy-miner bot (bot_v7.get_action)
+    BOT_V8 = 7      # Delegates to the legacy model-backed bot (bot_v8.get_action)
 
 
 @dataclass
@@ -107,7 +107,7 @@ class RewardConfig:
     use_composite: bool = True
     # Optional list of component specifications to include in the composite.
     # Each entry can be either a string (component class name) or a dict:
-    # - {'name': 'DistanceToAsteroidReward', 'params': {'weight': 0.05}}
+    #  - {'name': 'DistanceToAsteroidReward', 'params': {'weight': 0.05}}
     composite_components: Optional[List[object]] = None
 
 
