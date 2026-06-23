@@ -162,8 +162,8 @@ class PenaltyNearEnemyReward(RewardComponent):
 class SellBonusReward(RewardComponent):
     """Provide an additional bonus when selling nutrinium successfully.
 
-    The component uses the raw_reward passed to the composite (which for SELL
-    is credits earned * 0.1). We amplify that by `extra_frac` to provide a bonus.
+    The component uses the raw_reward passed to the composite (which for SELL is
+    credits earned * 0.1). We amplify that by `extra_frac` to provide a bonus.
     """
 
     def __init__(self, extra_frac: float = 0.5):
@@ -498,6 +498,7 @@ class IdleLoopPenalty(RewardComponent):
         try:
             if ship is None or env is None:
                 return 0.0
+
             action_int = int(action)
 
             # Reset at start of new episode
@@ -587,11 +588,11 @@ class PlacementReward(RewardComponent):
     episode, ranking the player against all opponent ships by credits.
 
     Reward structure (for N participants total):
-        - 1st place:                +first_place_bonus  (default +20)
-        - Top 3 (podium):           +podium_bonus       (default +10)
-        - Linear placement reward:  +scale * (N - rank) / (N - 1)  in [0, scale]
-        - Bottom 3:                 +bottom_penalty      (default -10, additional)
-        - Last place:               +last_place_penalty (default -10, additional)
+      - 1st place:                +first_place_bonus  (default +20)
+      - Top 3 (podium):           +podium_bonus       (default +10)
+      - Linear placement reward:  +scale * (N - rank) / (N - 1)  in [0, scale]
+      - Bottom 3:                 +bottom_penalty     (default -10, additional)
+      - Last place:               +last_place_penalty (default -10, additional)
 
     These stack: e.g. finishing 1st gives +first + +podium + +scale,
     finishing last with 10 players gives +0 + bottom + last = -20.
@@ -614,6 +615,7 @@ class PlacementReward(RewardComponent):
         try:
             if ship is None or env is None:
                 return 0.0
+
             current_step = getattr(env, 'current_step', 0)
             max_steps = getattr(env, 'max_steps', 300)
             player_destroyed = ship.get('destroyed', False)
