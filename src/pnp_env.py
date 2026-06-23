@@ -281,7 +281,7 @@ class ProspectorsPiratesEnv(
         #
         self.reward_config = reward_config if reward_config is not None else RewardConfig()
         #
-        if hasattr(self.reward_config, 'use_composite', False):
+        if getattr(self.reward_config, 'use_composite', False):
             try:
                 #
                 from reward_utils import (
@@ -310,11 +310,11 @@ class ProspectorsPiratesEnv(
                     'SellBonusReward': SellBonusReward,
                     'MiningQualityReward': MiningQualityReward,
                     'InappropriateActionPenalty': InappropriateActionPenalty,
-                    'EndofEpisodeNutriniumReward': EndofEpisodeNutriniumReward,
+                    'EndOfEpisodeNutriniumReward': EndOfEpisodeNutriniumReward,
                     'EarlyDeathPenaltyReward': EarlyDeathPenaltyReward,
                     'CreditProgressReward': CreditProgressReward,
                     'IdleLoopPenalty': IdleLoopPenalty,
-                    'EndofEpisodeCreditReward': EndofEpisodeCreditReward,
+                    'EndOfEpisodeCreditReward': EndOfEpisodeCreditReward,
                     'PlacementReward': PlacementReward,
                     'EnergyStarvationPenalty': EnergyStarvationPenalty,
                     'OverriddenActionPenalty': OverriddenActionPenalty,
@@ -349,26 +349,26 @@ class ProspectorsPiratesEnv(
                     # DistanceToAsteroidReward: gentle shaping toward mineable resources
                     # CreditProgressReward: rewards credit gains, penalizes zero-credit idling
                     # IdleLoopPenalty: penalizes getting stuck in non-productive loops
-                    # EndofEpisodeCreditReward: strong end-of-episode signal for credits (0.5 per credit)
+                    # EndOfEpisodeCreditReward: strong end-of-episode signal for credits (0.5 per credit)
                     # InappropriateActionPenalty: penalizes contextually bad actions (e.g. MINE with no asteroid)
                     comps = [
                         DistanceToAsteroidReward(),
                         SurvivalReward(),
                         CreditProgressReward(),
                         IdleLoopPenalty(),
-                        EndofEpisodeCreditReward(),
-                        EndofEpisodeNutriniumReward(),  # Penalizes holding unsold nutrinium at episode end
-                        EarlyDeathPenaltyReward(),      # Penalizes early death proportional to remaining episode
+                        EndOfEpisodeCreditReward(),
+                        EndOfEpisodeNutriniumReward(),  # Penalizes holding unsold nutrinium at episode end
+                        EarlyDeathPenaltyReward(),       # Penalizes early death proportional to remaining episode
                         InappropriateActionPenalty(),
                         # --- new components (analysis-driven fixes) ---
-                        PlacementReward(),             # Strong terminal reward based on final rank vs opponents
-                        SellBonusReward(),             # Reinforces the mine -> sell loop
-                        EnergyStarvationPenalty(),     # Discourages low-energy drifting / chronic energy starvation
-                        OverriddenActionPenalty(),     # Penalty when env had to override an infeasible chosen action
+                        PlacementReward(),              # Strong terminal reward based on final rank vs opponents
+                        SellBonusReward(),              # Reinforces the mine -> sell loop
+                        EnergyStarvationPenalty(),      # Discourages low-energy drifting / chronic energy starvation
+                        OverriddenActionPenalty(),      # Penalty when env had to override an infeasible chosen action
                     ]
 
                 self.reward_calc = RewardCalculatorComposite(self.reward_config, comps)
-                logger.info(f"Using RewardCalculatorComposite with components: [{c.__class__.__name__ for c in comps}]")
+                logger.info(f"Using RewardCalculatorComposite with components: {[c.__class__.__name__ for c in comps]}")
             except Exception as e:
                 logger.warning(f"Failed to construct RewardCalculatorComposite: {e}. Falling back to simple RewardCalculator.")
                 self.reward_calc = RewardCalculator(self.reward_config)
@@ -389,16 +389,16 @@ class ProspectorsPiratesEnv(
         # Action space: structured MultiDiscrete faithful to the game server, and
         # trainable by stable-baselines3 (which supports MultiDiscrete but not Dict action
         # spaces). The policy emits a length-4 vector:
-        # [action_type, target_x, target_y, energy_bin]
+        #  [action_type, target_x, target_y, energy_bin]
         # - action_type: 0..18 (see ActionType)
         # - target:      (x, y) grid coordinate (coordinate JUMP; explicit ATTACK/PLUNDER
         #                target preference)
-        # - energy_bin: 0 = "use action default", 1..N = 10%..100% of max energy (ATTACK payload)
+        # - energy_bin:  0 = "use action default", 1..N = 10%..100% of max energy (ATTACK payload)
         # A bare scalar int action is still accepted by `_normalize_action` for backward
         # compatibility (auto-target, default energy), so the heuristic AIs and legacy
         # scalar-Discrete callers continue to work unchanged.
-        self.num_action_types = len(ActionType)  # 19 discrete action types
-        self.energy_bins = 11           # 0 = default payload, 1..10 = 10%..100%
+        self.num_action_types = len(ActionType)   # 19 discrete action types
+        self.energy_bins = 11                     # 0 = default payload, 1..10 = 10%..100%
         self.action_space = spaces.MultiDiscrete(
             [self.num_action_types, self.map_width, self.map_height, self.energy_bins]
         )
@@ -430,17 +430,17 @@ class ProspectorsPiratesEnv(
         #   - Weakest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
         # Total enemy info: 14 values
 
-        ship_state_size = 24           # Complete ship state (including action counter)
-        strategic_context_size = 8     # High-signal strategic features
+        ship_state_size = 24          # Complete ship state (including action counter)
+        strategic_context_size = 8    # High-signal strategic features
         sensor_grid_size = (2 * self.config['sensor_range'] + 1) ** 2
-        top_asteroids_size = self.config['top_asteroids_count'] * 6   # 5 asteroids * 6 features each
+        top_asteroids_size = self.config['top_asteroids_count'] * 6  # 5 asteroids * 6 features each
         # Spec-fidelity features (appended so legacy offsets stay stable):
-        #    7 new skills + 5 shield-state + 3 modules + 3 team/economy
-        #    + 3 negotiate-objective + 3 nearest-wreckage
+        #   7 new skills + 5 shield-state + 3 modules + 3 team/economy
+        #   + 3 negotiate-objective + 3 nearest-wreckage
         spec_fidelity_size = 24
 
-        trading_post_size = 3          # Nearest trading post (x, y, distance)
-        enemy_info_size = 14           # Strongest + weakest enemy at player location (7 each)
+        trading_post_size = 3         # Nearest trading post (x, y, distance)
+        enemy_info_size = 14          # Strongest + weakest enemy at player location (7 each)
 
         # Action-restriction matrix (appended last): 2 flags per action id
         # (allowedWhileRecharging, allowedWithShieldsUp) so the policy can adapt to
@@ -476,7 +476,7 @@ class ProspectorsPiratesEnv(
 
         # Initialize state variables
         self.current_step = 0
-        self.action_counter = 0     # Track actions taken in current episode (max ~300 for 5 min @ 1 action/sec)
+        self.action_counter = 0    # Track actions taken in current episode (max ~300 for 5 min @ 1 action/sec)
         self.player_ship = None
         self.opponent_ships = []
         self.asteroids = []
@@ -589,10 +589,10 @@ class ProspectorsPiratesEnv(
         self.team_respawn_counts = {tid: 0 for tid in range(4)}
         self.team_bonuses = {tid: 0.0 for tid in range(4)}
         self.market_price = float(self.config['market']['sell_nutrinium'])
-        self.wreckage = []  # list of (name, x, y, nutrinium)
+        self.wreckage = []  # list of {name, x, y, nutrinium}
 
         # Player's own randomized skill allocation + derived per-ship shield capacity.
-        player_abilities = self.distribute_skill_points(skill_point_budget)
+        player_abilities = self._distribute_skill_points(skill_point_budget)
         player_shield_capacity = (
             self.config['combat']['base_shield_capacity']
             + player_abilities.get('shield_capacity', 0) * 10
@@ -607,7 +607,8 @@ class ProspectorsPiratesEnv(
             'nutrinium': 0,
             'credits': 0,
             'recharging': False,
-            'just_recharged': False,  # legacy alias of (shield['value'] > 0)
+            'just_recharged': False,
+            'shields_up': False,  # legacy alias of (shield['value'] > 0)
             'destroyed': False,
             'state': 'READY',  # READY, RECHARGING, DESTROYED
             'respawn_count': 0,  # Track number of times respawned this episode
@@ -655,51 +656,57 @@ class ProspectorsPiratesEnv(
                     ai_type = OpponentAIType.BOT_V6
                 elif forced_upper == 'BOT_V7':
                     ai_type = OpponentAIType.BOT_V7
-            else:
-                # Treat as model path or "model_path::SPEC_NAME"
-                ai_type = OpponentAIType.MODEL
-                use_model = True
-                parsed_path, parsed_spec_name = self._parse_enemy_model_entry(forced_type)
-                if parsed_path is None:
-                    parsed_path = forced_type
-                model_path = parsed_path
-                resolved_spec = get_named_model_spec(parsed_spec_name) if parsed_spec_name else None
-                if parsed_spec_name and resolved_spec is None:
-                    logger.warning(
-                        "Unknown model spec '%s' for forced opponent entry '%s'. Falling back to DEFAULT_FULL_SPEC.",
-                        parsed_spec_name,
-                        forced_type,
-                    )
-                if resolved_spec is not None:
-                    model_spec = resolved_spec
-
                 else:
-                    # No forced type - use random selection
-                    if enemy_model_entries and len(enemy_model_entries) > 0:
-                        if random.random() < 0.15:  # 15% chance to use model (reduced from 50% for training performance)
-                            use_model = True
-                            selected = random.choice(enemy_model_entries)
-                            model_path = selected['path']
-                            spec_name = selected.get('spec_name')
-                            resolved_spec = get_named_model_spec(spec_name) if spec_name else None
-                            if spec_name and resolved_spec is None:
-                                logger.warning(
-                                    "Unknown model spec '%s' for enemy model '%s'. Falling back to DEFAULT_FULL_SPEC.",
-                                    spec_name,
-                                    model_path,
-                                )
-                            if resolved_spec is not None:
-                                model_spec = resolved_spec
-                                ai_type = OpponentAIType.MODEL
+                    # Treat as model path or "model_path::SPEC_NAME"
+                    ai_type = OpponentAIType.MODEL
+                    use_model = True
+                    parsed_path, parsed_spec_name = self._parse_enemy_model_entry(forced_type)
+                    if parsed_path is None:
+                        parsed_path = forced_type
+                    model_path = parsed_path
+                    resolved_spec = get_named_model_spec(parsed_spec_name) if parsed_spec_name else None
+                    if parsed_spec_name and resolved_spec is None:
+                        logger.warning(
+                            "Unknown model spec '%s' for forced opponent entry '%s'. Falling back to DEFAULT_FULL_SPEC.",
+                            parsed_spec_name,
+                            forced_type,
+                        )
+                    if resolved_spec is not None:
+                        model_spec = resolved_spec
+
+            else:
+                # No forced type - use random selection
+                if enemy_model_entries and len(enemy_model_entries) > 0:
+                    if random.random() < 0.15:  # 15% chance to use model (reduced from 50% for training performance)
+                        use_model = True
+                        selected = random.choice(enemy_model_entries)
+                        model_path = selected['path']
+                        spec_name = selected.get('spec_name')
+                        resolved_spec = get_named_model_spec(spec_name) if spec_name else None
+                        if spec_name and resolved_spec is None:
+                            logger.warning(
+                                "Unknown model spec '%s' for enemy model '%s'. Falling back to DEFAULT_FULL_SPEC.",
+                                spec_name,
+                                model_path,
+                            )
+                        if resolved_spec is not None:
+                            model_spec = resolved_spec
+                            ai_type = OpponentAIType.MODEL
 
                 if ai_type is None:
                     # Randomly assign an algorithm-based AI type, chosen uniformly
-                    # from every OpponentAIType except MODEL (MODEL needs a model
-                    # path and is handled in the enemy-model branch above). Driving
-                    # this off the enum means any new opponent type added in the
-                    # future is automatically included in training.
-
-                    algorithmic_ai_types = [t for t in OpponentAIType if t != OpponentAIType.MODEL]
+                    # from every OpponentAIType except MODEL (needs a model path,
+                    # handled in the enemy-model branch above) and the model-backed
+                    # bots BOT_V6 / BOT_V8 (per-tick model inference and the
+                    # ont-time model load materially slow training). Driving this
+                    # off the enum means any new non-model opponent type added in
+                    # the future is automatically included in training.
+                    _exclude = (
+                        OpponentAIType.MODEL,
+                        OpponentAIType.BOT_V6,
+                        OpponentAIType.BOT_V8
+                    )
+                    algorithmic_ai_types = [t for t in OpponentAIType if t not in _exclude]
                     ai_type = random.choice(algorithmic_ai_types)
 
             # This opponent's own randomized skill allocation + derived shield capacity.
@@ -719,7 +726,7 @@ class ProspectorsPiratesEnv(
                 'energy': self.config['max_energy'],
                 'health': self.config['max_health'],
                 'nutrinium': 0,  # Start with 0 nutrinium (must mine to collect)
-                'credits': 0,  # Start with 0 credits (must sell to earn)
+                'credits': 0,    # Start with 0 credits (must sell to earn)
                 'recharging': False,
                 'just_recharged': False,
                 'shields_up': False,  # legacy alias of (shield['value'] > 0)
@@ -727,7 +734,8 @@ class ProspectorsPiratesEnv(
                 'state': 'READY',
                 'respawn_count': 0,
                 'skill_points_total': skill_point_budget,
-                'skill_points_spent': sum(opp_abilities.values()),  # Ship abilities - this ship's own randomized allocation of the budget
+                'skill_points_spent': sum(opp_abilities.values()),
+                # Ship abilities - this ship's own randomized allocation of the budget
                 'abilities': opp_abilities,
                 # Spec-accurate fields (PO)
                 'team_id': (i + 1) % 4,
@@ -745,13 +753,13 @@ class ProspectorsPiratesEnv(
 
         if self.use_predefined_asteroids:
             # Load predefined asteroids from config file
-            predefined = self.load_predefined_asteroids()
+            predefined = self._load_predefined_asteroids()
             if predefined is not None:
                 # Deep copy the predefined asteroids to avoid modifying cached data
                 self.asteroids = copy.deepcopy(predefined)
-        else:
-            # Fallback to random generation if loading failed
-            self.use_predefined_asteroids = False  # Disable for this episode
+            else:
+                # Fallback to random generation if loading failed
+                self.use_predefined_asteroids = False  # Disable for this episode
 
         if not self.use_predefined_asteroids or not self.asteroids:
             # Random asteroid generation using jittered-grid (stratified sampling)
@@ -799,32 +807,32 @@ class ProspectorsPiratesEnv(
                         ax = random.randint(x_min, x_max)
                         ay = random.randint(y_min, y_max)
 
-                        # Ensure uniqueness; if occupied, try a few nearby cells, otherwise skip
-                        attempts = 0
-                        while (ax, ay) in placed and attempts < 8:
-                            ax = min(self.map_width - 1, max(0, ax + random.randint(-1, 1)))
-                            ay = min(self.map_height - 1, max(0, ay + random.randint(-1, 1)))
-                            attempts += 1
-                        if (ax, ay) in placed:
-                            # As a last resort, find any free cell
-                            for xx in range(self.map_width):
-                                found = False
-                                for yy in range(self.map_height):
-                                    if (xx, yy) not in placed:
-                                        ax, ay = xx, yy
-                                        found = True
-                                        break
-                                if found:
+                    # Ensure uniqueness; if occupied, try a few nearby cells, otherwise skip
+                    attempts = 0
+                    while (ax, ay) in placed and attempts < 8:
+                        ax = min(self.map_width - 1, max(0, ax + random.randint(-1, 1)))
+                        ay = min(self.map_height - 1, max(0, ay + random.randint(-1, 1)))
+                        attempts += 1
+                    if (ax, ay) in placed:
+                        # As a last resort, find any free cell
+                        for xx in range(self.map_width):
+                            found = False
+                            for yy in range(self.map_height):
+                                if (xx, yy) not in placed:
+                                    ax, ay = xx, yy
+                                    found = True
                                     break
+                            if found:
+                                break
 
-                        placed.add((ax, ay))
+                    placed.add((ax, ay))
 
-                        # Mass is assigned independently; nutrinium will be set in the
-                        # budget-distribution pass below.
-                        mass_min = self.config.get('asteroid_mass_min', 10)
-                        mass_max = self.config.get('asteroid_mass_max', 50)
-                        mass = random.randint(mass_min, mass_max)
-                        self.asteroids.append({'x': ax, 'y': ay, 'mass': mass, 'nutrinium': 0})
+                    # Mass is assigned independently; nutrinium will be set in the
+                    # budget-distribution pass below.
+                    mass_min = self.config.get('asteroid_mass_min', 10)
+                    mass_max = self.config.get('asteroid_mass_max', 50)
+                    mass = random.randint(mass_min, mass_max)
+                    self.asteroids.append({'x': ax, 'y': ay, 'mass': mass, 'nutrinium': 0})
 
                 # --- Nutrinium concentration distribution across asteroids ---
                 # Production concentration model: each asteroid receives
@@ -854,7 +862,7 @@ class ProspectorsPiratesEnv(
 
         if self.use_predefined_asteroids:
             # Load predefined trading posts from the same config file
-            predefined_posts = self.load_predefined_trading_posts()
+            predefined_posts = self._load_predefined_trading_posts()
             if predefined_posts is not None:
                 # Deep copy the predefined trading posts
                 self.trading_posts = copy.deepcopy(predefined_posts)
@@ -878,87 +886,87 @@ class ProspectorsPiratesEnv(
                 filtered_posts.append(post)
             self.trading_posts = filtered_posts
 
-    # If not enough trading posts (or none), generate remaining using jittered-grid
-    # to ensure good spatial coverage and avoid clustering. Trading posts will
-    # never overlap asteroids or each other.
-    self.trading_post_target = self.compute_trading_post_target()
-    needed = self.trading_post_target - len(self.trading_posts)
-    if needed > 0:
-        # Build set of occupied positions (asteroids + already placed posts)
-        occupied = set(asteroid_positions) | {(p['x'], p['y']) for p in self.trading_posts}
+        # If not enough trading posts (or none), generate remaining using jittered-grid
+        # to ensure good spatial coverage and avoid clustering. Trading posts will
+        # never overlap asteroids or each other.
+        self.trading_post_target = self.compute_trading_post_target()
+        needed = self.trading_post_target - len(self.trading_posts)
+        if needed > 0:
+            # Build set of occupied positions (asteroids + already placed posts)
+            occupied = set(asteroid_positions) | {(p['x'], p['y']) for p in self.trading_posts}
 
-        # If the map is small or needed is large, fall back to random sampling
-        num_cells = self.map_width * self.map_height
-        if needed >= num_cells - len(occupied):
-            # Not enough free cells or heavy filling; sample from available
-            available = [(x, y) for x in range(self.map_width) for y in range(self.map_height) if (x, y) not in occupied]
-            if needed > len(available):
-                logger.warning(f"Not enough free cells to place {needed} additional trading posts; only {len(available)} available. Placing as many as possible.")
-                needed = len(available)
-            chosen_posts = random.sample(available, k=needed) if needed > 0 else []
-            for (tx, ty) in chosen_posts:
-                self.trading_posts.append({'x': tx, 'y': ty})
-        else:
-            # Use stratified placement: choose `needed` buckets across a k x k grid
-            # where k*k >= needed, then pick a random location inside each bucket
-            k = int(math.ceil(math.sqrt(needed)))
-            cell_w = float(self.map_width) / k
-            cell_h = float(self.map_height) / k
-
-            buckets = [(r, c) for r in range(k) for c in range(k)]
-            chosen_buckets = random.sample(buckets, k=needed) if needed < len(buckets) else buckets
-
-            placed_posts = set((p['x'], p['y']) for p in self.trading_posts)
-
-            for (r, c) in chosen_buckets:
-                # Determine integer ranges for this bucket
-                x_min = int(math.floor(c * cell_w))
-                x_max = int(math.floor((c + 1) * cell_w)) - 1
-                y_min = int(math.floor(r * cell_h))
-                y_max = int(math.floor((r + 1) * cell_h)) - 1
-
-                # Clamp ranges to map bounds
-                x_min = max(0, min(self.map_width - 1, x_min))
-                x_max = max(0, min(self.map_width - 1, max(x_min, x_max)))
-                y_min = max(0, min(self.map_height - 1, y_min))
-                y_max = max(0, min(self.map_height - 1, max(y_min, y_max)))
-
-                # Choose a random candidate inside bucket avoiding occupied cells
-                found = False
-                tries = 0
-                while not found and tries < 12:
-                    if x_min > x_max or y_min > y_max:
-                        tx = random.randint(0, self.map_width - 1)
-                        ty = random.randint(0, self.map_height - 1)
-                    else:
-                        tx = random.randint(x_min, x_max)
-                        ty = random.randint(y_min, y_max)
-
-                    if (tx, ty) in occupied or (tx, ty) in placed_posts:
-                        # try nearby
-                        tx = min(self.map_width - 1, max(0, tx + random.randint(-1, 1)))
-                        ty = min(self.map_height - 1, max(0, ty + random.randint(-1, 1)))
-                        tries += 1
-                        continue
-
-                    # Accept this post
+            # If the map is small or needed is large, fall back to random sampling
+            num_cells = self.map_width * self.map_height
+            if needed >= num_cells - len(occupied):
+                # Not enough free cells or heavy filling; sample from available
+                available = [(x, y) for x in range(self.map_width) for y in range(self.map_height) if (x, y) not in occupied]
+                if needed > len(available):
+                    logger.warning(f"Not enough free cells to place {needed} additional trading posts; only {len(available)} available. Placing as many as possible.")
+                    needed = len(available)
+                chosen_posts = random.sample(available, k=needed) if needed > 0 else []
+                for (tx, ty) in chosen_posts:
                     self.trading_posts.append({'x': tx, 'y': ty})
-                    placed_posts.add((tx, ty))
-                    found = True
+            else:
+                # Use stratified placement: choose `needed` buckets across a k x k grid
+                # where k*k >= needed, then pick a random location inside each bucket
+                k = int(math.ceil(math.sqrt(needed)))
+                cell_w = float(self.map_width) / k
+                cell_h = float(self.map_height) / k
 
-                if not found:
-                    # Fallback: find any available cell
-                    for xx in range(self.map_width):
-                        for yy in range(self.map_height):
-                            if (xx, yy) not in occupied and (xx, yy) not in placed_posts:
-                                self.trading_posts.append({'x': xx, 'y': yy})
-                                placed_posts.add((xx, yy))
-                                found = True
-                                break
-                        if found:
-                            break
+                buckets = [(r, c) for r in range(k) for c in range(k)]
+                chosen_buckets = random.sample(buckets, k=needed) if needed < len(buckets) else buckets
+
+                placed_posts = set((p['x'], p['y']) for p in self.trading_posts)
+
+                for (r, c) in chosen_buckets:
+                    # Determine integer ranges for this bucket
+                    x_min = int(math.floor(c * cell_w))
+                    x_max = int(math.floor((c + 1) * cell_w)) - 1
+                    y_min = int(math.floor(r * cell_h))
+                    y_max = int(math.floor((r + 1) * cell_h)) - 1
+
+                    # Clamp ranges to map bounds
+                    x_min = max(0, min(self.map_width - 1, x_min))
+                    x_max = max(0, min(self.map_width - 1, max(x_min, x_max)))
+                    y_min = max(0, min(self.map_height - 1, y_min))
+                    y_max = max(0, min(self.map_height - 1, max(y_min, y_max)))
+
+                    # Choose a random candidate inside bucket avoiding occupied cells
+                    found = False
+                    tries = 0
+                    while not found and tries < 12:
+                        if x_min > x_max or y_min > y_max:
+                            tx = random.randint(0, self.map_width - 1)
+                            ty = random.randint(0, self.map_height - 1)
+                        else:
+                            tx = random.randint(x_min, x_max)
+                            ty = random.randint(y_min, y_max)
+
+                        if (tx, ty) in occupied or (tx, ty) in placed_posts:
+                            # try nearby
+                            tx = min(self.map_width - 1, max(0, tx + random.randint(-1, 1)))
+                            ty = min(self.map_height - 1, max(0, ty + random.randint(-1, 1)))
+                            tries += 1
+                            continue
+
+                        # Accept this post
+                        self.trading_posts.append({'x': tx, 'y': ty})
+                        placed_posts.add((tx, ty))
+                        found = True
+
                     if not found:
-                        logger.warning('Unable to place an expected trading post due to lack of free cells.')
+                        # Fallback: find any available cell
+                        for xx in range(self.map_width):
+                            for yy in range(self.map_height):
+                                if (xx, yy) not in occupied and (xx, yy) not in placed_posts:
+                                    self.trading_posts.append({'x': xx, 'y': yy})
+                                    placed_posts.add((xx, yy))
+                                    found = True
+                                    break
+                            if found:
+                                break
+                        if not found:
+                            logger.warning('Unable to place an expected trading post due to lack of free cells.')
 
         # Give every trading post a stable name/id (used by NEGOTIATE objectives) and
         # assign each ship an initial negotiate objective pointing at one of them.
@@ -970,7 +978,7 @@ class ProspectorsPiratesEnv(
         # Build spatial lookup cache for fast entity-at-location queries
         self._rebuild_location_cache()
 
-        observation = self.get_observation()
+        observation = self._get_observation()
         info = self._get_info()
 
         return observation, info
@@ -998,181 +1006,182 @@ class ProspectorsPiratesEnv(
         except Exception as e:
             # Normalization failed (e.g., non-int-like input). Default to WAIT
             self.invalid_action_count += 1
-    if self.warn_on_invalid_action:
-        logger.warning(f"Unable to normalize action {requested_action_raw!r}: {e}. Defaulting to WAIT.")
-    action = int(ActionType.WAIT)
-    action_valid = False
-
-    # Apply action mapping from player's model spec
-    # This allows models with different action space sizes to compete
-    player_spec = self._get_ship_model_spec(self.player_ship)
-    mapped_action = player_spec.action_spec.map_action(action, env_action_space_size=self.num_action_types)
-    if action != mapped_action:
-        action = mapped_action
-
-    # Validate bounds; if out of range, default to WAIT
-    if not (0 <= action < self.num_action_types):
-        self.invalid_action_count += 1
-        if self.warn_on_invalid_action:
-            logger.warning(f"Action {action} out of bounds [0, {self.num_action_types - 1}]. Defaulting to WAIT.")
-        action = int(ActionType.WAIT)
-        action_valid = False
-
-    # If player is destroyed, force RESPAWN action
-    if self.player_ship['destroyed']:
-        if action != ActionType.RESPAWN:
-            # Override any other action to RESPAWN
             if self.warn_on_invalid_action:
-                logger.warning("Player is destroyed. Only RESPAWN action is allowed. Forcing RESPAWN.")
-            action = int(ActionType.RESPAWN)
+                logger.warning(f"Unable to normalize action {requested_action_raw!r}: {e}. Defaulting to WAIT.")
+            action = int(ActionType.WAIT)
+            action_valid = False
 
-    # If terminate_on_player_death is True, terminate after respawn action
-    if self.terminate_on_player_death:
-        observation = self._get_observation()
-        return observation, 0.0, True, False, self._get_info()
+        # Apply action mapping from player's model spec
+        # This allows models with different action space sizes to compete
+        player_spec = self._get_ship_model_spec(self.player_ship)
+        mapped_action = player_spec.action_spec.map_action(action, env_action_space_size=self.num_action_types)
+        if action != mapped_action:
+            action = mapped_action
 
-    # With action masking, invalid actions should not be selected by the model
-    # However, we still track them for diagnostics and ENFORCE the masking
-    state_valid = True
-    state_invalid_reason = ""
-    if action_valid:  # Only check state validity if action code is valid
-        state_valid, state_invalid_reason = self._is_action_valid_for_state(action, self.player_ship, is_player=True)
-    if not state_valid:
-        self.state_invalid_action_count += 1
-        if self.warn_on_invalid_action:
-            logger.warning(f"Action {ActionType(action).name} invalid for current state: {state_invalid_reason}. "
-                           f"This should not happen with action masking!")
+        # Validate bounds; if out of range, default to WAIT
+        if not (0 <= action < self.num_action_types):
+            self.invalid_action_count += 1
+            if self.warn_on_invalid_action:
+                logger.warning(f"Action {action} out of bounds [0, {self.num_action_types - 1}]. Defaulting to WAIT.")
+            action = int(ActionType.WAIT)
+            action_valid = False
 
-    # ENFORCE action masking: force invalid action to appropriate valid action
-    # This prevents the model from executing invalid actions. The rules, fallback priority and enforcement all live in the shared
-    # action_masker utility (single source of truth with bot_v6).
-    original_action = action
-    state = self.build_mask_state(self.player_ship, is_player=True)
-    mask = action_masker.get_action_mask(state)
-    action = action_masker.mask_action(original_action, state, mask=mask)
-    if self.warn_on_invalid_action and action != original_action:
-        logger.warning(f"Forcing {ActionType(original_action).name} -> {ActionType(action).name} (action mask enforcement)")
+        # If player is destroyed, force RESPAWN action
+        if self.player_ship['destroyed']:
+            if action != ActionType.RESPAWN:
+                # Override any other action to RESPAWN
+                if self.warn_on_invalid_action:
+                    logger.warning("Player is destroyed. Only RESPAWN action is allowed. Forcing RESPAWN.")
+                action = int(ActionType.RESPAWN)
 
-    reward = 0.0
-    self.current_step += 1
-    self.action_counter += 1  # Increment action counter (tracks actions taken this episode)
+            # If terminate_on_player_death is True, terminate after respawn action
+            if self.terminate_on_player_death:
+                observation = self._get_observation()
+                return observation, 0.0, True, False, self._get_info()
 
-    # Execute player action
-    self.last_player_action = int(action) if action is not None else None
-    # Provide previous position for reward components that rely on positional delta
-    prev_position = (self.player_ship['x'], self.player_ship['y'])
-    # Clear just_recharged flag when executing a non-RECHARGE action to prevent recharge loops
-    if action != int(ActionType.RECHARGE):
-        self.player_ship['just_recharged'] = False
-    action_reward, action_info = self._execute_action(action, self.player_ship, is_player=True, target=action_target, energy=action_energy)
-    # Per-ship tick order (step 4): drain DRAINING shields after the player's action.
-    self.post_action_tick(self.player_ship)
-    # Expose previous position so RewardComponents (e.g., DistanceToAsteroidReward) can compute deltas
-    action_info['prev_position'] = prev_position
+        # With action masking, invalid actions should not be selected by the model
+        # However, we still track them for diagnostics and ENFORCE the masking
+        state_valid = True
+        state_invalid_reason = ""
+        if action_valid:  # Only check state validity if action code is valid
+            state_valid, state_invalid_reason = self._is_action_valid_for_state(action, self.player_ship, is_player=True)
+            if not state_valid:
+                self.state_invalid_action_count += 1
+                if self.warn_on_invalid_action:
+                    logger.warning(f"Action {ActionType(action).name} invalid for current state: {state_invalid_reason}. "
+                                   f"This should not happen with action masking!")
 
-    # Annotate action_info with validation/debug fields
-    action_info['requested_action'] = str(requested_action_raw)
-    action_info['valid_action'] = bool(action_valid)
-    # After enforcement, the executed action is valid even if the original was not
-    action_info['state_valid'] = True
-    if not state_valid:
-        action_info['state_invalid_reason'] = state_invalid_reason
-        action_info['state_enforced'] = True  # Flag that enforcement was applied
-    # keep raw reward in action_info for transparency/debugging
-    action_info['raw_reward'] = float(action_reward)
+                # ENFORCE action masking: force invalid action to appropriate valid action
+                # This prevents the model from executing invalid actions. The
+                # rules, fallback priority and enforcement all live in the shared
+                # action_masker utility (single source of truth with bot_v6).
+                original_action = action
+                state = self._build_mask_state(self.player_ship, is_player=True)
+                mask = action_masker.get_action_mask(state)
+                action = action_masker.mask_action(original_action, state, mask=mask)
+                if self.warn_on_invalid_action and action != original_action:
+                    logger.warning(f"Forcing {ActionType(original_action).name} -> {ActionType(action).name} (action mask enforcement)")
 
-    # Will compute scaled reward below; store scaled in action_info for renderer
-    # compute final reward via RewardCalculator; pass env and ship for optional shaping
-    scaled = self.reward_calc.compute(action_reward, action, action_info, env=self, ship=self.player_ship)
-    reward += scaled
-    # record scaled reward in action_info for rendering/debug
-    action_info['scaled_reward'] = float(scaled)
-    # Save last player action result for rendering
-    try:
-        # shallow copy of relevant fields, include optional payload
-        self.last_player_action_result = {
-            'action': action_info.get('action'),
-            'success': action_info.get('success'),
-            'raw_reward': float(action_info.get('raw_reward', 0.0)),
-            'scaled_reward': float(action_info.get('scaled_reward', 0.0)),
-            'state_valid': action_info.get('state_valid', True),
-            'state_invalid_reason': action_info.get('state_invalid_reason', ''),
-    'payload': action_info.get('payload', None)
-    }
-    except Exception:
-        self.last_player_action_result = None
+        reward = 0.0
+        self.current_step += 1
+        self.action_counter += 1  # Increment action counter (tracks actions taken this episode)
 
-    # Execute opponent actions (simple AI)
-    for i, opponent in enumerate(self.opponent_ships):
-        if not opponent['destroyed']:
-            # Per-ship tick order (steps 1-2): maintenance + recharge before action.
-            self._pre_action_tick(opponent)
-            opponent_action = self._get_opponent_action(opponent)
-            # Response-bot opponents (BOT_V2/BOT_V3) stash their own target/
-            # energy so the simulator executes exactly what the bot asked for
-            # (no auto-targeting). Other AIs leave these unset -> None -> the
-            # action falls back to its legacy auto-target selection.
-            op_target = opponent.pop('_pending_action_target', None)
-            op_energy = opponent.pop('_pending_action_energy', None)
-            # Clear just_recharged flag for opponents (same as player) to prevent recharge lock
-            if opponent_action != int(ActionType.RECHARGE):
-                opponent['just_recharged'] = False
-            # store action id
-            try:
-                self.last_opponent_actions[i] = int(opponent_action)
-            except Exception:
+        # Execute player action
+        self.last_player_action = int(action) if action is not None else None
+        # Provide previous position for reward components that rely on positional delta
+        prev_position = (self.player_ship['x'], self.player_ship['y'])
+        # Clear just_recharged flag when executing a non-RECHARGE action to prevent recharge loops
+        if action != int(ActionType.RECHARGE):
+            self.player_ship['just_recharged'] = False
+        action_reward, action_info = self._execute_action(action, self.player_ship, is_player=True, target=action_target, energy=action_energy)
+        # Per-ship tick order (step 4): drain DRAINING shields after the player's action.
+        self.post_action_tick(self.player_ship)
+        # Expose previous position so RewardComponents (e.g., DistanceToAsteroidReward) can compute deltas
+        action_info['prev_position'] = prev_position
+
+        # Annotate action_info with validation/debug fields
+        action_info['requested_action'] = str(requested_action_raw)
+        action_info['valid_action'] = bool(action_valid)
+        # After enforcement, the executed action is valid even if the original was not
+        action_info['state_valid'] = True
+        if not state_valid:
+            action_info['state_invalid_reason'] = state_invalid_reason
+            action_info['state_enforced'] = True  # Flag that enforcement was applied
+        # keep raw reward in action_info for transparency/debugging
+        action_info['raw_reward'] = float(action_reward)
+
+        # Will compute scaled reward below; store scaled in action_info for renderer
+        # compute final reward via RewardCalculator; pass env and ship for optional shaping
+        scaled = self.reward_calc.compute(action_reward, action, action_info, env=self, ship=self.player_ship)
+        reward += scaled
+        # record scaled reward in action_info for rendering/debug
+        action_info['scaled_reward'] = float(scaled)
+        # Save last player action result for rendering
+        try:
+            # shallow copy of relevant fields, include optional payload
+            self.last_player_action_result = {
+                'action': action_info.get('action'),
+                'success': action_info.get('success'),
+                'raw_reward': float(action_info.get('raw_reward', 0.0)),
+                'scaled_reward': float(action_info.get('scaled_reward', 0.0)),
+                'state_valid': action_info.get('state_valid', True),
+                'state_invalid_reason': action_info.get('state_invalid_reason', ''),
+        'payload': action_info.get('payload', None)
+        }
+        except Exception:
+            self.last_player_action_result = None
+
+        # Execute opponent actions (simple AI)
+        for i, opponent in enumerate(self.opponent_ships):
+            if not opponent['destroyed']:
+                # Per-ship tick order (steps 1-2): maintenance + recharge before action.
+                self._pre_action_tick(opponent)
+                opponent_action = self._get_opponent_action(opponent)
+                # Response-bot opponents (BOT_V2/BOT_V3) stash their own target/
+                # energy so the simulator executes exactly what the bot asked for
+                # (no auto-targeting). Other AIs leave these unset -> None -> the
+                # action falls back to its legacy auto-target selection.
+                op_target = opponent.pop('_pending_action_target', None)
+                op_energy = opponent.pop('_pending_action_energy', None)
+                # Clear just_recharged flag for opponents (same as player) to prevent recharge lock
+                if opponent_action != int(ActionType.RECHARGE):
+                    opponent['just_recharged'] = False
+                # store action id
+                try:
+                    self.last_opponent_actions[i] = int(opponent_action)
+                except Exception:
+                    self.last_opponent_actions[i] = None
+                # execute and capture result
+                r_op, info_op = self._execute_action(
+                    opponent_action, opponent, is_player=False,
+                    target=op_target, energy=op_energy,
+                )
+                # Per-ship tick order (step 4): drain DRAINING shields after action.
+                self.post_action_tick(opponent)
+                # store a compact result for rendering, include optional payload
+                try:
+                    self.last_opponent_action_results[i] = {
+                        'action': info_op.get('action'),
+                        'success': info_op.get('success'),
+                        'raw_reward': float(r_op),
+                        'payload': info_op.get('payload', None)
+                    }
+                except Exception:
+                    self.last_opponent_action_results[i] = None
+            else:
                 self.last_opponent_actions[i] = None
-            # execute and capture result
-            r_op, info_op = self._execute_action(
-                opponent_action, opponent, is_player=False,
-                target=op_target, energy=op_energy,
-            )
-            # Per-ship tick order (step 4): drain DRAINING shields after action.
-            self.post_action_tick(opponent)
-            # store a compact result for rendering, include optional payload
-            try:
-                self.last_opponent_action_results[i] = {
-                    'action': info_op.get('action'),
-                    'success': info_op.get('success'),
-                    'raw_reward': float(r_op),
-                    'payload': info_op.get('payload', None)
-                }
-            except Exception:
                 self.last_opponent_action_results[i] = None
+
+        # Update combat states based on current positions (set COMBAT when ships share a zone)
+        try:
+            self._update_combat_states()
+        except Exception:
+            # Non-fatal: if update_combat_states fails for any reason, log and continue
+            logger.exception("Failed to update combat states")
+
+        # Check termination conditions
+        # Only terminate on player death if flag is set (for training)
+        # Otherwise, let the game run to max_steps (for full simulation)
+        if self.terminate_on_player_death:
+            terminated = self.player_ship['destroyed']
         else:
-            self.last_opponent_actions[i] = None
-            self.last_opponent_action_results[i] = None
+            terminated = False  # Never terminate early in simulation mode
 
-    # Update combat states based on current positions (set COMBAT when ships share a zone)
-    try:
-        self._update_combat_states()
-    except Exception:
-        # Non-fatal: if update_combat_states fails for any reason, log and continue
-        logger.exception("Failed to update combat states")
+        truncated = self.current_step >= self.max_steps
 
-    # Check termination conditions
-    # Only terminate on player death if flag is set (for training)
-    # Otherwise, let the game run to max_steps (for full simulation)
-    if self.terminate_on_player_death:
-        terminated = self.player_ship['destroyed']
-    else:
-        terminated = False  # Never terminate early in simulation mode
+        observation = self._get_observation()
+        info = self._get_info()
+        info.update(action_info)
 
-    truncated = self.current_step >= self.max_steps
-
-    observation = self._get_observation()
-    info = self._get_info()
-    info.update(action_info)
-
-    return observation, reward, terminated, truncated, info
+        return observation, reward, terminated, truncated, info
 
     def close(self):
         """Clean up resources"""
         pass
 
 
-    # Register the environment with Gymnasium
-    gym.register(
-        id='ProspectorsPirates-v0',
-        entry_point='pnp_env:ProspectorsPiratesEnv',
-    )
+# Register the environment with Gymnasium
+gym.register(
+    id='ProspectorsPirates-v0',
+    entry_point='pnp_env:ProspectorsPiratesEnv',
+)
