@@ -196,7 +196,7 @@ class EnvOpponentMixin:
         """Lazily import the balanced miner-trader bot (bot_v5) used by BOT_V5 opponents.
 
         Like bot_v2/bot_v3/bot_v4, bot_v5 lives in the sibling
-        ``r680329-pnp-lambda`` folder and is pure stdlib. it emits MOVE
+        ``r680329-pnp-lambda`` folder and is pure stdlib. It emits MOVE
         directions in this environment's (live server) frame, so no axis
         pinning is needed. The resolved module (or None when unavailable) is
         cached on the instance.
@@ -801,7 +801,7 @@ class EnvOpponentMixin:
         """BOT_V8 AI: delegate the decision to the legacy model-backed bot.
 
         Reuses the generic ActionRequest composer and structured response
-        translator (the bot_v8 response schema matches bot_v2's). bot_v8 only
+        translator (the bot_v8 response schema matches bot_v2's). bot_v8 wraps
         the legacy 128-dim / Discrete(14) v65 model: it reconstructs the legacy
         observation from the request, predicts a scalar action, axis-corrects the
         v1 training frame, and enforces the current action mask. The bot's own

@@ -1,10 +1,11 @@
-"""
-Rendering mixin for :class:`ProspectorsPiratesEnv`.
+"""Rendering mixin for :class:`ProspectorsPiratesEnv`.
 
-Contains the text/grid rendering helpers extracted from ``pnp_env`` to keep the core environment module focused on the Gym API surface.
+Contains the text/grid rendering helpers extracted from ``pnp_env`` to keep the
+core environment module focused on the Gym API surface.
 """
 
 from env_common import *
+
 
 class EnvRenderMixin:
     """Text/grid rendering helpers for the environment."""
@@ -16,12 +17,12 @@ class EnvRenderMixin:
 
     def _render_text(self):
         """Render the game state as text"""
-        print(f'\n{'=' * 90}')
-        print(f'Step: {self.current_step}/{self.max_steps}')
-        print(f'{"=" * 90}')
+        print(f"\n{'=' * 90}")
+        print(f"Step: {self.current_step}/{self.max_steps}")
+        print(f"{'=' * 90}")
 
         # Create map with wider spacing
-        game_map = [[' ' for _ in range(self.map_width)] for _ in range(self.map_height)]
+        game_map = [['  ' for _ in range(self.map_width)] for _ in range(self.map_height)]
 
         # Place entities with more information
         # Store asteroid info for displaying nutrinium
@@ -64,7 +65,7 @@ class EnvRenderMixin:
         # Trading posts
         for post in self.trading_posts:
             if 0 <= post['x'] < self.map_width and 0 <= post['y'] < self.map_height:
-                cell_entities[post['y']][post['x']].append("T ")
+                cell_entities[post['y']][post['x']].append("T")
 
         # Enemies - use ship names (E1, E2, etc.)
         for i, ship in enumerate(self.opponent_ships):
@@ -72,7 +73,7 @@ class EnvRenderMixin:
                 x, y = ship['x'], ship['y']
                 if 0 <= x < self.map_width and 0 <= y < self.map_height:
                     # Use ship name instead of index
-                    ship_name = ship.get('name', f'E{i + 1}')
+                    ship_name = ship.get('name', f'E{i+1}')
                     cell_entities[y][x].append(ship_name)
 
         # Player - use ship name (P)
@@ -97,45 +98,45 @@ class EnvRenderMixin:
             x_min = max(0, px - r)
             x_max = min(self.map_width - 1, px + r)
             y_min = max(0, py - r)
-y_max = min(self.map_height - 1, py + r)
-else:
-    x_min, x_max = 0, self.map_width - 1
-    y_min, y_max = 0, self.map_height - 1
-
-x_count = x_max - x_min + 1
-
-# Top header with column indices centered for the rendered window
-header = '     ' + ''.join(str(i % 10).center(cell_width + 3) for i in range(x_min, x_max + 1))
-print(header)
-
-# Build box-drawing borders so each cell is enclosed (for the window width):
-segment = '-' * (cell_width + 2)
-top_border = '   ' + '+' + ''.join([segment] * x_count) + '+'
-mid_border = '   ' + '+' + ''.join([segment] * x_count) + '+'
-bottom_border = '   ' + '+' + ''.join([segment] * x_count) + '+'
-
-print(top_border)
-
-for y in range(y_min, y_max + 1):
-    # Build row string with vertical separators
-    row_cells = []
-    for x in range(x_min, x_max + 1):
-        items = cell_entities[y][x]
-        if items:
-            cell_text = ','.join(items)
+            y_max = min(self.map_height - 1, py + r)
         else:
-            cell_text = ''
-        # Truncate if too long
-        if len(cell_text) > cell_width:
-            cell_text = cell_text[:cell_width - 1] + '...'
-        row_cells.append(cell_text.center(cell_width + 2))
+            x_min, x_max = 0, self.map_width - 1
+            y_min, y_max = 0, self.map_height - 1
 
-    # Print row with left index and vertical separators
-    print(f" {str(y % 10)} | " + ''.join(row_cells) + '|')
+        x_count = x_max - x_min + 1
 
-    # Print middle separator between rows (except after last rendered row)
-    if y < y_max:
-        print(mid_border)
+        # Top header with column indices centered for the rendered window
+        header = '     ' + ''.join(str(i % 10).center(cell_width + 3) for i in range(x_min, x_max + 1))
+        print(header)
 
-# Bottom border
-print(bottom_border)
+        # Build box-drawing borders so each cell is enclosed (for the window width):
+        segment = '-' * (cell_width + 2)
+        top_border = '   ' + '+' + ''.join([segment] * x_count) + '+'
+        mid_border = '   ' + '+' + ''.join([segment] * x_count) + '+'
+        bottom_border = '   ' + '+' + ''.join([segment] * x_count) + '+'
+
+        print(top_border)
+
+        for y in range(y_min, y_max + 1):
+            # Build row string with vertical separators
+            row_cells = []
+            for x in range(x_min, x_max + 1):
+                items = cell_entities[y][x]
+                if items:
+                    cell_text = ','.join(items)
+                else:
+                    cell_text = ''
+                # Truncate if too long
+                if len(cell_text) > cell_width:
+                    cell_text = cell_text[:cell_width - 1] + '...'
+                row_cells.append(cell_text.center(cell_width + 2))
+
+            # Print row with left index and vertical separators
+            print(f" {str(y % 10)} | " + ''.join(row_cells) + '|')
+
+            # Print middle separator between rows (except after last rendered row)
+            if y < y_max:
+                print(mid_border)
+
+        # Bottom border
+        print(bottom_border)
