@@ -298,10 +298,10 @@ class SensorOnlyObservationGenerator(ObservationGenerator):
                     idx = (i + sensor_range) * (2 * sensor_range + 1) + (j + sensor_range)
                     if enemy:
                         sensor_grid[idx] = 0.9
-        elif post:
-            sensor_grid[idx] = 0.7
-        elif ast:
-            sensor_grid[idx] = 0.5
+                    elif post:
+                        sensor_grid[idx] = 0.7
+                    elif ast:
+                        sensor_grid[idx] = 0.5
 
         features.extend(sensor_grid)
 
