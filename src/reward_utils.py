@@ -163,7 +163,7 @@ class SellBonusReward(RewardComponent):
     """Provide an additional bonus when selling nutrinium successfully.
 
     The component uses the raw_reward passed to the composite (which for SELL is
-    credits earned * 0.1). We amplify that by `extra_frac` to provide a bonus.
+    credits_earned * 0.1). We amplify that by `extra_frac` to provide a bonus.
     """
 
     def __init__(self, extra_frac: float = 0.5):
