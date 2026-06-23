@@ -1,13 +1,14 @@
-"""
-Spatial/geometry helper mixin for :class:`ProspectorsPiratesEnv`.
+"""Spatial/geometry helper mixin for :class:`ProspectorsPiratesEnv`.
 
-Distance math and entity-location lookups (including the per-step spatial cache) used across observation, action and AI logic.
+Distance math and entity-location lookups (including the per-step spatial
+cache) used across observation, action and AI logic.
 """
 
 from env_common import *
 
 class EnvGeometryMixin:
     """Distance and entity-location helpers."""
+
 
     def _get_entity_at_location(self, x: int, y: int, entities: List[dict]) -> Optional[dict]:
         """Get entity at a specific location using spatial cache for performance."""
