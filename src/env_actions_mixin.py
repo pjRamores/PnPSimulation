@@ -6,6 +6,7 @@ targeting, combat-state bookkeeping) and the per-ship pre/post action ticks.
 """
 
 from env_common import *
+from src.bots.bot_v2 import candidates
 
 
 class EnvActionsMixin:
@@ -198,22 +199,22 @@ class EnvActionsMixin:
             ship['nutrinium'] += payout
 
             mine_details['payout'] = payout
-    mine_details['ast_mass_after'] = asteroid['mass']
-    mine_details['ast_nutr_after'] = asteroid['nutrinium']
-    mine_details['ship_nutr'] = ship['nutrinium']
+            mine_details['ast_mass_after'] = asteroid['mass']
+            mine_details['ast_nutr_after'] = asteroid['nutrinium']
+            mine_details['ship_nutr'] = ship['nutrinium']
 
-    return payout * 0.05, True, mine_details  # Reward for mining (precursor to SELL for credits)
-    else:
-        # Failed mining: asteroid still loses 1 mass.
-        asteroid['mass'] -= 1
-        if asteroid['mass'] < 0:
-            asteroid['mass'] = 0
+            return payout * 0.05, True, mine_details  # Reward for mining (precursor to SELL for credits)
+        else:
+            # Failed mining: asteroid still loses 1 mass.
+            asteroid['mass'] -= 1
+            if asteroid['mass'] < 0:
+                asteroid['mass'] = 0
 
-    mine_details['payout'] = 0
-    mine_details['ast_mass_after'] = asteroid['mass']
-    mine_details['ast_nutr_after'] = asteroid['nutrinium']
+            mine_details['payout'] = 0
+            mine_details['ast_mass_after'] = asteroid['mass']
+            mine_details['ast_nutr_after'] = asteroid['nutrinium']
 
-    return -0.05, False, mine_details
+            return -0.05, False, mine_details
 
     def _action_move(self, ship: dict, action: int) -> Tuple[float, bool, Optional[dict]]:
         """Move ship in a direction (server axis: N=y+1, S=y-1, E=x+1, W=x-1)."""
@@ -279,7 +280,7 @@ class EnvActionsMixin:
         if delta <= 0 and shield.get('state') == 'POWERED':
             return False
 
-        efficiency_factor = max(0.0, 1.0 - self.skill(ship, 'shield_efficiency') * 0.05)
+        efficiency_factor = max(0.0, 1.0 - self._skill(ship, 'shield_efficiency') * 0.05)
         needed_chunks = max(1, math.ceil(delta / rate)) if delta > 0 else 0
         full_cost = int(round(needed_chunks * efficiency_factor))
 
@@ -296,7 +297,8 @@ class EnvActionsMixin:
                 affordable_chunks = needed_chunks
             else:
                 affordable_chunks = int(energy // efficiency_factor)
-        return False
+            if affordable_chunks <= 0:
+                return False
             value_added = min(delta, affordable_chunks * rate)
             cost = int(round(affordable_chunks * efficiency_factor))
             shield['value'] = current + value_added
@@ -337,8 +339,8 @@ class EnvActionsMixin:
         the floor (cheaper short jumps); per-unit cost grows with distance.
         """
         unit_cost = self.config['energy_costs']['jump']
-        adj_min_cost = max(0, self.config['energy_costs']['jump_min_cost'] -
-                           self._skill(ship, 'jump_cost') * 5)
+        adj_min_cost = max(0, self.config['energy_costs']['jump_min_cost']
+                          - self._skill(ship, 'jump_cost') * 5)
         return int(max(adj_min_cost, round(unit_cost * distance)))
 
     def _action_jump(self, ship: dict, target: Optional[Tuple[int, int]] = None) -> Tuple[float, bool, Optional[dict]]:
@@ -349,7 +351,7 @@ class EnvActionsMixin:
         nutrinium-to-distance score, so the model's observation of top asteroids aligns with
         where an auto JUMP goes (legacy behaviour).
         """
-        if not self.action_allowed(ship, 'JUMP'):
+        if not self._action_allowed(ship, 'JUMP'):
             return -0.1, False, None
 
         if not self.has_module(ship, 'JUMP'):
@@ -396,40 +398,40 @@ class EnvActionsMixin:
         """Jump to nearest trading post"""
         if not self.action_allowed(ship, 'JUMP'):
             return -0.1, False, None
-    if not self._has_module(ship, 'JUMP'):
-        return -0.1, False, {'error': 'JUMP module not equipped'}
+        if not self._has_module(ship, 'JUMP'):
+            return -0.1, False, {'error': 'JUMP module not equipped'}
 
-    # Find nearest trading post
-    nearest_post = self._get_nearest_entity(ship['x'], ship['y'], self.trading_posts)
-    if nearest_post is None:
-        return -0.1, False, None
+        # Find nearest trading post
+        nearest_post = self._get_nearest_entity(ship['x'], ship['y'], self.trading_posts)
+        if nearest_post is None:
+            return -0.1, False, None
 
-    distance = self._calculate_distance(ship['x'], ship['y'], nearest_post['x'], nearest_post['y'])
+        distance = self._calculate_distance(ship['x'], ship['y'], nearest_post['x'], nearest_post['y'])
 
-    # Prevent jumping to same location (distance 0) -- should SELL instead
-    if distance == 0:
-        return -0.1, False, {'error': 'already at trading post, use SELL instead'}
+        # Prevent jumping to same location (distance 0) -- should SELL instead
+        if distance == 0:
+            return -0.1, False, {'error': 'already at trading post, use SELL instead'}
 
-    # Range check: jumps beyond the ship's max range are rejected.
-    if distance > self._max_jump_distance(ship):
-        return -0.1, False, {'error': 'OUT_OF_JUMP_RANGE', 'distance': distance,
-                             'max_jump': self._max_jump_distance(ship)}
+        # Range check: jumps beyond the ship's max range are rejected.
+        if distance > self._max_jump_distance(ship):
+            return -0.1, False, {'error': 'OUT_OF_JUMP_RANGE', 'distance': distance,
+                                 'max_jump': self._max_jump_distance(ship)}
 
-    energy_cost = self._jump_energy_cost(ship, distance)
+        energy_cost = self._jump_energy_cost(ship, distance)
 
-    if ship['energy'] < energy_cost:
-        return -0.1, False, None
+        if ship['energy'] < energy_cost:
+            return -0.1, False, None
 
-    # Jump to trading post
-    old_x, old_y = ship['x'], ship['y']
-    ship['x'] = nearest_post['x']
-    ship['y'] = nearest_post['y']
-    ship['energy'] -= energy_cost
+        # Jump to trading post
+        old_x, old_y = ship['x'], ship['y']
+        ship['x'] = nearest_post['x']
+        ship['y'] = nearest_post['y']
+        ship['energy'] -= energy_cost
 
-    payload = {'from': (old_x, old_y), 'to': (ship['x'], ship['y']), 'distance': distance, 'energy_cost': energy_cost}
-    return -0.01, True, payload
+        payload = {'from': (old_x, old_y), 'to': (ship['x'], ship['y']), 'distance': distance, 'energy_cost': energy_cost}
+        return -0.01, True, payload
 
-    def action_sell(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
+    def _action_sell(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
         """Sell all nutrinium at a trading post using the dynamic market price.
 
         The sale price is the current market price lifted by the seller's team bonus.
@@ -495,6 +497,12 @@ class EnvActionsMixin:
         """Active (non-destroyed) enemy ships sharing this ship's tile."""
         if is_player:
             candidates = list(self.opponent_ships)
+        else:
+            candidates = [self.player_ship] + [o for o in self.opponent_ships if o is not ship]
+        return [t for t in candidates
+                if not t.get('destroyed', False)
+                and t['x'] == ship['x'] and t['y'] == ship['y']]
+
     def _action_plunder(self, ship: dict, is_player: bool,
                         target_coord: Optional[Tuple[int, int]] = None) -> Tuple[float, bool, Optional[dict]]:
         """Steal nutrinium from a shields-down enemy in the same zone.
@@ -559,7 +567,7 @@ class EnvActionsMixin:
         if not self._action_allowed(ship, 'SALVAGE'):
             return -0.1, False, None
 
-        if not self.has_module(ship, 'SALVAGE'):
+        if not self._has_module(ship, 'SALVAGE'):
             return -0.1, False, {'error': 'SALVAGE module not equipped'}
 
         cost = self.config['salvage']['energy_cost']
@@ -588,37 +596,40 @@ class EnvActionsMixin:
 
     def _action_repair(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
         """Restore hull to full at a trading post (REPAIR module).
-    if not self._action_allowed(ship, 'REPAIR'):
-        return -0.1, False, None
+
+        Costs a fixed credit amount, charged even if already at full health. Requires
+        the REPAIR module, presence at a trading post, and sufficient credits.
+        """
+        if not self._action_allowed(ship, 'REPAIR'):
+            return -0.1, False, None
+
+        if not self._has_module(ship, 'REPAIR'):
+            return -0.1, False, {'error': 'REPAIR module not equipped'}
+
+        trading_post = self._get_entity_at_location(ship['x'], ship['y'], self.trading_posts)
+        if trading_post is None:
+            return -0.1, False, {'error': 'not at a trading post'}
+
+        cost = self.config['market']['repair']
+        if ship.get('credits', 0) < cost:
+            return -0.1, False, {'error': 'insufficient credits to repair'}
+
+        health_before = ship.get('health', 0)
+        ship['credits'] -= cost
+        ship['health'] = self.config['max_health']
+
+        details = {'health': f"{health_before}->{ship['health']}", 'credit_cost': cost}
+        return 0.05, True, details
     
-    if not self._has_module(ship, 'REPAIR'):
-        return -0.1, False, {'error': 'REPAIR module not equipped'}
-    
-    trading_post = self._get_entity_at_location(ship['x'], ship['y'], self.trading_posts)
-    if trading_post is None:
-        return -0.1, False, {'error': 'not at a trading post'}
-    
-    cost = self.config['market']['repair']
-    if ship.get('credits', 0) < cost:
-        return -0.1, False, {'error': 'insufficient credits to repair'}
-    
-    health_before = ship.get('health', 0)
-    ship['credits'] -= cost
-    ship['health'] = self.config['max_health']
-    
-    details = {'health': f"{health_before}->{ship['health']}", 'credit_cost': cost}
-    return 0.05, True, details
-    
-    def action_negotiate(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
+    def _action_negotiate(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
         """Negotiate a team bonus at the ship's objective trading post.
 
         Resolves to SUCCESS / FAIL / NEUTRAL using base odds shifted by negotiate_skill.
         SUCCESS raises the team's bonus (amplified by negotiate_ambition, diminishing
         toward the ceiling); FAIL lowers it (softened by negotiate_caution). The
         objective is then consumed and a new one assigned.
-
         """
-        if not self.action_allowed(ship, 'NEGOTIATE'):
+        if not self._action_allowed(ship, 'NEGOTIATE'):
             return -0.1, False, None
     
         cost = self.config['energy_costs']['negotiate']
@@ -632,7 +643,7 @@ class EnvActionsMixin:
     
         ship['energy'] -= cost
         ncfg = self.config['negotiate']
-        skill = self.skill(ship, 'negotiate_skill')
+        skill = self._skill(ship, 'negotiate_skill')
         succ = max(0.0, min(1.0, ncfg['base_success_chance'] + skill * 0.05))
         fail = max(ncfg['min_fail_chance'], ncfg['base_fail_chance'] - skill * 0.05)
         if succ + fail > 1.0:
@@ -645,14 +656,14 @@ class EnvActionsMixin:
         roll = random.random()
         if roll < succ:
             outcome = 'SUCCESS'
-            gain = ncfg['bonus_gain'] * (1.0 + self.skill(ship, 'negotiate_ambition') * 0.1)
+            gain = ncfg['bonus_gain'] * (1.0 + self._skill(ship, 'negotiate_ambition') * 0.1)
             # Diminishing returns toward the ceiling.
             applied = gain * (1.0 - current / max_bonus) if max_bonus > 0 else gain
             self.team_bonuses[team_id] = min(max_bonus, current + applied)
             reward = 0.1
         elif roll < succ + fail:
             outcome = 'FAIL'
-            penalty = ncfg['bonus_penalty'] * max(0.0, 1.0 - self.skill(ship, 'negotiate_caution') * 0.08)
+            penalty = ncfg['bonus_penalty'] * max(0.0, 1.0 - self._skill(ship, 'negotiate_caution') * 0.08)
             self.team_bonuses[team_id] = max(0.0, current - penalty)
             reward = -0.05
         else:
@@ -664,7 +675,7 @@ class EnvActionsMixin:
         if self.trading_posts:
             new_post = random.choice(self.trading_posts)
             new_objective = {'tradingPostName': new_post.get('name'), 'tradingPostId': new_post.get('id')}
-            ship.setdefault('objectives', {})[negotiate] = new_objective
+            ship.setdefault('objectives', {})['negotiate'] = new_objective
     
         details = {
             'outcome': outcome,
@@ -674,7 +685,7 @@ class EnvActionsMixin:
         }
         return reward, outcome != 'FAIL', details
     
-    def action_respawn(self, ship: dict) -> bool:
+    def _action_respawn(self, ship: dict) -> bool:
         """Respawn a destroyed ship using escalating team insurance.
 
         Cost per respawn = base_cost_per_member * (1 + cost_escalation * team_respawn_count),
@@ -686,34 +697,34 @@ class EnvActionsMixin:
     
         team_id = ship.get('team_id', 0)
         team_count = self.team_respawn_counts.get(team_id, 0)
-    base = self.config['team_insurance']['base_cost_per_member']
-    escalation = self.config['team_insurance']['cost_escalation']
-    respawn_cost = int(round(base * (1.0 + escalation * team_count)))
-    
-    # Score floor: credits never go negative (insurance covers any shortfall).
-    ship['credits'] = max(0, ship.get('credits', 0) - respawn_cost)
-    
-    # Reset ship state
-    ship['destroyed'] = False
-    ship['health'] = self.config['max_health']
-    ship['energy'] = 0 # Start with 0 energy after respawn
-    ship['nutrinium'] = 0 # Lose all nutrinium
-    ship['shields_up'] = False
-    ship['recharging'] = False
-    ship['state'] = 'READY'
-    if isinstance(ship.get('shield'), dict):
-        ship['shield']['value'] = 0
-        ship['shield']['state'] = 'DOWN'
-    
-    # Respawn at random location
-    ship['x'] = random.randint(0, self.map_width - 1)
-    ship['y'] = random.randint(0, self.map_height - 1)
-    
-    # Increment respawn counters (team-shared + per-ship)
-    self.team_respawn_counts[team_id] = team_count + 1
-    ship['respawn_count'] = ship.get('respawn_count', 0) + 1
-    
-    return True
+        base = self.config['team_insurance']['base_cost_per_member']
+        escalation = self.config['team_insurance']['cost_escalation']
+        respawn_cost = int(round(base * (1.0 + escalation * team_count)))
+
+        # Score floor: credits never go negative (insurance covers any shortfall).
+        ship['credits'] = max(0, ship.get('credits', 0) - respawn_cost)
+
+        # Reset ship state
+        ship['destroyed'] = False
+        ship['health'] = self.config['max_health']
+        ship['energy'] = 0 # Start with 0 energy after respawn
+        ship['nutrinium'] = 0 # Lose all nutrinium
+        ship['shields_up'] = False
+        ship['recharging'] = False
+        ship['state'] = 'READY'
+        if isinstance(ship.get('shield'), dict):
+            ship['shield']['value'] = 0
+            ship['shield']['state'] = 'DOWN'
+
+        # Respawn at random location
+        ship['x'] = random.randint(0, self.map_width - 1)
+        ship['y'] = random.randint(0, self.map_height - 1)
+
+        # Increment respawn counters (team-shared + per-ship)
+        self.team_respawn_counts[team_id] = team_count + 1
+        ship['respawn_count'] = ship.get('respawn_count', 0) + 1
+
+        return True
     
     def _action_attack(self, ship: dict, is_player: bool, payload: Optional[int] = None,
                        target_coord: Optional[Tuple[int, int]] = None) -> Tuple[float, bool, Optional[dict]]:
@@ -753,8 +764,8 @@ class EnvActionsMixin:
     
             # Consider the player as a target
             if (not self.player_ship.get('destroyed', False)
-                and self.player_ship['x'] == ship['x']
-                and self.player_ship['y'] == ship['y']):
+                    and self.player_ship['x'] == ship['x']
+                    and self.player_ship['y'] == ship['y']):
                 same_zone_targets.append(self.player_ship)
     
             # Consider other opponents as targets
@@ -787,130 +798,130 @@ class EnvActionsMixin:
             return -0.1, False, None
     
         # Capture pre-combat state for detailed reporting
-    target_health_before = target['health']
-    target_shield = target.get('shield') if isinstance(target.get('shield'), dict) else None
-    target_shield_state = self._shield_state(target)
-    target_shield_value_before = target_shield['value'] if target_shield else 0
-    target_energy_before = target.get('energy', 0)
-    attacker_energy_before = ship['energy']
-    
-    cfg = self.config['combat']
-    
-    # Commit energy payload (consumed even on a miss). Until the Dict action space
-    # exposes an energy bin (P9), use the configured default, capped by available energy.
-    if payload is None:
-        payload = cfg['default_attack_payload']
-    payload = int(max(self.config['energy_costs']['attack'], min(payload, ship['energy'])))
-    ship['energy'] -= payload
-    
-    # An attack engages both ships regardless of whether it lands.
-    ship['in_combat'] = True
-    ship.setdefault('combat_opponent_positions', set()).add((target['x'], target['y']))
-    target['in_combat'] = True
-    target.setdefault('combat_opponent_positions', set()).add((ship['x'], ship['y']))
-    
-    # --- Hit roll: base target number lifted by attack accuracy, lowered by evade,
-    # eased when the target is recharging. Clamped to leave a guaranteed miss/hit margin.
-    hit_chance = (cfg['base_target_number']
-                 + self._skill(ship, 'attack_accuracy') * 0.05
-                 - self._skill(target, 'evade') * 0.05)
-    if target.get('recharging'):
-        hit_chance += cfg['recharge_penalty']
-    hit_chance = max(cfg['guaranteed_hit_chance'],
-                     min(1.0 - cfg['guaranteed_miss_chance'], hit_chance))
-    hit = random.random() < hit_chance
-    
-    combat_details = {
-        'target': target.get('name', 'Unknown'),
-        'atk_energy': f'{attacker_energy_before}->{ship["energy"]}',
-        'payload': payload,
-        'atk_power': self._skill(ship, 'attack_power'),
-        'atk_accuracy': self._skill(ship, 'attack_accuracy'),
-        'hit_chance': round(hit_chance * 100, 1),
-        'def_evade': self._skill(target, 'evade'),
-        'def_shield_state': target_shield_state,
-        'def_shield_value': target_shield_value_before,
-        'def_shield_str': self._skill(target, 'shield_strength'),
-        'def_energy': target_energy_before,
-    }
-    
-    if not hit:
-        combat_details['hit'] = False
+        target_health_before = target['health']
+        target_shield = target.get('shield') if isinstance(target.get('shield'), dict) else None
+        target_shield_state = self._shield_state(target)
+        target_shield_value_before = target_shield['value'] if target_shield else 0
+        target_energy_before = target.get('energy', 0)
+        attacker_energy_before = ship['energy']
+
+        cfg = self.config['combat']
+
+        # Commit energy payload (consumed even on a miss). Until the Dict action space
+        # exposes an energy bin (P9), use the configured default, capped by available energy.
+        if payload is None:
+            payload = cfg['default_attack_payload']
+        payload = int(max(self.config['energy_costs']['attack'], min(payload, ship['energy'])))
+        ship['energy'] -= payload
+
+        # An attack engages both ships regardless of whether it lands.
+        ship['in_combat'] = True
+        ship.setdefault('combat_opponent_positions', set()).add((target['x'], target['y']))
+        target['in_combat'] = True
+        target.setdefault('combat_opponent_positions', set()).add((ship['x'], ship['y']))
+
+        # --- Hit roll: base target number lifted by attack accuracy, lowered by evade,
+        # eased when the target is recharging. Clamped to leave a guaranteed miss/hit margin.
+        hit_chance = (cfg['base_target_number']
+                     + self._skill(ship, 'attack_accuracy') * 0.05
+                     - self._skill(target, 'evade') * 0.05)
+        if target.get('recharging'):
+            hit_chance += cfg['recharge_penalty']
+        hit_chance = max(cfg['guaranteed_hit_chance'],
+                         min(1.0 - cfg['guaranteed_miss_chance'], hit_chance))
+        hit = random.random() < hit_chance
+
+        combat_details = {
+            'target': target.get('name', 'Unknown'),
+            'atk_energy': f'{attacker_energy_before}->{ship["energy"]}',
+            'payload': payload,
+            'atk_power': self._skill(ship, 'attack_power'),
+            'atk_accuracy': self._skill(ship, 'attack_accuracy'),
+            'hit_chance': round(hit_chance * 100, 1),
+            'def_evade': self._skill(target, 'evade'),
+            'def_shield_state': target_shield_state,
+            'def_shield_value': target_shield_value_before,
+            'def_shield_str': self._skill(target, 'shield_strength'),
+            'def_energy': target_energy_before,
+        }
+
+        if not hit:
+            combat_details['hit'] = False
+            combat_details['def_health'] = f"{target_health_before}->{target['health']}"
+            # Missing still cost the payload; small penalty to discourage spray-and-pray.
+            return -0.05, False, combat_details
+
+        # --- Damage: payload scaled by attack_power (+10%/pt) and a random spread.
+        avg_multiplier = 1.0 + self._skill(ship, 'attack_power') * 0.1
+        variance = random.uniform(1.0 - cfg['damage_variance'], 1.0 + cfg['damage_variance'])
+        damage = max(1, int(round(payload * avg_multiplier * variance)))
+
+        # --- Shield resistance: base + shield_strength/20, capped at 0.75.
+        resistance = min(0.75, cfg['base_shield_resistance']
+                         + self._skill(target, 'shield_strength') * 0.05)
+        shield_dmg = int(round(damage * cfg['attack_shield_damage']))
+
+        if target_shield and target_shield_state == 'POWERED' and shield_dmg <= target_shield_value_before:
+            # HOLD: shields absorb the strike; reduced damage bleeds through to the hull.
+            health_dmg = round(damage * (1.0 - resistance))
+            target_shield['value'] = target_shield_value_before - shield_dmg
+        else:
+            # BREAK (also covers shields DOWN / value 0): the portion the shield could
+            # stop is reduced by resistance; the remainder lands at full strength.
+            absorbable = math.ceil(target_shield_value_before / cfg['attack_shield_damage']) \
+                if target_shield_value_before > 0 else 0
+            absorbable = min(absorbable, damage)
+            reduced = round(absorbable * (1.0 - resistance))
+            unreduced = damage - absorbable
+            health_dmg = reduced + unreduced
+            if target_shield:
+                target_shield['value'] = 0
+                target_shield['state'] = 'DOWN'
+            target['shields_up'] = False
+
+        health_dmg = max(0, health_dmg)
+        target['health'] = max(0, target['health'] - health_dmg)
+
+        combat_details['hit'] = True
+        combat_details['damage'] = damage
+        combat_details['health_dmg'] = health_dmg
         combat_details['def_health'] = f"{target_health_before}->{target['health']}"
-        # Missing still cost the payload; small penalty to discourage spray-and-pray.
-        return -0.05, False, combat_details
+        combat_details['def_shield_value_after'] = target_shield['value'] if target_shield else 0
+
+        # Check if target is destroyed
+        if target['health'] <= 0:
+            target['destroyed'] = True
+            target['state'] = 'DESTROYED'
     
-    # --- Damage: payload scaled by attack_power (+10%/pt) and a random spread.
-    avg_multiplier = 1.0 + self._skill(ship, 'attack_power') * 0.1
-    variance = random.uniform(1.0 - cfg['damage_variance'], 1.0 + cfg['damage_variance'])
-    damage = max(1, int(round(payload * avg_multiplier * variance)))
+            # Destroyed ships spill part of their nutrinium into salvageable wreckage at
+            # their location (recoverable via SALVAGE); it is NOT given to the attacker.
+            nutrinium_before = target['nutrinium']
+            wreckage_nutr = int(round(self.config['salvage']['wreckage_percent'] * nutrinium_before))
+            if wreckage_nutr > 0:
+            self.wreckage.append({'x': target['x'], 'y': target['y'], 'nutrinium': wreckage_nutr})
     
-    # --- Shield resistance: base + shield_strength/20, capped at 0.75.
-    resistance = min(0.75, cfg['base_shield_resistance']
-                     + self._skill(target, 'shield_strength') * 0.05)
-    shield_dmg = int(round(damage * cfg['attack_shield_damage']))
+            # Wipe destroyed-ship resources and shields.
+            target['energy'] = 0
+            target['nutrinium'] = 0
+            if target_shield:
+                target_shield['value'] = 0
+                target_shield['state'] = 'DOWN'
+            target['shields_up'] = False
+
+            reward = 0.5 + wreckage_nutr * 0.1  # kill reward; salvage realises the value
+
+            combat_details['destroyed'] = True
+            combat_details['wreckage_nutrinium'] = wreckage_nutr
+
+            return reward, True, combat_details
+        else:
+            # Successful hit but target survived. Small reward; combat is a means to an end.
+            combat_details['destroyed'] = False
+            combat_details['target_health'] = target['health']
     
-    if target_shield and target_shield_state == 'POWERED' and shield_dmg <= target_shield_value_before:
-        # HOLD: shields absorb the strike; reduced damage bleeds through to the hull.
-        health_dmg = round(damage * (1.0 - resistance))
-        target_shield['value'] = target_shield_value_before - shield_dmg
-    else:
-        # BREAK (also covers shields DOWN / value 0): the portion the shield could
-        # stop is reduced by resistance; the remainder lands at full strength.
-        absorbable = math.ceil(target_shield_value_before / cfg['attack_shield_damage']) \
-            if target_shield_value_before > 0 else 0
-        absorbable = min(absorbable, damage)
-        reduced = round(absorbable * (1.0 - resistance))
-        unreduced = damage - absorbable
-        health_dmg = reduced + unreduced
-        if target_shield:
-            target_shield['value'] = 0
-            target_shield['state'] = 'DOWN'
-        target['shields_up'] = False
+            return 0.02, True, combat_details
     
-    health_dmg = max(0, health_dmg)
-    target['health'] = max(0, target['health'] - health_dmg)
-    
-    combat_details['hit'] = True
-    combat_details['damage'] = damage
-    combat_details['health_dmg'] = health_dmg
-    combat_details['def_health'] = f"{target_health_before}->{target['health']}"
-    combat_details['def_shield_value_after'] = target_shield['value'] if target_shield else 0
-    
-    # Check if target is destroyed
-    if target['health'] <= 0:
-        target['destroyed'] = True
-        target['state'] = 'DESTROYED'
-    
-    # Destroyed ships spill part of their nutrinium into salvageable wreckage at
-    # their location (recoverable via SALVAGE); it is NOT given to the attacker.
-    nutrinium_before = target['nutrinium']
-    wreckage_nutr = int(round(self.config['salvage']['wreckage_percent'] * nutrinium_before))
-    if wreckage_nutr > 0:
-    self.wreckage.append({'x': target['x'], 'y': target['y'], 'nutrinium': wreckage_nutr})
-    
-    # Wipe destroyed-ship resources and shields.
-    target['energy'] = 0
-    target['nutrinium'] = 0
-    if target_shield:
-        target_shield['value'] = 0
-        target_shield['state'] = 'DOWN'
-    target['shields_up'] = False
-    
-    reward = 0.5 + wreckage_nutr * 0.1  # kill reward; salvage realises the value
-    
-    combat_details['destroyed'] = True
-    combat_details['wreckage_nutrinium'] = wreckage_nutr
-    
-    return reward, True, combat_details
-    else:
-        # Successful hit but target survived. Small reward; combat is a means to an end.
-        combat_details['destroyed'] = False
-        combat_details['target_health'] = target['health']
-    
-    return 0.02, True, combat_details
-    
-    def update_combat_states(self):
+    def _update_combat_states(self):
         """
         Update each ship's 'state' based on game state.
 
@@ -969,7 +980,7 @@ class EnvActionsMixin:
         s['in_combat'] = False
         s['combat_opponent_positions'] = set()
     
-    def effective_max_energy(self, ship: dict) -> int:
+    def _effective_max_energy(self, ship: dict) -> int:
         """Energy cap for a ship: base maxEnergy + energy max skill (+10 per point)."""
         return int(self.config['max_energy'] + self._skill(ship, 'energy_max') * 10)
     
@@ -985,21 +996,21 @@ class EnvActionsMixin:
 
         """
         if ship is None or ship.get('destroyed', False):
-    return
+            return
     
-    shield = ship.get('shield')
-    # Step 1: shield maintenance (only while POWERED)
-    if shield and shield.get('state') == 'POWERED':
-        ship['energy'] -= self.config['energy_costs']['shield_maintenance']
-        if ship['energy'] < 0:
-            ship['energy'] = 0
-            shield['state'] = 'DRAINING'
-    
-    # Step 2: recharge gain (before action)
-    if ship.get('recharging', False):
-        gain = self.config['energy_per_recharge'] + self._skill(ship, 'recharge_energy') * 2
-        cap = self._effective_max_energy(ship)
-        ship['energy'] = min(cap, ship['energy'] + gain)
+        shield = ship.get('shield')
+        # Step 1: shield maintenance (only while POWERED)
+        if shield and shield.get('state') == 'POWERED':
+            ship['energy'] -= self.config['energy_costs']['shield_maintenance']
+            if ship['energy'] < 0:
+                ship['energy'] = 0
+                shield['state'] = 'DRAINING'
+
+        # Step 2: recharge gain (before action)
+        if ship.get('recharging', False):
+            gain = self.config['energy_per_recharge'] + self._skill(ship, 'recharge_energy') * 2
+            cap = self._effective_max_energy(ship)
+            ship['energy'] = min(cap, ship['energy'] + gain)
     
     def _post_action_tick(self, ship: dict) -> None:
         """Apply the post-action portion of the per-ship tick order (step 4).
