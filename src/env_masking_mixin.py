@@ -99,6 +99,8 @@ class EnvMaskingMixin:
         Returns:
             (is_valid, reason) - True if valid, False with reason string if invalid
         """
+        return action_masker.is_action_valid(action, self._build_mask_state(ship, is_player=is_player))
+
     def _build_mask_state(self, ship: dict, is_player: bool = True) -> 'action_masker.MaskState':
         """Adapt the full simulator state into a neutral :class:`MaskState`.
 
