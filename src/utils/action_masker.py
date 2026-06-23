@@ -131,15 +131,15 @@ class MaskState:
     map_height: int
     max_energy: int
     max_health: int
-    energy_costs: dict         # keys: mine, move, attack, shields, jump, plunder, negotiate
+    energy_costs: dict          # keys: mine, move, attack, shields, jump, plunder, negotiate
     salvage_energy_cost: int
-    repair_cost: int           # credits required to repair
+    repair_cost: int            # credits required to repair
     action_restrictions: dict = field(default_factory=dict)
 
-# ----------------------------------------------------------------------------
-# Pure helpers (ported from the env mixins; no env dependency)
-# ----------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Pure helpers (ported from the env mixins; no env dependency)
+# ---------------------------------------------------------------------------
 def _distance(x1: int, y1: int, x2: int, y2: int) -> float:
     """Euclidean distance between two cells."""
     return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
@@ -246,9 +246,10 @@ def _restriction_reason(st: MaskState, action_name: str) -> Optional[str]:
         return f"{action_name} not allowed with shields up"
     return None
 
-# --------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
 # Validity rules (ported verbatim from EnvMaskingMixin._is_action_valid_for_state)
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
     """Validate whether ``action`` is valid given the state ``st``.
 
@@ -367,7 +368,7 @@ def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
             return False, "JUMP module not equipped"
         if st.nutrinium < 10:
             return False, "not enough nutrinium to justify jumping to trading post (need >= 10)"
-        current_post = entity_at(st.x, st.y, st.trading_posts)
+        current_post = _entity_at(st.x, st.y, st.trading_posts)
         if current_post is not None:
             return False, "already at a trading post, use SELL instead"
         post = _nearest_entity(st.x, st.y, st.trading_posts)
@@ -381,7 +382,7 @@ def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
 
     # SELL - requires being at a trading post with nutrinium
     if action == SELL:
-        trading_post = entity_at(st.x, st.y, st.trading_posts)
+        trading_post = _entity_at(st.x, st.y, st.trading_posts)
         if trading_post is None:
             return False, "not at a trading post"
         if st.nutrinium <= 0:
