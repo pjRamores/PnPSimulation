@@ -306,7 +306,7 @@ class EnvSetupMixin:
             # Validate coordinates
             if not (0 <= start_data['player_x'] < self.map_width and 0 <= start_data['player_y'] < self.map_height):
                 logger.warning(f"Start position out of bounds: ({start_data['player_x']}, {start_data['player_y']})")
-                logger.warning(f"Falling back to random starting position.")
+                logger.warning(f"  Falling back to random starting position.")
                 return None
 
             start_position = {
@@ -323,7 +323,6 @@ class EnvSetupMixin:
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in start position config file {self.start_position_config_path}: {e}")
             logger.warning(f"  Falling back to random starting position.")
-
             return None
         except Exception as e:
             logger.error(f"Error loading start position config: {e}")
@@ -449,7 +448,7 @@ class EnvSetupMixin:
 
         Every ship receives the same ``budget`` each episode, but the allocation
         is independent and random per ship. The archetype is derived from
-        ``ai_type`` (e.g., PIRATE/BOT_V4 lean toward attack & defense, while
+        ``ai_type`` (e.g. PIRATE/BOT_V4 lean toward attack & defense, while
         PROSPECTOR/BOT_V3 lean toward mining & mobility); the player ship passes
         ``ai_type=None`` and is given a random archetype each episode so the
         agent trains against varied loadouts. The bias strength (mild / moderate
@@ -460,7 +459,8 @@ class EnvSetupMixin:
         budget is fully consumed. Each skill is capped at 10, so the effective
         maximum spend is `19 * 10 = 190`; budgets above that are clamped (all
         skills reach 10). Because every weight is positive, all 19 skills remain
-        reachable and the returned dict's values always sum to ``min(budget, 190)``.
+        reachable and the returned dict's values always sum to
+        ``min(budget, 190)``.
         """
         cap = 10
         skills = list(self.config['abilities'].keys())
@@ -485,10 +485,8 @@ class EnvSetupMixin:
                 weights.pop(idx)
         return abilities
 
-
     def _generate_episode_modules(self) -> list:
-        """
-        Choose which module-locked actions are installed this episode.
+        """Choose which module-locked actions are installed this episode.
 
         All ships share the same module set (a level playing field). Default mode
         'all' installs every module so jump/repair/salvage-heavy training is
@@ -616,7 +614,7 @@ class EnvSetupMixin:
 
             # If we couldn't load the model at all, return None
             if temp_model is None:
-                self.mark_enemy_model_unavailable(model_path, "unable to deserialize with PPO/DQN/A2C loaders")
+                self._mark_enemy_model_unavailable(model_path, "unable to deserialize with PPO/DQN/A2C loaders")
                 return None
 
             # Check action space compatibility. The env now uses a structured Dict action
@@ -629,11 +627,11 @@ class EnvSetupMixin:
             env_action_space = self.num_action_types
 
             if model_action_space is None:
-                self.mark_enemy_model_unavailable(
+                self._mark_enemy_model_unavailable(
                     model_path, "model action space is not Discrete; structured-action models unsupported")
                 return None
             if model_action_space > env_action_space:
-                self.mark_enemy_model_unavailable(
+                self._mark_enemy_model_unavailable(
                     model_path,
                     f"incompatible action space {model_action_space} vs {env_action_space}")
                 return None
@@ -670,9 +668,9 @@ class EnvSetupMixin:
                     if model_obs_space['observation'].shape != self.observation_space['observation'].shape:
                         obs_compat = False
                         logger.info(f"Enemy model {model_path} has different obs size "
-                                   f"{model_obs_space['observation'].shape[0]} vs "
-                                   f"{self.observation_space['observation'].shape[0]}, ",
-                                   "skipping env binding")
+                                   f"({model_obs_space['observation'].shape[0]} vs "
+                                   f"{self.observation_space['observation'].shape[0]}), "
+                                   f"skipping env binding")
             except Exception:
                 pass
 
@@ -682,7 +680,7 @@ class EnvSetupMixin:
                     env_action_space_size=self.num_action_types,
                     enable_action_masking=True,
                 )
-                self.enemy_models[model_path] = wrapped_model
+                self._enemy_models[model_path] = wrapped_model
                 logger.info(f"Loaded enemy model without env binding: {model_path} (action space: {model_action_space})")
                 return wrapped_model
 
