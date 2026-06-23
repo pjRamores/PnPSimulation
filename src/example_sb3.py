@@ -123,7 +123,7 @@ class ActionMaskWrapper(gym.Wrapper):
     fallback that existed before, because:
       - The model receives a consistent negative reward for invalid choices.
       - The replacement action is random among valid ones (no bias toward a
-          single fallback), so the model can't game the fallback.
+        single fallback), so the model can't game the fallback.
     """
 
     INVALID_ACTION_PENALTY = 0.0  # No penalty -- action is silently replaced with a valid one
@@ -513,7 +513,7 @@ def _print_performance_participant_stats(stats_list, opponents):
     # Aggregate stats across all episodes
     for stats in stats_list:
         # Rank participants for this episode: credits descending, then nutrinium
-        # descending, then shis destroyed (kills) descending, then energy
+        # descending, then ships destroyed (kills) descending, then energy
         # ascending. Breaking ties this way avoids awarding 1st place to PLAYER
         # purely because it was inserted first (stable-sort artifact).
         episode_rankings = []
@@ -637,8 +637,8 @@ def _print_performance_participant_stats(stats_list, opponents):
     cols = list(zip(*all_rows))
     widths = [max(len(str(cell)) for cell in col) for col in cols]
 
-    header_line = " ".join(h.ljust(w) for h, w in zip(headers, widths))
-    sep_line = " ".join('-' * w for w in widths)
+    header_line = "  ".join(h.ljust(w) for h, w in zip(headers, widths))
+    sep_line = "  ".join('-' * w for w in widths)
     print(f"  {header_line}")
     print(f"  {sep_line}")
     for row in ranked_rows:  # Show all participants
@@ -1042,9 +1042,9 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
     if cpu_settings.get('priority_set'):
         print(f"  Process Priority: {cpu_settings.get('process_priority', 'default')}")
     if efficiency_mode:
-        print(f" ⚡️ Efficiency Mode: Balanced CPU usage for background training")
+        print(f"  ⚡ Efficiency Mode: Balanced CPU usage for background training")
     else:
-        print(f" 🚀 Performance Mode: Maximum CPU usage for fastest training")
+        print(f"  🚀 Performance Mode: Maximum CPU usage for fastest training")
     print()
 
     # Create environment
@@ -1206,8 +1206,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                         else:
                             model.learning_rate = candidate
                             print(
-                                f"  Reduced learning rate for fine-tuning: {original_lr:.2e} -> {model.learning_rate:.2e}"
-                            )
+                                f"  Reduced learning rate for fine-tuning: {original_lr:.2e} -> {model.learning_rate:.2e}")
 
                 # Optionally freeze early layers
                 if freeze_layers:
@@ -1332,7 +1331,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
     # Get version number
     version = _get_next_version_number(algorithm, save_path, is_transfer)
 
-    model_path = os.path.join(save_path, f'{algorithm.lower()}_pn_model_v{version}')
+    model_path = os.path.join(save_path, f'{algorithm.lower()}_pnp_model_v{version}')
 
     # Save model FIRST so it can be loaded for performance testing
     _safe_model_save(model, model_path)
@@ -1380,7 +1379,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
             moving_avg = np.convolve(callback.episode_credits,
                                      np.ones(window) / window, mode='valid')
             plt.plot(range(window - 1, len(callback.episode_credits)),
-                    moving_avg, 'r-', linewidth=2, label=f'{window}-episode MA')
+                     moving_avg, 'r-', linewidth=2, label=f'{window}-episode MA')
             plt.legend()
 
         plt.subplot(1, 2, 2)
@@ -1629,36 +1628,36 @@ if __name__ == "__main__":
 Examples:
   # Train a new PPO model
   python example_sb3.py --algorithm PPO --timesteps 100000
-    
+
   # Long training with automatic checkpoints (saves every 1M timesteps)
   python example_sb3.py --algorithm PPO --timesteps 50000000
-    
+
   # Train with efficiency mode (lower CPU usage, good for background training)
   python example_sb3.py --algorithm PPO --timesteps 100000 --efficiency-mode
-    
+
   # Train with maximum CPU usage (default - fastest training)
   python example_sb3.py --algorithm PPO --timesteps 100000
-    
-    # Train with custom thread count
-    python example_sb3.py --algorithm PPO --timesteps 100000 --num-threads 4
-    
-    # Train with custom map size and opponents
-    python example_sb3.py --algorithm PPO --timesteps 100000 --map-width 15 --map-height 15 --min-opponents 1 --max-opponents 5
-    
-    # Train with predefined asteroids
-    python example_sb3.py --algorithm PPO --timesteps 100000 --predefined-asteroids --asteroid-config asteroids.config
-    
-    # Transfer learning: fine-tune an existing model
-    python example_sb3.py --algorithm PPO --timesteps 50000 --transfer-from models/ppo_pnp_model
-    
-    # Transfer learning with frozen layers and custom learning rate
-    python example_sb3.py --algorithm PPO --timesteps 50000 --transfer-from models/ppo_pnp_model --freeze-layers --learning-rate 0.00001
-    
-    # Train on larger map with more opponents and predefined asteroids
-    python example_sb3.py --algorithm PPO --timesteps 200000 --map-width 20 --map-height 20 --min-opponents 3 --max-opponents 5 --max-steps 500 --predefined-asteroids
-    
-    # Evaluate a trained model
-    python example_sb3.py --algorithm PPO --evaluate --model-path models/ppo_pnp_model --render
+
+  # Train with custom thread count
+  python example_sb3.py --algorithm PPO --timesteps 100000 --num-threads 4
+
+  # Train with custom map size and opponents
+  python example_sb3.py --algorithm PPO --timesteps 100000 --map-width 15 --map-height 15 --min-opponents 1 --max-opponents 5
+
+  # Train with predefined asteroids
+  python example_sb3.py --algorithm PPO --timesteps 100000 --predefined-asteroids --asteroid-config asteroids.config
+
+  # Transfer learning: fine-tune an existing model
+  python example_sb3.py --algorithm PPO --timesteps 50000 --transfer-from models/ppo_pnp_model
+
+  # Transfer learning with frozen layers and custom learning rate
+  python example_sb3.py --algorithm PPO --timesteps 50000 --transfer-from models/ppo_pnp_model --freeze-layers --learning-rate 0.00001
+
+  # Train on larger map with more opponents and predefined asteroids
+  python example_sb3.py --algorithm PPO --timesteps 200000 --map-width 20 --map-height 20 --min-opponents 3 --max-opponents 5 --max-steps 500 --predefined-asteroids
+
+  # Evaluate a trained model
+  python example_sb3.py --algorithm PPO --evaluate --model-path models/ppo_pnp_model --render
 """
     )
     parser.add_argument('--algorithm', type=str, default='PPO',
