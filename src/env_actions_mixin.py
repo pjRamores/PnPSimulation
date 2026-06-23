@@ -6,7 +6,6 @@ targeting, combat-state bookkeeping) and the per-ship pre/post action ticks.
 """
 
 from env_common import *
-from src.bots.bot_v2 import candidates
 
 
 class EnvActionsMixin:
@@ -107,9 +106,9 @@ class EnvActionsMixin:
         return reward, info
 
     def _apply_action_result(self, result, info: dict) -> float:
-        """Unpack a '__action__' return value into 'info' and return its reward.
+        """Unpack a ``__action__*`` return value into ``info`` and return its reward.
 
-        Handlers return either `(reward, success)` or `(reward, success, payload)`;
+        Handlers return either ``(reward, success)`` or ``(reward, success, payload)``;
         this consolidates the shared unpacking the dispatcher used to repeat per branch.
         """
         if isinstance(result, tuple) and len(result) == 3:
@@ -125,21 +124,21 @@ class EnvActionsMixin:
 
         Success probability is the asteroid's nutrinium concentration (nutrinium/mass,
         0-1), lifted toward 1 by the miner's mine_accuracy skill. Payout is a biased-low
-        random draw bounded by payout_modifier * remaining_nutrinium * yield_bonus, with a
+        random draw bounded by payout_modifier * remaining_nutrinium * yield-bonus, with a
         floor of 1 and capped at the remaining nutrinium. On success the asteroid loses
-        'payout' nutrinium and exactly 1 mass; on failure it loses 1 mass only.
+        `payout` nutrinium and exactly 1 mass; on failure it loses 1 mass only.
         """
         # Action restrictions: MINE is disallowed while recharging or with shields POWERED
         # (default). Honors metadata.actionRestrictions so configs can override.
         if not self._action_allowed(ship, 'MINE'):
             return -0.1, False
 
-        energy_cost = max(0, self.config['energy_costs']['mine'] - self.skill(ship, 'mine_cost'))
+        energy_cost = max(0, self.config['energy_costs']['mine'] - self._skill(ship, 'mine_cost'))
         if ship['energy'] < energy_cost:
             return -0.1, False
 
         # Find asteroid at current location
-        asteroid = self.get_entity_at_location(ship['x'], ship['y'], self.asteroids)
+        asteroid = self._get_entity_at_location(ship['x'], ship['y'], self.asteroids)
         if asteroid is None:
             return -0.1, False
 
@@ -158,7 +157,7 @@ class EnvActionsMixin:
             base_success = min(1.0, asteroid_nutr_before / asteroid_mass_before)
 
         # mine_accuracy skill closes the gap to certainty: Success = Base + (1-Base)*(skill*0.05)
-        mine_accuracy = self.skill(ship, 'mine_accuracy')
+        mine_accuracy = self._skill(ship, 'mine_accuracy')
         success_chance = base_success + (1.0 - base_success) * (mine_accuracy * 0.05)
         success_chance = max(0.0, min(1.0, success_chance))
 
@@ -171,8 +170,8 @@ class EnvActionsMixin:
             'ast_density': round(base_success, 4),
             'success_chance': round(success_chance * 100, 1),
             'mine_accuracy': mine_accuracy,
-            'mine_yield': self.skill(ship, 'mine_yield_multiplier'),
-            'mine_cost_skill': self.skill(ship, 'mine_cost'),
+            'mine_yield': self._skill(ship, 'mine_yield_multiplier'),
+            'mine_cost_skill': self._skill(ship, 'mine_cost'),
             'energy': f"{energy_before}->{ship['energy']}",
             'energy_cost': energy_cost,
         }
@@ -180,7 +179,7 @@ class EnvActionsMixin:
         if random.random() < success_chance:
             # Payout ceiling = payout_modifier * remaining nutrinium * (1 + mine_yield*0.1)
             remaining = asteroid_nutr_before
-            mine_yield = self.skill(ship, 'mine_yield_multiplier')
+            mine_yield = self._skill(ship, 'mine_yield_multiplier')
             ceiling = (self.config['mining']['payout_modifier']
                        * remaining * (1.0 + mine_yield * 0.1))
             # Biased-low random draw via Beta(alpha<beta); min 1, capped at remaining.
@@ -262,7 +261,8 @@ class EnvActionsMixin:
 
         Charges the shield's `value` toward its capacity in increments of
         shield_recharge_rate. Each increment costs (1 - shield_efficiency*0.05) energy.
-        If the ship can afford the full charge it reaches POWERED; if energy runs out first it gets a partial charge and is left DRAINING (it will decay each tick).
+        If the ship can afford the full charge it reaches POWERED; if energy runs out
+        first it gets a partial charge and is left DRAINING (it will decay each tick).
         """
         if not self._action_allowed(ship, 'RAISE_SHIELDS'):
             return False
@@ -328,7 +328,7 @@ class EnvActionsMixin:
         return True
 
     def _max_jump_distance(self, ship: dict) -> float:
-        """Maximum jump range = base max_jump_distance + jump_distance_skill * 10."""
+        """Maximum jump range = base max_jump_distance + jump_distance skill * 10."""
         return self.config['max_jump_distance'] + self._skill(ship, 'jump_distance') * 10
 
     def _jump_energy_cost(self, ship: dict, distance: float) -> int:
@@ -340,13 +340,13 @@ class EnvActionsMixin:
         """
         unit_cost = self.config['energy_costs']['jump']
         adj_min_cost = max(0, self.config['energy_costs']['jump_min_cost']
-                          - self._skill(ship, 'jump_cost') * 5)
+                           - self._skill(ship, 'jump_cost') * 5)
         return int(max(adj_min_cost, round(unit_cost * distance)))
 
     def _action_jump(self, ship: dict, target: Optional[Tuple[int, int]] = None) -> Tuple[float, bool, Optional[dict]]:
         """Jump to a coordinate within the ship's max jump range.
 
-        When an explicit `target` coordinate is supplied (structured action space) the ship
+        When an explicit ``target`` coordinate is supplied (structured action space) the ship
         jumps there directly. With no target it falls back to the best asteroid by
         nutrinium-to-distance score, so the model's observation of top asteroids aligns with
         where an auto JUMP goes (legacy behaviour).
@@ -354,16 +354,16 @@ class EnvActionsMixin:
         if not self._action_allowed(ship, 'JUMP'):
             return -0.1, False, None
 
-        if not self.has_module(ship, 'JUMP'):
+        if not self._has_module(ship, 'JUMP'):
             return -0.1, False, {'error': 'JUMP module not equipped'}
 
         if target is not None:
-            # Explicit coordinate jump: clamp the requested target onto the map.
+            # Explicit coordinate jump; clamp the requested target onto the map.
             tx = int(max(0, min(self.map_width - 1, target[0])))
             ty = int(max(0, min(self.map_height - 1, target[1])))
         else:
             # Auto-target: best asteroid by score (nutrinium value vs distance), not just nearest.
-            top = self.get_top_asteroids(ship['x'], ship['y'], count=1)
+            top = self._get_top_asteroids(ship['x'], ship['y'], count=1)
             if not top:
                 return -0.1, False, None
             best = top[0]
@@ -376,9 +376,9 @@ class EnvActionsMixin:
             return -0.1, False, {'error': 'target is at current location'}
 
         # Range check: jumps beyond the ship's max range are rejected.
-        if distance > self.max_jump_distance(ship):
+        if distance > self._max_jump_distance(ship):
             return -0.1, False, {'error': 'OUT_OF_JUMP_RANGE', 'distance': distance,
-                                'max_jump': self._max_jump_distance(ship)}
+                                  'max_jump': self._max_jump_distance(ship)}
 
         energy_cost = self._jump_energy_cost(ship, distance)
 
@@ -396,8 +396,9 @@ class EnvActionsMixin:
 
     def _action_jump_to_trading_post(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
         """Jump to nearest trading post"""
-        if not self.action_allowed(ship, 'JUMP'):
+        if not self._action_allowed(ship, 'JUMP'):
             return -0.1, False, None
+
         if not self._has_module(ship, 'JUMP'):
             return -0.1, False, {'error': 'JUMP module not equipped'}
 
@@ -415,7 +416,7 @@ class EnvActionsMixin:
         # Range check: jumps beyond the ship's max range are rejected.
         if distance > self._max_jump_distance(ship):
             return -0.1, False, {'error': 'OUT_OF_JUMP_RANGE', 'distance': distance,
-                                 'max_jump': self._max_jump_distance(ship)}
+                                  'max_jump': self._max_jump_distance(ship)}
 
         energy_cost = self._jump_energy_cost(ship, distance)
 
@@ -507,8 +508,8 @@ class EnvActionsMixin:
                         target_coord: Optional[Tuple[int, int]] = None) -> Tuple[float, bool, Optional[dict]]:
         """Steal nutrinium from a shields-down enemy in the same zone.
 
-        Only targets whose shields are DOWN can be plundered. The fixed plunder cost
-        is paid even on a miss; on a hit a random amount (1..target nutrinium) is transferred
+        Only targets whose shields are DOWN can be plundered. The fixed plunder cost is
+        paid even on a miss; on a hit a random amount (1..target nutrinium) is transferred
         to the attacker. An explicit ``target_coord`` (structured action space) prefers a
         plunderable enemy located there; otherwise the richest in-zone target is chosen.
         """
@@ -620,7 +621,7 @@ class EnvActionsMixin:
 
         details = {'health': f"{health_before}->{ship['health']}", 'credit_cost': cost}
         return 0.05, True, details
-    
+
     def _action_negotiate(self, ship: dict) -> Tuple[float, bool, Optional[dict]]:
         """Negotiate a team bonus at the ship's objective trading post.
 
@@ -631,16 +632,16 @@ class EnvActionsMixin:
         """
         if not self._action_allowed(ship, 'NEGOTIATE'):
             return -0.1, False, None
-    
+
         cost = self.config['energy_costs']['negotiate']
         if ship.get('energy', 0) < cost:
             return -0.1, False, None
-    
+
         objective = (ship.get('objectives') or {}).get('negotiate')
         post = self._get_entity_at_location(ship['x'], ship['y'], self.trading_posts)
         if post is None or objective is None or post.get('id') != objective.get('tradingPostId'):
             return -0.1, False, {'error': 'not at negotiate objective'}
-    
+
         ship['energy'] -= cost
         ncfg = self.config['negotiate']
         skill = self._skill(ship, 'negotiate_skill')
@@ -652,7 +653,7 @@ class EnvActionsMixin:
         team_id = ship.get('team_id', 0)
         current = self.team_bonuses.get(team_id, 0.0)
         max_bonus = ncfg['max_team_bonus']
-    
+
         roll = random.random()
         if roll < succ:
             outcome = 'SUCCESS'
@@ -669,14 +670,14 @@ class EnvActionsMixin:
         else:
             outcome = 'NEUTRAL'
             reward = 0.0
-    
+
         # Consume the objective and assign a fresh one.
         new_objective = None
         if self.trading_posts:
             new_post = random.choice(self.trading_posts)
             new_objective = {'tradingPostName': new_post.get('name'), 'tradingPostId': new_post.get('id')}
-            ship.setdefault('objectives', {})['negotiate'] = new_objective
-    
+        ship.setdefault('objectives', {})['negotiate'] = new_objective
+
         details = {
             'outcome': outcome,
             'team_id': team_id,
@@ -684,17 +685,17 @@ class EnvActionsMixin:
             'energy_cost': cost,
         }
         return reward, outcome != 'FAIL', details
-    
+
     def _action_respawn(self, ship: dict) -> bool:
         """Respawn a destroyed ship using escalating team insurance.
 
         Cost per respawn = base_cost_per_member * (1 + cost_escalation * team_respawn_count),
-        charged to the ship's credits but never driving the score below zero (the
-        team insurance absorbs the shortfall). The team's respawn counter then increments.
+        charged to the ship's credits but never driving the score below zero (the team
+        insurance absorbs the shortfall). The team's respawn counter then increments.
         """
         if not ship.get('destroyed', False):
             return False
-    
+
         team_id = ship.get('team_id', 0)
         team_count = self.team_respawn_counts.get(team_id, 0)
         base = self.config['team_insurance']['base_cost_per_member']
@@ -707,8 +708,8 @@ class EnvActionsMixin:
         # Reset ship state
         ship['destroyed'] = False
         ship['health'] = self.config['max_health']
-        ship['energy'] = 0 # Start with 0 energy after respawn
-        ship['nutrinium'] = 0 # Lose all nutrinium
+        ship['energy'] = 0  # Start with 0 energy after respawn
+        ship['nutrinium'] = 0  # Lose all nutrinium
         ship['shields_up'] = False
         ship['recharging'] = False
         ship['state'] = 'READY'
@@ -725,22 +726,22 @@ class EnvActionsMixin:
         ship['respawn_count'] = ship.get('respawn_count', 0) + 1
 
         return True
-    
+
     def _action_attack(self, ship: dict, is_player: bool, payload: Optional[int] = None,
                        target_coord: Optional[Tuple[int, int]] = None) -> Tuple[float, bool, Optional[dict]]:
         """Attack an enemy ship in the same zone.
 
-        Honors actionRestrictions, commits the energy payload even on a miss, applies
-        the value-based shield hold/break model, and creates wreckage on a kill. The optional
-        `target_coord` lets a structured action prefer a specific in-zone enemy; `payload`
+        Honors actionRestrictions, commits the energy payload even on a miss, applies the
+        value-based shield hold/break model, and creates wreckage on a kill. The optional
+        ``target_coord`` lets a structured action prefer a specific in-zone enemy; ``payload``
         (from the energy bin) sets the attack energy, clamped to [attack_min, available].
         """
         if not self._action_allowed(ship, 'ATTACK'):
             return -0.1, False, None
-    
+
         if ship['energy'] < self.config['energy_costs']['attack']:
             return -0.1, False, None
-    
+
         # Determine targets depending on who is attacking
         if is_player:
             # Select weakest active opponent in the same zone
@@ -751,23 +752,22 @@ class EnvActionsMixin:
             ]
             if not same_zone_targets:
                 return -0.1, False, None
-    
+
             # compute raw score for sorting (reuse _calculate_enemy_combat_score with raw=True)
             scored = [(self._calculate_enemy_combat_score(t, raw=True), t) for t in same_zone_targets]
             scored.sort(key=lambda x: x[0])  # ascending -> weakest first
             target = scored[0][1]
-    
         else:
             # Opponent attacking: target any ship in the same zone (player or other opponents)
             # Build list of all potential targets in the same zone
             same_zone_targets = []
-    
+
             # Consider the player as a target
             if (not self.player_ship.get('destroyed', False)
                     and self.player_ship['x'] == ship['x']
                     and self.player_ship['y'] == ship['y']):
                 same_zone_targets.append(self.player_ship)
-    
+
             # Consider other opponents as targets
             for other in self.opponent_ships:
                 if other is ship:
@@ -776,7 +776,7 @@ class EnvActionsMixin:
                     continue
                 if other['x'] == ship['x'] and other['y'] == ship['y']:
                     same_zone_targets.append(other)
-    
+
             if not same_zone_targets:
                 return -0.1, False, None
     
@@ -784,7 +784,7 @@ class EnvActionsMixin:
             scored = [(self._calculate_enemy_combat_score(t, raw=True), t) for t in same_zone_targets]
             scored.sort(key=lambda x: x[0])  # ascending -> weakest first
             target = scored[0][1]
-    
+
         # Structured action: prefer an in-zone enemy at the requested coordinate when one exists.
         if target_coord is not None and same_zone_targets:
             tx, ty = int(target_coord[0]), int(target_coord[1])
@@ -793,10 +793,10 @@ class EnvActionsMixin:
                 pscored = [(self._calculate_enemy_combat_score(t, raw=True), t) for t in preferred]
                 pscored.sort(key=lambda x: x[0])
                 target = pscored[0][1]
-    
+
         if target is None:
             return -0.1, False, None
-    
+
         # Capture pre-combat state for detailed reporting
         target_health_before = target['health']
         target_shield = target.get('shield') if isinstance(target.get('shield'), dict) else None
@@ -820,11 +820,11 @@ class EnvActionsMixin:
         target['in_combat'] = True
         target.setdefault('combat_opponent_positions', set()).add((ship['x'], ship['y']))
 
-        # --- Hit roll: base target number lifted by attack accuracy, lowered by evade,
+        # --- Hit roll: base target number lifted by attack_accuracy, lowered by evade,
         # eased when the target is recharging. Clamped to leave a guaranteed miss/hit margin.
         hit_chance = (cfg['base_target_number']
-                     + self._skill(ship, 'attack_accuracy') * 0.05
-                     - self._skill(target, 'evade') * 0.05)
+                      + self._skill(ship, 'attack_accuracy') * 0.05
+                      - self._skill(target, 'evade') * 0.05)
         if target.get('recharging'):
             hit_chance += cfg['recharge_penalty']
         hit_chance = max(cfg['guaranteed_hit_chance'],
@@ -833,7 +833,7 @@ class EnvActionsMixin:
 
         combat_details = {
             'target': target.get('name', 'Unknown'),
-            'atk_energy': f'{attacker_energy_before}->{ship["energy"]}',
+            'atk_energy': f"{attacker_energy_before}->{ship['energy']}",
             'payload': payload,
             'atk_power': self._skill(ship, 'attack_power'),
             'atk_accuracy': self._skill(ship, 'attack_accuracy'),
@@ -863,7 +863,7 @@ class EnvActionsMixin:
 
         if target_shield and target_shield_state == 'POWERED' and shield_dmg <= target_shield_value_before:
             # HOLD: shields absorb the strike; reduced damage bleeds through to the hull.
-            health_dmg = round(damage * (1.0 - resistance))
+            health_dmg = int(round(damage * (1.0 - resistance)))
             target_shield['value'] = target_shield_value_before - shield_dmg
         else:
             # BREAK (also covers shields DOWN / value 0): the portion the shield could
@@ -871,7 +871,7 @@ class EnvActionsMixin:
             absorbable = math.ceil(target_shield_value_before / cfg['attack_shield_damage']) \
                 if target_shield_value_before > 0 else 0
             absorbable = min(absorbable, damage)
-            reduced = round(absorbable * (1.0 - resistance))
+            reduced = int(round(absorbable * (1.0 - resistance)))
             unreduced = damage - absorbable
             health_dmg = reduced + unreduced
             if target_shield:
@@ -892,14 +892,14 @@ class EnvActionsMixin:
         if target['health'] <= 0:
             target['destroyed'] = True
             target['state'] = 'DESTROYED'
-    
+
             # Destroyed ships spill part of their nutrinium into salvageable wreckage at
             # their location (recoverable via SALVAGE); it is NOT given to the attacker.
             nutrinium_before = target['nutrinium']
             wreckage_nutr = int(round(self.config['salvage']['wreckage_percent'] * nutrinium_before))
             if wreckage_nutr > 0:
-            self.wreckage.append({'x': target['x'], 'y': target['y'], 'nutrinium': wreckage_nutr})
-    
+                self.wreckage.append({'x': target['x'], 'y': target['y'], 'nutrinium': wreckage_nutr})
+
             # Wipe destroyed-ship resources and shields.
             target['energy'] = 0
             target['nutrinium'] = 0
@@ -918,9 +918,9 @@ class EnvActionsMixin:
             # Successful hit but target survived. Small reward; combat is a means to an end.
             combat_details['destroyed'] = False
             combat_details['target_health'] = target['health']
-    
+
             return 0.02, True, combat_details
-    
+
     def _update_combat_states(self):
         """
         Update each ship's 'state' based on game state.
@@ -933,28 +933,28 @@ class EnvActionsMixin:
         """
         # Build list of all ships (player + opponents)
         ships = [self.player_ship] + list(self.opponent_ships)
-    
+
         for s in ships:
             if s is None:
                 continue
-    
+
             # Do not touch destroyed ships
             if s.get('destroyed', False):
                 s['state'] = 'DESTROYED'
                 continue
-    
+
             # Recharging should remain RECHARGING
             if s.get('recharging', False):
                 s['state'] = 'RECHARGING'
                 continue
-    
+
             # Combat state requires:
             # 1. The in_combat flag was set (an attack/shield action occurred)
             # 2. The combat was with an opponent at this ship's zone
             # 3. An enemy is STILL present in this zone (they may have moved away)
             combat_positions = s.get('combat_opponent_positions', set())
             was_same_zone_combat = s.get('in_combat', False) and (s['x'], s['y']) in combat_positions
-    
+
             # Verify an enemy is still actually in the same zone
             if was_same_zone_combat:
                 if s is self.player_ship:
@@ -967,7 +967,7 @@ class EnvActionsMixin:
                 )
             else:
                 enemy_still_here = False
-    
+
             if was_same_zone_combat and enemy_still_here:
                 s['state'] = 'COMBAT'
             else:
@@ -975,15 +975,18 @@ class EnvActionsMixin:
                 # Reset from any non-READY state (COMBAT, RECHARGING, etc.)
                 if s.get('state', 'READY').upper() != 'READY':
                     s['state'] = 'READY'
+                # Shields are NOT auto-lowered here: they persist under the POWERED/
+                # DRAINING/DOWN state machine and only change via RAISE/LOWER actions,
+                # per-tick maintenance, or being broken in combat.
     
-        # Always clear combat flags for next turn
-        s['in_combat'] = False
-        s['combat_opponent_positions'] = set()
+            # Always clear combat flags for next turn
+            s['in_combat'] = False
+            s['combat_opponent_positions'] = set()
     
     def _effective_max_energy(self, ship: dict) -> int:
-        """Energy cap for a ship: base maxEnergy + energy max skill (+10 per point)."""
+        """Energy cap for a ship: base maxEnergy + energy_max skill (+10 per point)."""
         return int(self.config['max_energy'] + self._skill(ship, 'energy_max') * 10)
-    
+
     def _pre_action_tick(self, ship: dict) -> None:
         """Apply the pre-action portion of the per-ship tick order (steps 1-2).
 
@@ -993,11 +996,10 @@ class EnvActionsMixin:
         2. Recharge gain: if recharging, add energyPerRecharge + recharge_energy*2,
            capped at the ship's effective maximum energy. Applied BEFORE the action
            so the gained energy is spendable on the same tick.
-
         """
         if ship is None or ship.get('destroyed', False):
             return
-    
+
         shield = ship.get('shield')
         # Step 1: shield maintenance (only while POWERED)
         if shield and shield.get('state') == 'POWERED':
@@ -1011,7 +1013,7 @@ class EnvActionsMixin:
             gain = self.config['energy_per_recharge'] + self._skill(ship, 'recharge_energy') * 2
             cap = self._effective_max_energy(ship)
             ship['energy'] = min(cap, ship['energy'] + gain)
-    
+
     def _post_action_tick(self, ship: dict) -> None:
         """Apply the post-action portion of the per-ship tick order (step 4).
 
