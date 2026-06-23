@@ -80,7 +80,7 @@ _ACTION_RESTRICTION_NAME = {
 # Public alias: callers that reconstruct the observation (env_observation_mixin,
 # bot_v6) reuse this single action-id -> restriction-key map so the encoded
 # action-restriction features stay in sync with the masker's gate.
-_ACTION_RESTRICTION_NAME = _ACTION_RESTRICTION_NAME
+ACTION_RESTRICTION_NAME = _ACTION_RESTRICTION_NAME
 
 # Fallback priority orders used by :func:`best_valid_action`.
 # When energy is critically low, prioritise RECHARGE to avoid getting stuck.
@@ -101,10 +101,10 @@ class MaskState:
     """Neutral game-state snapshot the masking rules operate on.
 
     Both the environment (full simulator state) and the model-backed bot
-    (lambda ActionRequest) build one of these. `enemies` is the already
+    (lambda ActionRequest) build one of these. ``enemies`` is the already
     resolved list of candidate target ships (the env resolves player vs
     opponent targeting before constructing the state). Entity lists are plain
-    ``{'x', 'y', ...}` dicts; asteroids/wreckage carry ``'nutrinium'`` (and
+    ``{'x', 'y', ...}`` dicts; asteroids/wreckage carry ``'nutrinium'`` (and
     asteroids carry ``'mass'``), trading posts carry ``'id'``.
     """
 
@@ -117,11 +117,11 @@ class MaskState:
     destroyed: bool
     recharging: bool
     just_recharged: bool
-    shield_state: str        # 'POWERED' | 'DRAINING' | 'DOWN'
+    shield_state: str          # 'POWERED' | 'DRAINING' | 'DOWN'
     shield_value: float
     shield_capacity: float
     shields_up: bool
-    modules: object          # iterable / set of module-name strings
+    modules: object            # iterable / set of module-name strings
     negotiate_post_id: object  # id of the assigned negotiate objective post
     enemies: List[dict]
     asteroids: List[dict]
@@ -131,9 +131,9 @@ class MaskState:
     map_height: int
     max_energy: int
     max_health: int
-    energy_costs: dict       # keys: mine, move, attack, shields, jump, plunder, negotiate
+    energy_costs: dict         # keys: mine, move, attack, shields, jump, plunder, negotiate
     salvage_energy_cost: int
-    repair_cost: int         # credits required to repair
+    repair_cost: int           # credits required to repair
     action_restrictions: dict = field(default_factory=dict)
 
 # ----------------------------------------------------------------------------
@@ -146,7 +146,7 @@ def _distance(x1: int, y1: int, x2: int, y2: int) -> float:
 
 
 def _entity_at(x: int, y: int, entities: List[dict]) -> Optional[dict]:
-    """First non-destroyed entity exactly at `(x, y)`, or `None`."""
+    """First non-destroyed entity exactly at ``(x, y)``, or ``None``."""
     for entity in entities:
         if entity['x'] == x and entity['y'] == y:
             if entity.get('destroyed', False):
@@ -156,7 +156,7 @@ def _entity_at(x: int, y: int, entities: List[dict]) -> Optional[dict]:
 
 
 def _nearest_entity(x: int, y: int, entities: List[dict]) -> Optional[dict]:
-    """Nearest non-destroyed, non-depleted entity to `(x, y)`, or `None`."""
+    """Nearest non-destroyed, non-depleted entity to ``(x, y)``, or ``None``."""
     min_dist = float('inf')
     nearest = None
     for entity in entities:
@@ -172,7 +172,7 @@ def _nearest_entity(x: int, y: int, entities: List[dict]) -> Optional[dict]:
 
 
 def _top_asteroids(x: int, y: int, asteroids: List[dict], count: int = 5) -> List[dict]:
-    """Top-N asteroids by the env score `concentration * nutrinium / (dist + 1)`."""
+    """Top-N asteroids by the env score ``concentration * nutrinium / (dist + 1)``."""
     scored = []
     max_score = 50.0
     for asteroid in asteroids:
@@ -216,6 +216,7 @@ def _same_zone_enemies(st: MaskState) -> List[dict]:
     return [t for t in _active_enemies(st)
             if t['x'] == st.x and t['y'] == st.y]
 
+
 def _has_module(st: MaskState, module_name: str) -> bool:
     """Whether the ship has a given equipable module."""
     modules = st.modules
@@ -230,11 +231,11 @@ def _action_allowed(st: MaskState, action_name: str) -> bool:
 
 
 def _restriction_reason(st: MaskState, action_name: str) -> Optional[str]:
-    """Return why `action_name` is blocked by `action_restrictions`, else `None`.
+    """Return why ``action_name`` is blocked by ``action_restrictions``, else ``None``.
 
-    Data-drives the per-state gate from `metadata.actionRestrictions`: an action
-    whose `allowedWhileRecharging` is false is masked while recharging, and one
-    whose `allowedWithShieldsUp` is false is masked while shields are POWERED.
+    Data-drives the per-state gate from ``metadata.actionRestrictions``: an action
+    whose ``allowedWhileRecharging`` is false is masked while recharging, and one
+    whose ``allowedWithShieldsUp`` is false is masked while shields are POWERED.
     """
     rule = (st.action_restrictions or {}).get(action_name)
     if rule is None:
@@ -249,9 +250,9 @@ def _restriction_reason(st: MaskState, action_name: str) -> Optional[str]:
 # Validity rules (ported verbatim from EnvMaskingMixin._is_action_valid_for_state)
 # --------------------------------------------------------------------------
 def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
-    """Validate whether `action` is valid given the state `st`.
+    """Validate whether ``action`` is valid given the state ``st``.
 
-    Returns `(is_valid, reason)` -- `reason` is empty when valid.
+    Returns ``(is_valid, reason)`` -- ``reason`` is empty when valid.
     """
     costs = st.energy_costs
 
@@ -313,7 +314,7 @@ def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
             new_x = st.x - 1
         if new_x < 0 or new_x >= st.map_width or new_y < 0 or new_y >= st.map_height:
             return False, "would move off map"
-    return True, ""
+        return True, ""
 
     # RECHARGE - only when not just recharged, not full, and energy low enough
     if action == RECHARGE:
@@ -324,7 +325,7 @@ def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
         recharge_threshold = int(st.max_energy * 0.3)
         if st.energy > recharge_threshold:
             return False, f"energy too high to recharge ({st.energy}/{st.max_energy}, threshold {recharge_threshold})"
-    return True, ""
+        return True, ""
 
     # ATTACK - requires enemy in same zone and sufficient energy
     if action == ATTACK:
@@ -336,7 +337,7 @@ def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
         enemy_in_zone = any(t['x'] == st.x and t['y'] == st.y for t in active_targets)
         if not enemy_in_zone:
             return False, "no enemy in same zone"
-    return True, ""
+        return True, ""
 
     # JUMP_TO_ASTEROID - requires the JUMP module, asteroids and sufficient energy
     if action == JUMP_TO_ASTEROID:
@@ -358,7 +359,7 @@ def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
         energy_cost = int(distance * costs['jump'])
         if st.energy < energy_cost:
             return False, f"insufficient energy (need {energy_cost}, have {st.energy})"
-    return True, ""
+        return True, ""
 
     # JUMP_TO_TRADING_POST - requires the JUMP module, trading posts, energy, and nutrinium
     if action == JUMP_TO_TRADING_POST:
@@ -376,7 +377,7 @@ def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
         energy_cost = int(distance * costs['jump'])
         if st.energy < energy_cost:
             return False, f"insufficient energy (need {energy_cost}, have {st.energy})"
-    return True, ""
+        return True, ""
 
     # SELL - requires being at a trading post with nutrinium
     if action == SELL:
@@ -385,21 +386,21 @@ def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
             return False, "not at a trading post"
         if st.nutrinium <= 0:
             return False, "no nutrinium to sell"
-    return True, ""
+        return True, ""
 
     # RAISE_SHIELDS - shields not full, energy, and an enemy threat in zone
     if action == RAISE_SHIELDS:
-        if st._shield_state == 'POWERED' and st.shield_value >= st.shield_capacity:
+        if st.shield_state == 'POWERED' and st.shield_value >= st.shield_capacity:
             return False, "shields already fully powered"
         if st.energy < costs['shields']:
             return False, "insufficient energy for shields"
         active_targets = _active_enemies(st)
         if not active_targets:
             return False, "no enemy threat, shields not needed"
-    enemy_in_same_zone = any((t['x'] == st.x and t['y'] == st.y) for t in active_targets)
-    if not enemy_in_same_zone:
-        return False, "no enemy in same zone, no threat"
-    return True, ""
+        enemy_in_same_zone = any((t['x'] == st.x and t['y'] == st.y) for t in active_targets)
+        if not enemy_in_same_zone:
+            return False, "no enemy in same zone, no threat"
+        return True, ""
 
     # PLUNDER - energy, and a shields-down enemy with nutrinium in zone
     if action == PLUNDER:
@@ -409,7 +410,7 @@ def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
                    if _entity_shield_state(t) == 'DOWN' and t.get('nutrinium', 0) > 0]
         if not targets:
             return False, "no plunderable (shields-down) target in zone"
-    return True, ""
+        return True, ""
 
     # SALVAGE - module, energy, and wreckage with nutrinium at current location
     if action == SALVAGE:
@@ -421,7 +422,7 @@ def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
                       if w['x'] == st.x and w['y'] == st.y and w.get('nutrinium', 0) > 0), None)
         if wreck is None:
             return False, "no wreckage to salvage here"
-    return True, ""
+        return True, ""
 
     # REPAIR - module, trading post, credits, and not already at full health
     if action == REPAIR:
@@ -446,7 +447,7 @@ def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
 
     # LOWER_SHIELDS - valid only when shields are not already DOWN
     if action == LOWER_SHIELDS:
-        if st._shield_state == 'DOWN':
+        if st.shield_state == 'DOWN':
             return False, "shields already down"
         return True, ""
 
