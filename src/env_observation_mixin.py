@@ -12,7 +12,7 @@ from utils import action_masker
 class EnvObservationMixin:
     """Observation construction and per-ship spec plumbing."""
 
-    def _set_ship_model_spec(self, self, ship: dict, spec: Optional[ModelSpec] = None) -> None:
+    def _set_ship_model_spec(self, ship: dict, spec: Optional[ModelSpec] = None) -> None:
         """
         Associate a ModelSpec with a ship.
 
@@ -24,7 +24,7 @@ class EnvObservationMixin:
             spec = DEFAULT_FULL_SPEC
         self._ship_model_specs[id(ship)] = spec
 
-    def _get_ship_model_spec(self, self, ship: dict) -> ModelSpec:
+    def _get_ship_model_spec(self, ship: dict) -> ModelSpec:
         """
         Get the ModelSpec for a ship, defaulting to full observation if not set.
 
@@ -36,7 +36,7 @@ class EnvObservationMixin:
         """
         return self._ship_model_specs.get(id(ship), DEFAULT_FULL_SPEC)
 
-    def _get_observation_generator(self, self, spec: ObservationSpec) -> ObservationGenerator:
+    def _get_observation_generator(self, spec: ObservationSpec) -> ObservationGenerator:
         """
         Get or create an observation generator for a spec.
 
@@ -51,7 +51,7 @@ class EnvObservationMixin:
             self._observation_generators[spec_key] = get_observation_generator(spec, self)
         return self._observation_generators[spec_key]
 
-    def generate_observation_for_ship(self, self, ship: dict) -> Dict[str, np.ndarray]:
+    def _generate_observation_for_ship(self, ship: dict) -> Dict[str, np.ndarray]:
         """
         Generate observation for a ship using its assigned ModelSpec.
 
@@ -65,7 +65,7 @@ class EnvObservationMixin:
         gen = self._get_observation_generator(spec.observation_spec)
         return gen.generate(ship)
 
-    def _get_observation(self, self, skip_mask: bool = False, use_spec: bool = True) -> Dict[str, np.ndarray]:
+    def _get_observation(self, skip_mask: bool = False, use_spec: bool = True) -> Dict[str, np.ndarray]:
         """Get the current observation with enhanced ship state and entity info.
 
         Args:
@@ -98,8 +98,9 @@ class EnvObservationMixin:
         # State flags (3 values)
         obs.extend([
             1.0 if ship.get('recharging', False) else 0.0,
-        1.0 if ship.get('shields_up', False) else 0.0,
-        1.0 if ship.get('state', 'READY') == 'READY' else 0.0,
+            1.0 if ship.get('shields_up', False) else 0.0,
+            1.0 if ship.get('state', 'READY') == 'READY' else 0.0,
+        ])
 
         # Skill points (2 values)
         obs.extend([
@@ -131,11 +132,11 @@ class EnvObservationMixin:
         map_diag = max(1.0, math.sqrt(self.map_width**2 + self.map_height**2))
 
         # 1. At asteroid with nutrinium?
-        ast_here = self.get_entity_at_location(ship['x'], ship['y'], self.asteroids)
+        ast_here = self._get_entity_at_location(ship['x'], ship['y'], self.asteroids)
         obs.append(1.0 if (ast_here and ast_here.get('nutrinium', 0) > 0) else 0.0)
 
         # 2. At trading post?
-        tp_here = self.get_entity_at_location(ship['x'], ship['y'], self.trading_posts)
+        tp_here = self._get_entity_at_location(ship['x'], ship['y'], self.trading_posts)
         obs.append(1.0 if tp_here else 0.0)
 
         # 3. Cargo fullness (nutrinium as fraction of a "sell-worthy" amount ~25)
@@ -194,16 +195,17 @@ class EnvObservationMixin:
                     if x == ship['x'] and y == ship['y']:
                         entity_type = 0.0
                     # Check for entities (priority: enemy > trading_post > asteroid)
-                    elif self.get_entity_at_location(x, y, self.opponent_ships):
+                    elif self._get_entity_at_location(x, y, self.opponent_ships):
                         entity_type = 1.0
-                entity_type = 0.66
-            elif self._get_entity_at_location(x, y, self.asteroids):
-                entity_type = 0.33
+                    elif self._get_entity_at_location(x, y, self.trading_posts):
+                        entity_type = 0.66
+                    elif self._get_entity_at_location(x, y, self.asteroids):
+                        entity_type = 0.33
 
-            obs.append(entity_type)
-        else:
-            # Out of bounds (should be rare with clamping, only when map < sensor grid)
-            obs.append(-1.0)
+                    obs.append(entity_type)
+                else:
+                    # Out of bounds (should be rare with clamping, only when map < sensor grid)
+                    obs.append(-1.0)
 
         # === TOP 5 ASTEROIDS (30 values: 5 asteroids * 6 features) ===
         top_asteroids = self._get_top_asteroids(ship['x'], ship['y'], count=self.config['top_asteroids_count'])
@@ -222,7 +224,7 @@ class EnvObservationMixin:
 
         # Pad with zeros if fewer than 5 asteroids
         for _ in range(self.config['top_asteroids_count'] - len(top_asteroids)):
-            obs.extend([0.0, 0.0, 0.0, 0.0, 0.0])
+            obs.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
         # === NEAREST TRADING POST (3 values) ===
         nearest_post = self._get_nearest_entity(ship['x'], ship['y'], self.trading_posts)
@@ -253,7 +255,7 @@ class EnvObservationMixin:
                     combat_score,  # Already normalized 0-1
                 ])
             else:
-                obs.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                obs.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
         # === SPEC-FIDELITY FEATURES (24 values; appended to keep legacy offsets stable) ===
         max_abil = self.config.get('abilities', {})
@@ -265,7 +267,7 @@ class EnvObservationMixin:
             abilities.get('jump_cost', 0) / max(1, max_abil.get('jump_cost', 10)),
             abilities.get('salvage_yield', 0) / max(1, max_abil.get('salvage_yield', 10)),
             abilities.get('negotiate_skill', 0) / max(1, max_abil.get('negotiate_skill', 10)),
-            abilities.get('negotiate_cautious', 0) / max(1, max_abil.get('negotiate_cautious', 10)),
+            abilities.get('negotiate_caution', 0) / max(1, max_abil.get('negotiate_caution', 10)),
             abilities.get('negotiate_ambition', 0) / max(1, max_abil.get('negotiate_ambition', 10)),
         ])
 
@@ -292,12 +294,12 @@ class EnvObservationMixin:
 
         # Team + economy context (3 values)
         team_id = int(ship.get('team_id', 0) or 0)
-        team_bonus = float(self.team_bonuses.get(team_id, 0)) if hasattr(self, 'team_bonuses') else 0.0
+        team_bonus = float(self.team_bonuses.get(team_id, 0.0)) if hasattr(self, 'team_bonuses') else 0.0
         market_ref = max(1.0, float(self.config['market']['sell_nutrinium']))
         obs.extend([
             min(1.0, team_id / 3.0),
-        max(-1.0, min(1.0, team_bonus)),
-        min(1.0, getattr(self, 'market_price', market_ref) / market_ref),
+            max(-1.0, min(1.0, team_bonus)),
+            min(1.0, getattr(self, 'market_price', market_ref) / market_ref),
         ])
 
         # Negotiate objective trading post (3 values): present + direction
@@ -333,7 +335,7 @@ class EnvObservationMixin:
 
         # === ACTION RESTRICTIONS (38 values: 19 actions * 2 flags) ===
         # Encodes the active metadata.actionRestrictions matrix so the policy can
-        # adapt when restrictions change (e.g., randomized per-episode). Aligned to
+        # adapt when restrictions change (e.g. randomized per-episode). Aligned to
         # the 19-action mask order: [allowedWhileRecharging, allowedWithShieldsUp].
         obs.extend(self._action_restriction_features())
 
@@ -352,8 +354,8 @@ class EnvObservationMixin:
         """Encode the active action-restriction matrix as 2 flags per action id.
 
         For every action id 0..num_action_types-1 (mask order), append
-        `[allowedWhileRecharging, allowedWithShieldsUp]` from the action's
-        `config['action_restrictions']` rule (defaulting to 1.0/allowed when the
+        ``[allowedWhileRecharging, allowedWithShieldsUp]`` from the action's
+        ``config['action_restrictions']`` rule (defaulting to 1.0/allowed when the
         rule is absent). Reuses :data:`action_masker.ACTION_RESTRICTION_NAME` so the
         encoding stays in sync with the masker's gate.
         """
@@ -366,8 +368,10 @@ class EnvObservationMixin:
             feats.append(1.0 if rule.get('allowedWithShieldsUp', True) else 0.0)
         return feats
 
+
     def _get_top_asteroids(self, x: int, y: int, count: int = 5) -> List[dict]:
-        """Get top N asteroids ranked by a score combining mass, nutrinium concentration, and distance.
+        """
+        Get top N asteroids ranked by a score combining mass, nutrinium concentration, and distance.
 
         Score formula: (nutrinium / mass) * nutrinium / (distance + 1)
         Higher score = better asteroid to target
@@ -394,21 +398,21 @@ class EnvObservationMixin:
             raw_score = concentration * nutrinium / (dist + 1)
 
             # Normalize score to 0-1 range (approximate max score)
-    max_score = 50.0 # Reasonable max for normalization
-    normalized_score = min(1.0, raw_score / max_score)
+            max_score = 50.0 # Reasonable max for normalization
+            normalized_score = min(1.0, raw_score / max_score)
 
-    scored_asteroids.append({
-        'x': asteroid['x'],
-        'y': asteroid['y'],
-        'mass': asteroid['mass'],
-        'nutrinium': asteroid['nutrinium'],
-        'distance': dist,
-        'score': normalized_score,
-    })
+            scored_asteroids.append({
+                'x': asteroid['x'],
+                'y': asteroid['y'],
+                'mass': asteroid['mass'],
+                'nutrinium': asteroid['nutrinium'],
+                'distance': dist,
+                'score': normalized_score,
+            })
 
-    # Sort by score descending and return top N
-    scored_asteroids.sort(key=lambda a: a['score'], reverse=True)
-    return scored_asteroids[:count]
+        # Sort by score descending and return top N
+        scored_asteroids.sort(key=lambda a: a['score'], reverse=True)
+        return scored_asteroids[:count]
 
     def _get_extreme_enemies(self, x: int, y: int) -> Tuple[Optional[dict], Optional[dict]]:
         """
@@ -480,8 +484,7 @@ class EnvObservationMixin:
         return min(1.0, raw_score / max_score)
 
     def _get_info(self) -> dict:
-        """
-        Get additional information about the current state"""
+        """Get additional information about the current state"""
         return {
             'step': self.current_step,
             'action_counter': self.action_counter,  # Track actions taken this episode
