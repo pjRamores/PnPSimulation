@@ -1,9 +1,9 @@
 """Prospectors & Pirates bot (v7).
 
 A deliberately simple "dummy miner" used as a weak benchmark / training
-opponent. It follows the same lambda contract as `bot_v2` .. `bot_v6`: a
-single func:`get_action` that takes an ActionRequest dict and returns a
-response dict `{"actionType": str, "payload?": ...}`.
+opponent. It follows the same lambda contract as ``bot_v2`` .. ``bot_v6``: a
+single :func:`get_action` that takes an ActionRequest dict and returns a
+response dict ``{"actionType": str, "payload"?: ...}``.
 
 Behaviour:
 
@@ -25,11 +25,11 @@ intentionally dumb opponent.
 import random
 
 
-#-----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Tunables
-#-----------------------------------------------------------------------------
-RECHARGE_LOW_ENERGY = 20       # start recharging when energy drops below this
-RECHARGE_END_ENERGY = 80       # stop recharging once back to a workable level
+# ----------------------------------------------------------------------------
+RECHARGE_LOW_ENERGY = 20      # start recharging when energy drops below this
+RECHARGE_END_ENERGY = 80      # stop recharging once back to a workable level
 
 # Compass directions in the live-server frame, paired with their (dx, dy) step.
 _MOVE_DELTAS = {
@@ -65,9 +65,9 @@ def _to_response(payload):
     return action
 
 
-#-----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Geometry / parsing helpers (stateless)
-#-----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 def _entity_at(x, y, entities):
     """First entity exactly at (x, y), or None."""
     for e in entities:
@@ -80,9 +80,9 @@ def _move(direction):
     return {"actionType": "MOVE", "payload": {"direction": direction}}
 
 
-#-----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Parsed request
-#-----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 class _Context:
     """Parses one ActionRequest into the fields the dummy-miner loop needs."""
 
@@ -127,9 +127,10 @@ class _Context:
                 valid.append(direction)
         return valid
 
-#-----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Dummy-miner decision
-#-----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 def _dummy_miner_action(ctx):
     """Recharge when low, mine any asteroid under the ship, else wander on-map."""
     # === 1. ENERGY MANAGEMENT ===
@@ -151,13 +152,15 @@ def _dummy_miner_action(ctx):
         return {"actionType": "WAIT"}
     return _move(random.choice(directions))
 
-# -----------------------------------
+
+# ----------------------------------------------------------------------------
 # Public lambda contract
-# -----------------------------------
+# ----------------------------------------------------------------------------
 def get_heuristic_action(action_request):
     """Decide a dummy-miner action for one ActionRequest (raw dict, pre-adapter)."""
     ctx = _Context(action_request)
     return _dummy_miner_action(ctx)
+
 
 def get_action(action_request):
     """Public entry point: returns a normalised response dict."""
