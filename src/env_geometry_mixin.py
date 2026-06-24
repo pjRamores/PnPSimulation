@@ -35,7 +35,7 @@ class EnvGeometryMixin:
         return None
 
     def _build_static_location_cache(self):
-        """Build (x,y)->entity and (x,y)->indices maps for the STATIC entry lists.
+        """Build (x,y)->entity and (x,y)->indices maps for the STATIC entity lists.
 
         Asteroid and trading-post positions do not change within an episode, so
         these maps are built once per reset and reused every step (only the moving
@@ -57,42 +57,77 @@ class EnvGeometryMixin:
                 idx_map.setdefault(key, []).append(idx)
             static_loc[name] = loc_map
             self._static_cell_index[name] = idx_map
-        self._build_static_location_cache = static_loc
+        self._static_location_cache = static_loc
         self._static_cache_ready = True
 
     def _rebuild_location_cache(self):
-        """Rebuild spatial lookup cache for all entity lists. Call once per step."""
-        self._entity_location_cache = {}
-        for name, entities in (('asteroids', self.asteroids), ('trading_posts', self.trading_posts), ('opponents', self.opponent_ships)):
-            loc_map = {}
-            for entity in entities:
-                if entity.get('destroyed', False):
-                    continue
-                key = (entity['x'], entity['y'])
-                if key not in loc_map:
-                    loc_map[key] = entity
-            self._entity_location_cache[name] = loc_map
+        """Refresh the per-step spatial lookup cache.
+
+        The static lists (asteroids, trading posts) are cached once per reset by
+        :meth:`_build_static_location_cache`; only the moving opponents are rebuilt
+        here, so this is 0(opponents) per step instead of 0(all entities).
+        """
+        if not getattr(self, '_static_cache_ready', False):
+            self._build_static_location_cache()
+        opp_map = {}
+        for entity in self.opponent_ships:
+            if entity.get('destroyed', False):
+                continue
+            key = (entity['x'], entity['y'])
+            if key not in opp_map:
+                opp_map[key] = entity
+        self._entity_location_cache = {
+            'asteroids': self._static_location_cache['asteroids'],
+            'trading_posts': self._static_location_cache['trading_posts'],
+            'opponents': opp_map,
+        }
+
+    def _entities_in_window(self, name: str, sx: int, sy: int, r: int) -> List[dict]:
+        """Return static entities within a Chebyshev window of radius ``r``.
+
+        ``name`` is ``'asteroids'`` or ``'trading_posts'``. Uses the per-reset
+        (x,y)->indices map to collect only entities whose cell lies in
+        ``[sx-r, sx+r] x [sy-r, sy_r]``, returned in orginal list order so the
+        result is identical to scanning the full list. Cst is O((2r+1)^2) instead
+        of O(len(entities)) -- independent of map size.
+        """
+        idx_map = getattr(self, '_static_cell_index', {}).get(name)
+        if idx_map is None:
+            # Static cache not built yet (e.g. queried before the first step);
+            # build it on demand so results stay correct.
+            self._build_static_location_cache()
+            idx_map = self._static_cell_index(name)
+        if not idx_map:
+            return []
+        entities = self.asteroids if name == 'asteroids' else self.trading_posts
+        found_indices: List[int] = []
+        for x in range(sx - r, sx + r + 1):
+            for y in range(sy - r, sy + r + 1):
+                idxs = idx_map.get((x, y))
+                if idxs:
+                    found_indices.extend(idxs)
+        found_indices.sort()
+        return [entities[i] for i in found_indices]
 
     def _get_nearest_entity(self, x: int, y: int, entities: List[dict]) -> Optional[dict]:
         """Get nearest entity to a location"""
         if not entities:
             return None
 
-        min_dist = float('inf')
-        nearest = None
+        candidates = [
+            e for e in entities
+            if not ('destroyed' in e and e['destroyed'])
+            and not ('nutrinium' in e and e['nutrinium'] <= 0)
+        ]
+        if not candidates:
+            return None
 
-        for entity in entities:
-            if 'destroyed' in entity and entity['destroyed']:
-                continue
-            if 'nutrinium' in entity and entity['nutrinium'] <= 0:
-                continue
-
-            dist = self._calculate_distance(x, y, entity['x'], entity['y'])
-            if dist < min_dist:
-                min_dist = dist
-                nearest = entity
-
-        return nearest
+        ex = np.fromiter((e['x'] for e in candidates), dtype=np.float64, count=len(candidates))
+        ey = np.fromiter((e['y'] for e in candidates), dtype=np.float64, count=len(candidates))
+        # Squared distance gives the same argmin as Euclidean distance; np.argmin
+        # return the first occurrence, matching the legacy strict-less-than scan.
+        d2 = (ex - x) ** 2 + (ey - y) ** 2
+        return candidates[int(np.argmin(d2))]
 
     def _calculate_distance(self, x1: int, y1: int, x2: int, y2: int) -> float:
         """Calculate Euclidean distance between two points"""
