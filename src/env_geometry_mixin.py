@@ -65,7 +65,7 @@ class EnvGeometryMixin:
 
         The static lists (asteroids, trading posts) are cached once per reset by
         :meth:`_build_static_location_cache`; only the moving opponents are rebuilt
-        here, so this is 0(opponents) per step instead of 0(all entities).
+        here, so this is O(opponents) per step instead of O(all entities).
         """
         if not getattr(self, '_static_cache_ready', False):
             self._build_static_location_cache()
@@ -87,8 +87,8 @@ class EnvGeometryMixin:
 
         ``name`` is ``'asteroids'`` or ``'trading_posts'``. Uses the per-reset
         (x,y)->indices map to collect only entities whose cell lies in
-        ``[sx-r, sx+r] x [sy-r, sy_r]``, returned in orginal list order so the
-        result is identical to scanning the full list. Cst is O((2r+1)^2) instead
+        ``[sx-r, sx+r] x [sy-r, sy+r]``, returned in original list order so the
+        result is identical to scanning the full list. Cost is O((2r+1)^2) instead
         of O(len(entities)) -- independent of map size.
         """
         idx_map = getattr(self, '_static_cell_index', {}).get(name)
@@ -96,7 +96,7 @@ class EnvGeometryMixin:
             # Static cache not built yet (e.g. queried before the first step);
             # build it on demand so results stay correct.
             self._build_static_location_cache()
-            idx_map = self._static_cell_index(name)
+            idx_map = self._static_cell_index.get(name)
         if not idx_map:
             return []
         entities = self.asteroids if name == 'asteroids' else self.trading_posts
@@ -125,7 +125,7 @@ class EnvGeometryMixin:
         ex = np.fromiter((e['x'] for e in candidates), dtype=np.float64, count=len(candidates))
         ey = np.fromiter((e['y'] for e in candidates), dtype=np.float64, count=len(candidates))
         # Squared distance gives the same argmin as Euclidean distance; np.argmin
-        # return the first occurrence, matching the legacy strict-less-than scan.
+        # returns the first occurrence, matching the legacy strict-less-than scan.
         d2 = (ex - x) ** 2 + (ey - y) ** 2
         return candidates[int(np.argmin(d2))]
 
