@@ -115,12 +115,12 @@ _queue_listener = None  # background thread feeding the active file
 
 def _log_dir():
     """Directory for per-game log files.
-    
+
     Defaults to a `logs` folder next to this module (created on demand). Set PNP_LOG_DIR to override -- e.g. to `/tmp` on AWS Lambda, where only the temp dir is writable.
     """
     return os.environ.get("PNP_LOG_DIR") or os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "logs"
-)
+    )
 
 
 def _ensure_game_log_file(game_id, round_no):
@@ -226,9 +226,9 @@ def _update_stuck_state(ctx):
     """
     key = (ctx.game_id, ctx.round)
     no_change = (
-        stuck["key"] == key
-        and stuck["cell"] == ctx.location
-        and stuck["energy"] == ctx.energy
+            stuck["key"] == key
+            and stuck["cell"] == ctx.location
+            and stuck["energy"] == ctx.energy
     )
     if no_change and ctx.last_action_failed:
         stuck["count"] += 1
@@ -272,45 +272,45 @@ logger.debug(
     _axis["ns"], direction, cur,
 )
 ) else if direction in ("E", "W") and x in (0, ctx.map_width - 1):
-_axis["ew"] = -_axis["ew"]
+    _axis["ew"] = -_axis["ew"]
 logger.debug(
-    "CALIBRATION ew flip -> %+d (MOVE %s rejected at x-edge %s)",
-    _axis["ew"], direction, cur,
+"CALIBRATION ew flip -> %+d (MOVE %s rejected at x-edge %s)",
+_axis["ew"], direction, cur,
 )
 return None
 dx, dy = cur[0] - frm[0], cur[1] - frm[1]
 if direction in ("N", "S") and dy != 0:
-observed_ns = dy if direction == "N" else -dy
+    observed_ns = dy if direction == "N" else -dy
 new_ns = 1 if observed_ns > 0 else -1
 if new_ns != _axis["ns"]:
-logger.debug(
-    "CALIBRATION ns %s -> %s (commanded %s from %s, now at %s)",
-    _axis["ns"], new_ns, direction, frm, cur,
-)
+    logger.debug(
+        "CALIBRATION ns %s -> %s (commanded %s from %s, now at %s)",
+        _axis["ns"], new_ns, direction, frm, cur,
+    )
 _axis["ns"] = new_ns
 elif direction in ("E", "W") and dx != 0:
 observed_ew = dx if direction == "E" else -dx
 new_ew = 1 if observed_ew > 0 else -1
 if new_ew != _axis["ew"]:
-logger.debug(
-    "CALIBRATION ew %s -> %s (commanded %s from %s, now at %s)",
-    _axis["ew"], new_ew, direction, frm, cur,
-)
+    logger.debug(
+        "CALIBRATION ew %s -> %s (commanded %s from %s, now at %s)",
+        _axis["ew"], new_ew, direction, frm, cur,
+    )
 _axis["ew"] = new_ew
 return frm
 
 def record_move(ctx, action):
-"""Remember a just-emitted MOVE so the next tick can calibrate + reconstruct."""
+    """Remember a just-emitted MOVE so the next tick can calibrate + reconstruct."""
 _last_move["key"] = (ctx.game_id, ctx.round)
 if action.get("actionType") == "MOVE":
-_last_move["direction"] = action.get("payload", {}).get("direction")
+    _last_move["direction"] = action.get("payload", {}).get("direction")
 _last_move["frm"] = ctx.location
 else:
 _last_move["direction"] = None
 _last_move["frm"] = None
 
 class Tunables:
-"""Decision thresholds. Defaults mirror the reference heuristic."""
+    """Decision thresholds. Defaults mirror the reference heuristic."""
 
 RECHARGE_LOW = 20          # start recharging below this absolute energy
 RECHARGE_HIGH_FRAC = 0.80   # stop recharging above this fraction of maxEnergy
@@ -338,34 +338,34 @@ STUCK_ESCAPE_THRESHOLD = 3
 # ---------------------------------------------------------
 
 class ShipUtils:
-"""Stateless geometry and parsing helpers shared across strategies."""
+    """Stateless geometry and parsing helpers shared across strategies."""
 
 _OPPOSITE = {"N": "S", "S": "N", "E": "W", "W": "E"}
 
 @staticmethod
 def safe_int(value, default=0):
-try:
-return int(value)
+    try:
+    return int(value)
 except (TypeError, ValueError):
 return default
 
 @staticmethod
 def location(entity):
-loc = entity.get("location", {}) if isinstance(entity, dict) else {}
+    loc = entity.get("location", {}) if isinstance(entity, dict) else {}
 return int(loc.get("x", 0)), int(loc.get("y", 0))
 
 @staticmethod
 def distance(a, b):
-return math.dist(a, b)
+    return math.dist(a, b)
 
 @staticmethod
 def chebyshev(a, b):
-return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
+    return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
 
 @classmethod
 def nearest(cls, origin, entities):
-if not entities:
-    return None
+    if not entities:
+        return None
 # Deterministic tie-break on coordinates so equidistant targets never
 # flip between turns (which would make the ship oscillate).
 return min(
@@ -418,8 +418,8 @@ class CombatEvaluator:
     def skill_offense(self, skills, points):
         if skills:
             return (
-                ShipUtils.safe_int(skills.get("attack_power")) * 10.0
-                + ShipUtils.safe_int(skills.get("attack_accuracy")) * 5.0
+                    ShipUtils.safe_int(skills.get("attack_power")) * 10.0
+                    + ShipUtils.safe_int(skills.get("attack_accuracy")) * 5.0
             )
         # Skills hidden: assume points could be invested in offence (worst case).
         return points * 12.0
@@ -427,8 +427,8 @@ class CombatEvaluator:
     def skill_defense(self, skills, points):
         if skills:
             return (
-                ShipUtils.safe_int(skills.get("shield_strength")) * 8.0
-                + ShipUtils.safe_int(skills.get("evade")) * 3.0
+                    ShipUtils.safe_int(skills.get("shield_strength")) * 8.0
+                    + ShipUtils.safe_int(skills.get("evade")) * 3.0
             )
         return points * 8.0
 
@@ -451,8 +451,8 @@ class CombatEvaluator:
         if not latent and (rech or en < self.attack_cost):
             return 0.0
         base = (
-            self.skill_offense(skills, ShipUtils.safe_int(ship.get("skillPointsSpent")))
-            + min(en, self.max_energy) * 0.5
+                self.skill_offense(skills, ShipUtils.safe_int(ship.get("skillPointsSpent")))
+                + min(en, self.max_energy) * 0.5
         )
         if latent and rech:
             base *= 0.5  # delayed: must end recharge before it can attack
@@ -468,11 +468,11 @@ if shields_up is None
 else shields_up
 )
 base = (
-    ShipUtils.safe_int(ship.get("health")) * 1.0
-    + self.skill_defense(skills, ShipUtils.safe_int(ship.get("skillPointsSpent"))))
+ShipUtils.safe_int(ship.get("health")) * 1.0
++ self.skill_defense(skills, ShipUtils.safe_int(ship.get("skillPointsSpent"))))
 )
 if powered:
-    # Shields up: ~25% incoming reduction + the shield pool itself.
+# Shields up: ~25% incoming reduction + the shield pool itself.
     base = base * 1.33 + ShipUtils.safe_int(shield.get("value")) * 0.5
 if rech:
     base *= 0.5  # panels out: cannot raise shields, combat-penalised
@@ -566,8 +566,8 @@ class GameContext:
 self.ship_contacts = [
     c for c in self.contacts
     if c.get("type") == "ship"
-    and str(c.get("state", "")).upper() != "DESTROYED"
-    and c.get("playerId") != self.player_id
+       and str(c.get("state", "")).upper() != "DESTROYED"
+       and c.get("playerId") != self.player_id
 ]
 
 self.at_trading_post = any(
@@ -582,8 +582,8 @@ self.objective_post = next(
     None,
 )
 self.at_objective_post = (
-    self.objective_post is not None
-    and ShipUtils.location(self.objective_post) == self.location
+        self.objective_post is not None
+        and ShipUtils.location(self.objective_post) == self.location
 )
 
 # --- Round clock (end-game banking) ---
@@ -606,7 +606,7 @@ if self.prev_cell == self.location:
 last_result = self.request.get("actionResult", {} or {})
 self.last_action_type = str(last_result.get("actionType", "")).upper()
 self.last_action_failed = (
-    str(last_result.get("outcome", "")).upper() == "FAILURE"
+        str(last_result.get("outcome", "")).upper() == "FAILURE"
 )
 # Why an action was accepted/rejected: the result payload carries a
 # machine resultCode (e.g. "RECHARGE_FAILURE") plus a human message.
@@ -616,7 +616,7 @@ last_payload = last_result.get("payload", {} or {})
 self.last_action_result_code = str(last_payload.get("resultCode", "") or "")
 self.last_action_message = str(last_payload.get("message", "") or "")
 self.offence_target_lost = (
-    self.last_action_failed and self.last_action_type in ("PLUNDER", "ATTACK")
+        self.last_action_failed and self.last_action_type in ("PLUNDER", "ATTACK")
 )
 # Consecutive no-progress ticks (filled per tick by _update_stuck_state).
 self.stuck_count = 0
@@ -735,9 +735,9 @@ def jump_energy(self, dist):
 
 def can_jump(self, dist):
     return (
-        self.has_jump
-        and 0 < dist <= self.max_jump_distance
-        and self.energy >= self.jump_energy(dist)
+            self.has_jump
+            and 0 < dist <= self.max_jump_distance
+            and self.energy >= self.jump_energy(dist)
     )
 
 # --- Asteroid value model ---
@@ -794,8 +794,8 @@ class HeuristicStrategy:
     overwhelm_ratio = 2.0 - 1.0 * risk  # cautious (2x) .. eager to flee (1x)
 
     self.is_overwhelmed = bool(self.threats) and (
-        threat_power >= overwhelm_ratio * max(self.my_power_eff, 1.0)
-        or strongest >= overwhelm_ratio * max(self.my_power_eff, 1.0)
+            threat_power >= overwhelm_ratio * max(self.my_power_eff, 1.0)
+            or strongest >= overwhelm_ratio * max(self.my_power_eff, 1.0)
     )
     self.dominant_threats = [
         e for e in ctx.enemy_ships
@@ -873,7 +873,7 @@ for i in range(len(order)):
             ctx.last_action_result_code or "-",
             ctx.last_action_message or "_",
             direction, ctx.location, (nx, ny),
-        )
+            )
         return {"actionType": "MOVE", "payload": {"direction": direction}}
 return None
 
@@ -964,8 +964,8 @@ def _jump_waypoint(self, target_xy):
     if dist <= 1:
         logger.debug(
             "JUMP skip: target %s is adjacent (dist=%.2f); free MOVE is cheaper",
-    (tx, ty), dist,
-)
+            (tx, ty), dist,
+        )
 return None
 # In range and safe: jump straight onto the target.
 if dist <= ctx.max_jump_distance:
@@ -1099,8 +1099,8 @@ def _attack_opportunity(self):
         dominate = my_atk >= Tunables.ATTACK_OFFENSE_MARGIN * e_surv
         survive = my_surv >= Tunables.ATTACK_DEFENSE_MARGIN * max(e_atk_now, 1.0)
         worthwhile = (
-            cargo >= Tunables.PLUNDER_THRESHOLD
-            or e_atk_latent >= Tunables.ATTACK_THREAT_FRACTION * my_surv
+                cargo >= Tunables.PLUNDER_THRESHOLD
+                or e_atk_latent >= Tunables.ATTACK_THREAT_FRACTION * my_surv
         )
         if dominate and survive and worthwhile:
             key = (cargo, e_surv, enemy.get("playerId") or "")
@@ -1217,11 +1217,11 @@ def _work_action(self):
     # the queue so we prefer an uncontested target, only diverting to a
     # threatened one when nothing safer is reachable.
     for ast in sorted(
-        ctx.mineable_asteroids,
-        key=lambda a: (
-            1 if self.threat_at_destination(ShipUtils.location(a)) else 0,
-            -ctx.asteroid_score(a),
-        ) + ShipUtils.location(a),
+            ctx.mineable_asteroids,
+            key=lambda a: (
+                                  1 if self.threat_at_destination(ShipUtils.location(a)) else 0,
+                                  -ctx.asteroid_score(a),
+                          ) + ShipUtils.location(a),
     ):
         target = ShipUtils.location(ast)
         travel = self._travel_towards(target)
@@ -1308,12 +1308,12 @@ if not ctx.allowed_while_recharging(work_type):
 # jumpMinCost the travel logic jumps the remaining distance, saving many
 # crawl ticks. Skipped near threats and once energy is already capped.
 if (
-    work_type == "MOVE"
-    and self.bank_for_jump
-    and ctx.has_jump
-    and ctx.energy < ctx.jump_min_cost
-    and ctx.energy < ctx.max_energy
-    and not self.threats
+        work_type == "MOVE"
+        and self.bank_for_jump
+        and ctx.has_jump
+        and ctx.energy < ctx.jump_min_cost
+        and ctx.energy < ctx.max_energy
+        and not self.threats
 ):
     logger.debug(
         "BANK energy for jump: energy=%d < jumpMinCost=%d while crawling "
@@ -1560,8 +1560,8 @@ def _action_name_to_id(masker, action, ctx):
         "LOWER_SHIELDS": masker.LOWER_SHIELDS,
         "NEGOTIATE": masker.NEGOTIATE,
         "SALVAGE": masker.SALVAGE,
-    "REPAIR": masker.REPAIR,
-}
+        "REPAIR": masker.REPAIR,
+    }
 if action_type in simple:
     return simple[action_type]
 if action_type == "MOVE":
@@ -1627,7 +1627,7 @@ def _masked_to_response(ctx, action_id, masker):
 
 def _enforce(ctx, action):
     """Validate the heuristic's action via the shared masker; substitute if invalid.
-    
+
     When the masking utility cannot be imported, the heuristic's action is kept
     unchanged so the bot still functions as a pure-stdlib lambda.
     """
@@ -1656,7 +1656,7 @@ def get_action(action_request):
     return _to_response(action)
 def _log_round_state(ctx):
     """Once per game+round, log the full round setup the bot will play under.
-    
+
     A single ROUND-START line captures the fixed parameters (map, costs, ship caps,
     mining/market economics, objective) plus our opening ship state and so a finished round's
     conditions can be reviewed without inferring them from per-tick traces.
@@ -1711,7 +1711,7 @@ def _log_round_state(ctx):
 
 def _log_endgame_stats(ctx):
     """Once per game+round, when the round clock is about to expire, log final stats.
-    
+
     Captures the ship's outcome (credits, leaderboard rank, score) and the cumulative combat/mining/salvage/repair tallies so a finished
     round can be reviewed without replaying every tick.
     """
@@ -1788,7 +1788,7 @@ def get_heuristic_action(action_request):
         ctx.last_action_type or "-", "FAIL" if ctx.last_action_failed else "ok",
         ctx.last_action_result_code or "-", ctx.last_action_message or "_",
         ctx.stuck_count, ctx.offence_target_lost,
-    )
+        )
 
     action = HeuristicStrategy(ctx).decide()
     _record_move(ctx, action)
