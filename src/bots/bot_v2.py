@@ -453,8 +453,8 @@ class CombatEvaluator:
     def skill_offense(self, skills, points):
         if skills:
             return (
-                 ShipUtils.safe_int(skills.get("attack_power")) * 10.0
-                 + ShipUtils.safe_int(skills.get("attack_accuracy")) * 5.0
+                ShipUtils.safe_int(skills.get("attack_power")) * 10.0
+                + ShipUtils.safe_int(skills.get("attack_accuracy")) * 5.0
             )
         # Skills hidden: assume points could be invested in offence (worst case).
         return points * 12.0
@@ -462,8 +462,8 @@ class CombatEvaluator:
     def skill_defense(self, skills, points):
         if skills:
             return (
-                 ShipUtils.safe_int(skills.get("shield_strength")) * 8.0
-                 + ShipUtils.safe_int(skills.get("evade")) * 3.0
+                ShipUtils.safe_int(skills.get("shield_strength")) * 8.0
+                + ShipUtils.safe_int(skills.get("evade")) * 3.0
             )
         return points * 8.0
 
@@ -486,8 +486,8 @@ class CombatEvaluator:
         if not latent and (rech or en < self.attack_cost):
             return 0.0
         base = (
-             self.skill_offense(skills, ShipUtils.safe_int(ship.get("skillPointsSpent")))
-             + min(en, self.max_energy) * 0.5
+            self.skill_offense(skills, ShipUtils.safe_int(ship.get("skillPointsSpent")))
+            + min(en, self.max_energy) * 0.5
         )
         if latent and rech:
             base *= 0.5  # delayed: must end recharge before it can attack
@@ -504,7 +504,7 @@ class CombatEvaluator:
         )
         base = (
             ShipUtils.safe_int(ship.get("health")) * 1.0
-            + self.skill_defense(skills, ShipUtils.safe_int(ship.get("skillPointsSpent"))))
+            + self.skill_defense(skills, ShipUtils.safe_int(ship.get("skillPointsSpent")))
         )
         if powered:
             # Shields up: ~25% incoming reduction + the shield pool itself.
@@ -618,8 +618,8 @@ class GameContext:
             None,
         )
         self.at_objective_post = (
-                self.objective_post is not None
-                and ShipUtils.location(self.objective_post) == self.location
+            self.objective_post is not None
+            and ShipUtils.location(self.objective_post) == self.location
         )
 
         # --- Round clock (end-game banking) ---
@@ -638,21 +638,22 @@ class GameContext:
         # resolved ("the target is no longer in the zone"). When our previous
         # offence action FAILED we back off offence for a tick and do productive
         # work instead, so a mobile enemy passing through cannot trap us in a
-        # fail-retry loop (retrying ATTACK after a failed PLUNDER -- or vice versa -- hits the same absent target).
-        last_result = self.request.get("actionResult", {} or {})
+        # fail-retry loop (retrying ATTACK after a failed PLUNDER -- or vice
+        # versa -- hits the same absent target).
+        last_result = self.request.get("actionResult", {}) or {}
         self.last_action_type = str(last_result.get("actionType", "")).upper()
         self.last_action_failed = (
-                str(last_result.get("outcome", "")).upper() == "FAILURE"
+            str(last_result.get("outcome", "")).upper() == "FAILURE"
         )
         # Why an action was accepted/rejected: the result payload carries a
         # machine resultCode (e.g. "RECHARGE_FAILURE") plus a human message.
         # Surfacing these makes a server refusal (such as the ~588 rejected
-        # RECHARGES in game 37102 round 2) visible instead of an opaque FAIL.
+        # RECHARGEs in game 37102 round 2) visible instead of an opaque FAIL.
         last_payload = last_result.get("payload", {} or {})
         self.last_action_result_code = str(last_payload.get("resultCode", "") or "")
         self.last_action_message = str(last_payload.get("message", "") or "")
         self.offence_target_lost = (
-                self.last_action_failed and self.last_action_type in ("PLUNDER", "ATTACK")
+            self.last_action_failed and self.last_action_type in ("PLUNDER", "ATTACK")
         )
         # Consecutive no-progress ticks (filled per tick by _update_stuck_state).
         self.stuck_count = 0
@@ -662,9 +663,9 @@ class GameContext:
         self.tick = ShipUtils.safe_int(self.game_state.get("tick"))
         self.round = ShipUtils.safe_int(self.game_state.get("round"))
         self.credits = ShipUtils.safe_int(self.me.get("credits"))
-        self.stats = self.me.get("stats", {} or {})
-        self.round_scores = self.me.get("roundScores", [] or [])
-        self.leaderboard = self.request.get("leaderboard", [] or [])
+        self.stats = self.me.get("stats", {}) or {}
+        self.round_scores = self.me.get("roundScores", []) or []
+        self.leaderboard = self.request.get("leaderboard", []) or []
         self.skill_points_spent = ShipUtils.safe_int(self.me.get("skillPointsSpent"))
         self.skill_points_total = ShipUtils.safe_int(self.me.get("skillPointsTotal"))
 
@@ -672,8 +673,8 @@ class GameContext:
         self.shields_cost = int(energy_costs.get("shields", 5))
         self.salvage_energy_cost = int(energy_costs.get("salvage", 999))
         self.max_health = int(ship_config.get("maxHealth", 100))
-        shield = self.me.get("shield", {} or {})
-        self._shield_state = str(shield.get("state", "DOWN")).upper()
+        shield = self.me.get("shield", {}) or {}
+        self.shield_state = str(shield.get("state", "DOWN")).upper()
         self.shield_value = ShipUtils.safe_int(shield.get("value", shield.get("strength", 0)))
         self.shield_capacity = ShipUtils.safe_int(shield.get("capacity", shield.get("maxStrength", 0)))
 
@@ -809,6 +810,7 @@ class HeuristicStrategy:
         self.bank_for_jump = False
         self._compute_threats()
 
+    # --- Threat model ---
     def _compute_threats(self):
         ctx = self.ctx
         combat = ctx.combat
@@ -816,12 +818,15 @@ class HeuristicStrategy:
         # Panels out = weak: cannot ATTACK / RAISE_SHIELDS, combat-penalised.
         self.my_power_eff = self.my_power * (0.5 if ctx.recharging else 1.0)
 
-        def can_act(self, enemy):
+        def can_act(enemy):
             return ShipUtils.safe_int(enemy.get("energy")) > 0
 
-        def threat_dist(self, enemy):
+        def threat_dist(enemy):
             return ShipUtils.chebyshev(ShipUtils.location(enemy), ctx.location)
 
+        # Ever enemy that can still act this turn (has energy). Used to judge
+        # whether a navigation *destination* is contested -- not just the
+        # overwhelming "dominant" raiders we actively flee.
         self.acting_enemies = [e for e in ctx.enemy_ships if can_act(e)]
         self.threats = [e for e in self.acting_enemies if threat_dist(e) <= 1]
         threat_power = sum(combat.rough_power(e) for e in self.threats)
@@ -833,12 +838,13 @@ class HeuristicStrategy:
         overwhelm_ratio = 2.0 - 1.0 * risk  # cautious (2x) .. eager to flee (1x)
 
         self.is_overwhelmed = bool(self.threats) and (
-                threat_power >= overwhelm_ratio * max(self.my_power_eff, 1.0)
-                or strongest >= overwhelm_ratio * max(self.my_power_eff, 1.0)
+            threat_power >= overwhelm_ratio * max(self.my_power_eff, 1.0)
+            or strongest >= overwhelm_ratio * max(self.my_power_eff, 1.0)
         )
         self.dominant_threats = [
             e for e in ctx.enemy_ships
-            if can_act(e) and combat.rough_power(e) >= overwhelm_ratio * max(self.my_power_eff, 1.0)
+            if can_act(e)
+            and combat.rough_power(e) >= overwhelm_ratio * max(self.my_power_eff, 1.0)
         ]
         # Drop rocks guarded by a dominant raider so we never path toward them.
         if self.dominant_threats:
@@ -846,7 +852,7 @@ class HeuristicStrategy:
                 a for a in ctx.mineable_asteroids if not self._rock_guarded(a)
             ]
 
-    def is_unsafe(self, cell):
+    def _is_unsafe(self, cell):
         for enemy in self.dominant_threats:
             if ShipUtils.chebyshev(ShipUtils.location(enemy), cell) <= 1:
                 return True
@@ -859,13 +865,13 @@ class HeuristicStrategy:
                 return True
         return False
 
-    def threat_at_destination(self, target_xy):
+    def _threat_at_destination(self, target_xy):
         """True if any enemy that can act sits on (or adjacent to) the target.
 
         Arriving on a contested cell is dangerous: a JUMP resolves last, so we
-        would land next to the enemy and take their hit; a MOVE walks straight into
-        their attack range. We treat Chebyshev <= 1 of the destination as contested
-        so navigation can prefer an uncontested target instead.
+        would land next to the enemy and take their hit; a MOVE walks straight
+        into their attack range. We treat Chebyshev <= 1 of the destination as
+        contested so navigation can prefer an uncontested target instead.
         """
         cell = (int(target_xy[0]), int(target_xy[1]))
         for enemy in self.acting_enemies:
@@ -873,632 +879,633 @@ class HeuristicStrategy:
                 return True
         return False
 
-    def make_move(self, direction):
+    # --- Action constructors ---
+    def _make_move(self, direction):
         nx, ny = ShipUtils.next_position(self.ctx.location, direction)
         if not self.ctx.in_bounds(nx, ny):
             return {"actionType": "WAIT"}
         return {"actionType": "MOVE", "payload": {"direction": direction}}
 
-    def make_jump(self, tx, ty):
+    def _make_jump(self, tx, ty):
         cx = min(max(0, int(tx)), self.ctx.map_width - 1)
         cy = min(max(0, int(ty)), self.ctx.map_height - 1)
         if (cx, cy) == self.ctx.location:
             return {"actionType": "WAIT"}
         return {"actionType": "JUMP", "payload": {"target_location": {"x": cx, "y": cy}}}
 
-    def escape_action(self):
+    def _escape_action(self):
         """Force a fresh in-bounds MOVE to break a server-rejection deadlock.
 
         Called only when `ctx.stuck_count` shows our action has been refused
         repeatedly with no change in position or energy. We rotate the tried
-direction by the stuck count so successive escape attempts probe
-different headings, guaranteeing forward motion (MOVE is free) that
-dislodges whatever the server keeps rejecting. Returns `None` only if
-no neighbouring cell is in bounds (impossible on a >1x1 map).
-"""
-ctx = self.ctx
-order = ["N", "E", "S", "W"]
-start = ctx.stuck_count % len(order)
-for i in range(len(order)):
-    direction = order[(start + i) % len(order)]
-    nx, ny = ShipUtils.next_position(ctx.location, direction)
-    if ctx.in_bounds(nx, ny) and (nx, ny) != ctx.location:
-        logger.debug(
-            "ESCAPE deadlock: stuck=%d last=%s/%s reason=%s/%s -> MOVE %s "
-            "from %s to %s",
-            ctx.stuck_count,
-            ctx.last_action_type or "-",
-            "FAIL" if ctx.last_action_failed else "ok",
-            ctx.last_action_result_code or "-",
-            ctx.last_action_message or "_",
-            direction, ctx.location, (nx, ny),
-            )
-        return {"actionType": "MOVE", "payload": {"direction": direction}}
-return None
+        direction by the stuck count so successive escape attempts probe
+        different headings, guaranteeing forward motion (MOVE is free) that
+        dislodges whatever the server keeps rejecting. Returns `None` only if
+        no neighbouring cell is in bounds (impossible on a >1x1 map).
+        """
+        ctx = self.ctx
+        order = ["N", "E", "S", "W"]
+        start = ctx.stuck_count % len(order)
+        for i in range(len(order)):
+            direction = order[(start + i) % len(order)]
+            nx, ny = ShipUtils.next_position(ctx.location, direction)
+            if ctx.in_bounds(nx, ny) and (nx, ny) != ctx.location:
+                logger.debug(
+                    "ESCAPE deadlock: stuck=%d last=%s/%s reason=%s/%s -> MOVE %s "
+                    "from %s to %s",
+                    ctx.stuck_count,
+                    ctx.last_action_type or "-",
+                    "FAIL" if ctx.last_action_failed else "ok",
+                    ctx.last_action_result_code or "-",
+                    ctx.last_action_message or "_",
+                    direction, ctx.location, (nx, ny),
+                )
+                return {"actionType": "MOVE", "payload": {"direction": direction}}
+        return None
 
-# --- Movement helpers (threat-aware) ---
-def _safe_move_dir(self, target_xy):
-    ctx = self.ctx
-    ox, oy = ctx.location
-    tx, ty = target_xy
-    dx, dy = tx - ox, ty - oy
-    horiz = ("E" if dx * _axis["ew"] > 0 else "W") if dx != 0 else None
-    vert = ("N" if dy * _axis["ns"] > 0 else "S") if dy != 0 else None
-    order = [horiz, vert] if abs(dx) >= abs(dy) else [vert, horiz]
+    # --- Movement helpers (threat-aware) ---
+    def _safe_move_dir(self, target_xy):
+        ctx = self.ctx
+        ox, oy = ctx.location
+        tx, ty = target_xy
+        dx, dy = tx - ox, ty - oy
+        horiz = ("E" if dx * _axis["ew"] > 0 else "W") if dx != 0 else None
+        vert = ("N" if dy * _axis["ns"] > 0 else "S") if dy != 0 else None
+        order = [horiz, vert] if abs(dx) >= abs(dy) else [vert, horiz]
+        rejected = []
+        for direction in order:
+            if direction is None:
+                continue
+            nx, ny = ShipUtils.next_position(ctx.location, direction)
+            if not ctx.in_bounds(nx, ny):
+                rejected.append((direction, "out-of-bounds"))
+                continue
+            if self._is_unsafe((nx, ny)):
+                rejected.append((direction, "unsafe"))
+                continue
+            logger.debug(
+                "NAV _safe_move_dir from %s -> target %s: dx=%d dy=%d order=%s "
+                "chose %s (rejected=%s)",
+                ctx.location,
+                (tx, ty),
+                dx,
+                dy,
+                order,
+                direction,
+                rejected,
+            )
+            return direction
+        logger.debug(
+            "NAV _safe_move_dir from %s -> target %s: dx=%d dy=%d order=%s "
+            "NO safe direction (rejected=%s)",
+            ctx.location,
+            (tx, ty),
+            dx,
+            dy,
+            order,
+            rejected,
+        )
+        return None
+
+    def _travel_towards(self, target_xy):
+        ctx = self.ctx
+        # Prefer a JUMP to cover ground fast whenever one is possible. A jump
+        # costs a flat minimum (jumpMinCost) regardless of distance, so once we
+        # commit we hop as far toward the target as we can: directly onto it
+        # when in range, otherwise to the farthest safe waypoint along the path
+        # (targets beyond maxJumpDistance). Falls back to a free MOVE step.
+        # Reset here so the flag reflects only this (the chosen) travel target:
+        # _work_action returns on the first travel that yields an action, so the
+        # last_jump_waypoint call is the one that matters.
+        self.bank_for_jump = False
+        jump_target = self._jump_waypoint(target_xy)
+        if jump_target is not None:
+            return self._make_jump(jump_target[0], jump_target[1])
+        direction = self._safe_move_dir(target_xy)
+        if direction and ctx.energy >= ctx.move_cost:
+            return self._make_move(direction)
+        return None
+
+    def _jump_waypoint(self, target_xy):
+        """Cell to JUMP to when heading for target_xy, or None to MOVE instead.
+
+        Returns None for adjacent targets (a free MOVE is cheaper than a flat
+        ~jumpMinCost jump), when JUMP is locked/unaffordable, or when no safe
+        landing exists. When the target is within range and safe we jump
+        straight onto it. When the target itself is contested/dangerous -- or
+        farther than maxJumpDistance -- we hop to the farthest SAFE cell along
+        the straight line toward it instead of crawling the whole way one grid
+        at a time. Jumping onto a contested cell is still avoided (JUMP resolves
+        last, so we would land beside a raider and eat a free hit), but stopping
+        a couple of cells short of the danger covers ground fast without that
+        risk.
+        """
+        ctx = self.ctx
+        if not ctx.has_jump:
+            logger.debug("JUMP skip: no JUMP module unlocked (modules=%s)", ctx.modules)
+            return None
+        ox, oy = ctx.location
+        tx, ty = int(target_xy[0]), int(target_xy[1])
+        dist = ShipUtils.distance(ctx.location, target_xy)
+        if dist <= 1:
+            logger.debug(
+                "JUMP skip: target %s is adjacent (dist=%.2f); free MOVE is cheaper",
+                (tx, ty), dist,
+            )
+    return None
+    # In range and safe: jump straight onto the target.
+    if dist <= ctx.max_jump_distance:
+        affordable = ctx.can_jump(dist)
+        unsafe = self._is_unsafe((tx, ty))
+        threatened = self._threat_at_destination(target_xy)
+        if affordable and not unsafe and not threatened:
+            logger.debug(
+                "JUMP direct: %s -> %s dist=%.2f cost=%d energy=%d",
+                ctx.location, (tx, ty), dist, ctx.jump_energy(dist), ctx.energy,
+            )
+            return (tx, ty)
+    if not affordable:
+        if dist >= ctx.jump_bank_min_distance:
+            # Far enough that banking energy to jump beats crawling.
+            self.bank_for_jump = True
+            logger.debug(
+                "JUMP skip (in range): target=%s dist=%.2f need_energy=%d "
+                "have=%d bank=%s -> MOVE one grid",
+                (tx, ty), dist, ctx.jump_energy(dist), ctx.energy,
+                self.bank_for_jump,
+            )
+            return None
+    # Affordable but the destination itself is contested/unsafe. Rather
+    # than crawl the entire way into the danger zone, fall through and
+    # jump to the farthest SAFE cell short of it.
+    logger.debug(
+        "JUMP in range but target contested: target=%s dist=%.2f "
+        "unsafe=%s threatened=%s -> seeking safe waypoint short of it",
+        (tx, ty), dist, unsafe, threatened,
+    )
+    # Hop to the farthest safe, affordable cell along the line to target.
+    # Covers both out-of-range targets and in-range contested ones. We stop
+    # at a 2-cell minimum hop: paying a flat ~jumpMinCost to advance a
+    # single grid (when MOVE is free) is never worth it.
+    max_reach = min(ctx.max_jump_distance, int(math.ceil(dist)))
+    ux, uy = (tx - ox) / dist, (ty - oy) / dist
     rejected = []
-    for direction in order:
-        if direction is None:
+    for reach in range(max_reach, 1, -1):
+        cx = min(max(0, int(round(ox + ux * reach))), ctx.map_width - 1)
+        cy = min(max(0, int(round(oy + uy * reach))), ctx.map_height - 1)
+        if (cx, cy) == (ox, oy) or (cx, cy) == (tx, ty):
             continue
-        nx, ny = ShipUtils.next_position(ctx.location, direction)
-        if not ctx.in_bounds(nx, ny):
-            rejected.append((direction, "out-of-bounds"))
+        hop = ShipUtils.distance(ctx.location, (cx, cy))
+        if hop < 2:
             continue
-        if self.is_unsafe((nx, ny)):
-            rejected.append((direction, "unsafe"))
+        if not ctx.can_jump(hop):
+            rejected.append((reach, "unaffordable", hop))
+            continue
+        if self._is_unsafe((cx, cy)) or self._threat_at_destination((cx, cy)):
+            rejected.append((reach, "blocked", hop))
             continue
     logger.debug(
-        "NAV _safe_move_dir from %s -> target %s: dx=%d dy=%d order=%s "
-        "chose %s (rejected=%s)",
-        ctx.location,
-        (tx, ty),
-        dx,
-        dy,
-        order,
-        direction,
-        rejected,
+        "JUMP waypoint: %s -> %s (reach=%d hop=%.2f cost=%d energy=%d) "
+        "toward target %s dist=%.2f",
+        ctx.location, (cx, cy), reach, hop, ctx.jump_energy(hop),
+        ctx.energy, (tx, ty), dist,
     )
-    return direction
-logger.debug(
-    "NAV _safe_move_dir from %s -> target %s: dx=%d dy=%d order=%s "
-    "NO safe direction (rejected=%s)",
-    ctx.location,
-    (tx, ty),
-    dx,
-    dy,
-    order,
-    rejected,
-)
-return None
-
-def _travel_towards(self, target_xy):
-    ctx = self.ctx
-    # Prefer a JUMP to cover ground fast whenever one is possible. A jump
-    # costs a flat minimum (jumpMinCost) regardless of distance, so once we
-    # commit we hop as far toward the target as we can: directly onto it
-    # when in range, otherwise to the farthest safe waypoint along the path
-    # (targets beyond maxJumpDistance). Falls back to a free MOVE step.
-    # Reset here so the flag reflects only this (the chosen) travel target:
-    # _work_action returns on the first travel that yields an action, so the
-    # last_jump_waypoint call is the one that matters.
-    self.bank_for_jump = False
-    jump_target = self._jump_waypoint(target_xy)
-    if jump_target is not None:
-        return self.make_jump(jump_target[0], jump_target[1])
-    direction = self._safe_move_dir(target_xy)
-    if direction and ctx.energy >= ctx.move_cost:
-        return self._make_move(direction)
-    return None
-
-def _jump_waypoint(self, target_xy):
-    """Cell to JUMP to when heading for target_xy, or None to MOVE instead.
-
-    Returns None for adjacent targets (a free MOVE is cheaper than a flat
-    ~jumpMinCost jump), when JUMP is locked/unaffordable, or when no safe
-    landing exists. When the target is within range and safe we jump
-    straight onto it. When the target itself is contested/dangerous -- or
-    farther than maxJumpDistance -- we hop to the farthest SAFE cell along
-    the straight line toward it instead of crawling the whole way one grid
-    at a time. Jumping onto a contested cell is still avoided (JUMP resolves
-    last, so we would land beside a raider and eat a free hit), but stopping
-    a couple of cells short of the danger covers ground fast without that
-    risk.
-    """
-    ctx = self.ctx
-    if not ctx.has_jump:
-        logger.debug("JUMP skip: no JUMP module unlocked (modules=%s)", ctx.modules)
-        return None
-    ox, oy = ctx.location
-    tx, ty = int(target_xy[0]), int(target_xy[1])
-    dist = ShipUtils.distance(ctx.location, target_xy)
-    if dist <= 1:
-        logger.debug(
-            "JUMP skip: target %s is adjacent (dist=%.2f); free MOVE is cheaper",
-            (tx, ty), dist,
-        )
-return None
-# In range and safe: jump straight onto the target.
-if dist <= ctx.max_jump_distance:
-    affordable = ctx.can_jump(dist)
-    unsafe = self.is_unsafe((tx, ty))
-    threatened = self._threat_at_destination(target_xy)
-    if affordable and not unsafe and not threatened:
-        logger.debug(
-            "JUMP direct: %s -> %s dist=%.2f cost=%d energy=%d",
-            ctx.location, (tx, ty), dist, ctx.jump_energy(dist), ctx.energy,
-        )
-        return (tx, ty)
-if not affordable:
-    if dist >= ctx.jump_bank_min_distance:
-        # Far enough that banking energy to jump beats crawling.
+    return (cx, cy)
+    if ctx.energy < ctx.jump_min_cost:
+        # The far target's hops were unaffordable: bank energy to jump (the
+        # distance always exceeds jump_bank_min_distance here).
         self.bank_for_jump = True
         logger.debug(
-            "JUMP skip (in range): target=%s dist=%.2f need_energy=%d "
-            "have=%d bank=%s -> MOVE one grid",
-            (tx, ty), dist, ctx.jump_energy(dist), ctx.energy,
-            self.bank_for_jump,
+            "JUMP skip (target %s dist=%.2f): no reachable/safe waypoint "
+            "energy=%d need>%d bank=%s rejected=%s -> MOVE one grid",
+            (tx, ty), dist, ctx.energy, ctx.jump_min_cost, self.bank_for_jump,
+            rejected,
         )
-        return None
-# Affordable but the destination itself is contested/unsafe. Rather
-# than crawl the entire way into the danger zone, fall through and
-# jump to the farthest SAFE cell short of it.
-logger.debug(
-    "JUMP in range but target contested: target=%s dist=%.2f "
-    "unsafe=%s threatened=%s -> seeking safe waypoint short of it",
-    (tx, ty), dist, unsafe, threatened,
-)
-# Hop to the farthest safe, affordable cell along the line to target.
-# Covers both out-of-range targets and in-range contested ones. We stop
-# at a 2-cell minimum hop: paying a flat ~jumpMinCost to advance a
-# single grid (when MOVE is free) is never worth it.
-max_reach = min(ctx.max_jump_distance, int(math.ceil(dist)))
-ux, uy = (tx - ox) / dist, (ty - oy) / dist
-rejected = []
-for reach in range(max_reach, 1, -1):
-    cx = min(max(0, int(round(ox + ux * reach))), ctx.map_width - 1)
-    cy = min(max(0, int(round(oy + uy * reach))), ctx.map_height - 1)
-    if (cx, cy) == (ox, oy) or (cx, cy) == (tx, ty):
-        continue
-    hop = ShipUtils.distance(ctx.location, (cx, cy))
-    if hop < 2:
-        continue
-    if not ctx.can_jump(hop):
-        rejected.append((reach, "unaffordable", hop))
-        continue
-    if self.is_unsafe((cx, cy)) or self._threat_at_destination((cx, cy)):
-        rejected.append((reach, "blocked", hop))
-        continue
-logger.debug(
-    "JUMP waypoint: %s -> %s (reach=%d hop=%.2f cost=%d energy=%d) "
-    "toward target %s dist=%.2f",
-    ctx.location, (cx, cy), reach, hop, ctx.jump_energy(hop),
-    ctx.energy, (tx, ty), dist,
-)
-return (cx, cy)
-if ctx.energy < ctx.jump_min_cost:
-    # The far target's hops were unaffordable: bank energy to jump (the
-    # distance always exceeds jump_bank_min_distance here).
-    self.bank_for_jump = True
-    logger.debug(
-        "JUMP skip (target %s dist=%.2f): no reachable/safe waypoint "
-        "energy=%d need>%d bank=%s rejected=%s -> MOVE one grid",
-        (tx, ty), dist, ctx.energy, ctx.jump_min_cost, self.bank_for_jump,
-        rejected,
-    )
-return None
+    return None
 
-def _flee_action(self):
-    ctx = self.ctx
-    if not self.threats:
-        return None
-    tx = sum(ShipUtils.location(e)[0] for e in self.threats) / len(self.threats)
-    ty = sum(ShipUtils.location(e)[1] for e in self.threats) / len(self.threats)
-    nearest_post = ShipUtils.nearest(ctx.location, ctx.trading_posts)
-    post_xy = ShipUtils.location(nearest_post) if nearest_post is not None else None
+    def _flee_action(self):
+        ctx = self.ctx
+        if not self.threats:
+            return None
+        tx = sum(ShipUtils.location(e)[0] for e in self.threats) / len(self.threats)
+        ty = sum(ShipUtils.location(e)[1] for e in self.threats) / len(self.threats)
+        nearest_post = ShipUtils.nearest(ctx.location, ctx.trading_posts)
+        post_xy = ShipUtils.location(nearest_post) if nearest_post is not None else None
 
-    best_dir, best_key = None, None
-    for direction in ("N", "S", "E", "W"):
-        nx, ny = ShipUtils.next_position(ctx.location, direction)
-        if not ctx.in_bounds(nx, ny):
-            continue
-        away = (nx - tx) ** 2 + (ny - ty) ** 2
-        toward_post = -ShipUtils.distance((nx, ny), post_xy) if post_xy else 0.0
-        key = (
-            0 if self.is_unsafe((nx, ny)) else 1,
-            away,
-            0 if (nx, ny) == ctx.prev_cell else 1,
-            toward_post,
+        best_dir, best_key = None, None
+        for direction in ("N", "S", "E", "W"):
+            nx, ny = ShipUtils.next_position(ctx.location, direction)
+            if not ctx.in_bounds(nx, ny):
+                continue
+            away = (nx - tx) ** 2 + (ny - ty) ** 2
+            toward_post = -ShipUtils.distance((nx, ny), post_xy) if post_xy else 0.0
+            key = (
+                0 if self._is_unsafe((nx, ny)) else 1,
+                away,
+                0 if (nx, ny) == ctx.prev_cell else 1,
+                toward_post,
+            )
+            if best_key is None or key > best_key:
+                best_key, best_dir = key, direction
+        return self._make_move(best_dir) if best_dir is not None else None
+
+    # --- Offence ---
+    def _attack_opportunity(self):
+        ctx = self.ctx
+        if ctx.recharging or ctx.energy < ctx.attack_cost:
+            return None
+        # Back off for a tick if our last offence just failed (target left the
+        # zone): the same enemy is likely still absent, so retrying only loops.
+        if ctx.offence_target_lost:
+            return None
+        targets = [
+            e for e in ctx.same_zone_enemies
+            if str(e.get("state", "")).upper() != "DESTROYED" and e.get("playerId")
+        ]
+        if not targets:
+            return None
+
+        combat = ctx.combat
+        my_atk = combat.attack_power(
+            ctx.me, recharging=ctx.recharging, energy=ctx.energy, skills=ctx.skills
         )
-        if best_key is None or key > best_key:
-            best_key, best_dir = key, direction
-    return self._make_move(best_dir) if best_dir is not None else None
-
-# --- Offence ---
-def _attack_opportunity(self):
-    ctx = self.ctx
-    if ctx.recharging or ctx.energy < ctx.attack_cost:
-        return None
-    # Back off for a tick if our last offence just failed (target left the
-    # zone): the same enemy is likely still absent, so retrying only loops.
-    if ctx.offence_target_lost:
-        return None
-    targets = [
-        e for e in ctx.same_zone_enemies
-        if str(e.get("state", "")).upper() != "DESTROYED" and e.get("playerId")
-    ]
-    if not targets:
-        return None
-
-    combat = ctx.combat
-    my_atk = combat.attack_power(
-        ctx.me, recharging=ctx.recharging, energy=ctx.energy, skills=ctx.skills
-    )
-    my_surv = max(
-        combat.survivability(
-            ctx.me, recharging=ctx.recharging, shields_up=ctx.shields_up, skills=ctx.skills
-        ),
-        1.0,
-    )
-    best = None
-    for enemy in targets:
-        e_surv = max(combat.survivability(enemy), 1.0)
-        e_atk_now = combat.attack_power(enemy, latent=False)
-        e_atk_latent = combat.attack_power(enemy, latent=True)
-        cargo = ShipUtils.safe_int(enemy.get("nutrinium"))
-
-        dominate = my_atk >= Tunables.ATTACK_OFFENSE_MARGIN * e_surv
-        survive = my_surv >= Tunables.ATTACK_DEFENSE_MARGIN * max(e_atk_now, 1.0)
-        worthwhile = (
-                cargo >= Tunables.PLUNDER_THRESHOLD
-                or e_atk_latent >= Tunables.ATTACK_THREAT_FRACTION * my_surv
+        my_surv = max(
+            combat.survivability(
+                ctx.me, recharging=ctx.recharging, shields_up=ctx.shields_up, skills=ctx.skills
+            ),
+            1.0,
         )
-        if dominate and survive and worthwhile:
-            key = (cargo, e_surv, enemy.get("playerId") or "")
-            if best is None or key > best[0]:
-                best = (key, enemy)
-    if best is None:
-        return None
-    enemy = best[1]
-    e_hp = max(ShipUtils.safe_int(enemy.get("health"), 1), 1)
-    needed = int(math.ceil(e_hp / 1.5)) + 2
-    spend = max(ctx.attack_cost, min(ctx.energy, needed))
-    return {"actionType": "ATTACK", "payload": {"target": enemy.get("playerId"), "energy": spend}}
+        best = None
+        for enemy in targets:
+            e_surv = max(combat.survivability(enemy), 1.0)
+            e_atk_now = combat.attack_power(enemy, latent=False)
+            e_atk_latent = combat.attack_power(enemy, latent=True)
+            cargo = ShipUtils.safe_int(enemy.get("nutrinium"))
 
-# --- End-game banking ---
-def _ticks_to_bank(self, post_xy):
-    ctx = self.ctx
-    dist = ShipUtils.distance(ctx.location, post_xy)
-    if dist <= 0:
-        return 1
-    travel = 1 if (ctx.can_jump(dist) and dist <= ctx.max_jump_distance) else int(math.ceil(dist))
-    return travel + 1
+            dominate = my_atk >= Tunables.ATTACK_OFFENSE_MARGIN * e_surv
+            survive = my_surv >= Tunables.ATTACK_DEFENSE_MARGIN * max(e_atk_now, 1.0)
+            worthwhile = (
+                    cargo >= Tunables.PLUNDER_THRESHOLD
+                    or e_atk_latent >= Tunables.ATTACK_THREAT_FRACTION * my_surv
+            )
+            if dominate and survive and worthwhile:
+                key = (cargo, e_surv, enemy.get("playerId") or "")
+                if best is None or key > best[0]:
+                    best = (key, enemy)
+        if best is None:
+            return None
+        enemy = best[1]
+        e_hp = max(ShipUtils.safe_int(enemy.get("health"), 1), 1)
+        needed = int(math.ceil(e_hp / 1.5)) + 2
+        spend = max(ctx.attack_cost, min(ctx.energy, needed))
+        return {"actionType": "ATTACK", "payload": {"target": enemy.get("playerId"), "energy": spend}}
 
-def endgame_bank_action(self):
-    ctx = self.ctx
-    if ctx.ticks_remaining is None or ctx.nutrinium <= 0:
-        return None
-    nearest_post = ShipUtils.nearest(ctx.location, ctx.trading_posts)
-    if nearest_post is None:
+    # --- End-game banking ---
+    def _ticks_to_bank(self, post_xy):
+        ctx = self.ctx
+        dist = ShipUtils.distance(ctx.location, post_xy)
+        if dist <= 0:
+            return 1
+        travel = 1 if (ctx.can_jump(dist) and dist <= ctx.max_jump_distance) else int(math.ceil(dist))
+        return travel + 1
+
+    def endgame_bank_action(self):
+        ctx = self.ctx
+        if ctx.ticks_remaining is None or ctx.nutrinium <= 0:
+            return None
+        nearest_post = ShipUtils.nearest(ctx.location, ctx.trading_posts)
+        if nearest_post is None:
+            logger.debug(
+                "ENDGAME no reachable post to bank nutrinium=%d (ticks left=%.1f)",
+                ctx.nutrinium,
+                ctx.ticks_remaining,
+            )
+            return None
+        post_xy = ShipUtils.location(nearest_post)
+        if post_xy == ctx.location:
+            logger.debug(
+                "ENDGAME selling on post %s nutrinium=%d (ticks_left=%.1f)",
+                post_xy, ctx.nutrinium, ctx.ticks_remaining,
+            )
+            return {"actionType": "SELL", "payload": {"nutrinium": ctx.nutrinium}}
+        needed = self._ticks_to_bank(post_xy)
+        # Commit to banking with a generous, distance-scaled cushion. The round
+        # clock is a wall-clock estimate (no max-tick field) that can jump
+        # between ticks, and real travel may burn more game-ticks than the
+        # linear estimate (one MOVE per cell assumes we are polled every tick).
+        # Banking a tick "too early" only costs a little mining; banking a tick
+        # too late forfeits the whole cargo (~98 credits/unit), so we err early.
+        safety = max(3.0, 0.35 * needed) + 1.0
+        if ctx.ticks_remaining > needed + safety:
+            logger.debug(
+                "ENDGAME defer bank: nutrinium=%d post=%s dist=%.1f needed=%d "
+                "safety=%.1f ticks_left=%.1f -> keep working",
+                ctx.nutrinium,
+                post_xy, ShipUtils.distance(ctx.location, post_xy),
+                needed, safety, ctx.ticks_remaining,
+            )
+            return None
         logger.debug(
-            "ENDGAME no reachable post to bank nutrinium=%d (ticks left=%.1f)",
-            ctx.nutrinium,
-            ctx.ticks_remaining,
-        )
-        return None
-    post_xy = ShipUtils.location(nearest_post)
-    if post_xy == ctx.location:
-        logger.debug(
-            "ENDGAME selling on post %s nutrinium=%d (ticks_left=%.1f)",
-            post_xy, ctx.nutrinium, ctx.ticks_remaining,
-        )
-        return {"actionType": "SELL", "payload": {"nutrinium": ctx.nutrinium}}
-    needed = self._ticks_to_bank(post_xy)
-    # Commit to banking with a generous, distance-scaled cushion. The round
-    # clock is a wall-clock estimate (no max-tick field) that can jump
-    # between ticks, and real travel may burn more game-ticks than the
-    # linear estimate (one MOVE per cell assumes we are polled every tick).
-    # Banking a tick "too early" only costs a little mining; banking a tick
-    # too late forfeits the whole cargo (~98 credits/unit), so we err early.
-    safety = max(3.0, 0.35 * needed) + 1.0
-    if ctx.ticks_remaining > needed + safety:
-        logger.debug(
-            "ENDGAME defer bank: nutrinium=%d post=%s dist=%.1f needed=%d "
-            "safety=%.1f ticks_left=%.1f -> keep working",
+            "ENDGAME rush to bank: nutrinium=%d post=%s dist=%.1f needed=%d "
+            "safety=%.1f ticks_left=%.1f -> head to post",
             ctx.nutrinium,
             post_xy, ShipUtils.distance(ctx.location, post_xy),
             needed, safety, ctx.ticks_remaining,
         )
-        return None
-    logger.debug(
-        "ENDGAME rush to bank: nutrinium=%d post=%s dist=%.1f needed=%d "
-        "safety=%.1f ticks_left=%.1f -> head to post",
-        ctx.nutrinium,
-        post_xy, ShipUtils.distance(ctx.location, post_xy),
-        needed, safety, ctx.ticks_remaining,
-    )
-    return self._travel_towards(post_xy)
-# --- Productive intent (ignores solar-panel state) ---
-def _work_action(self):
-    ctx = self.ctx
-    # Standing on a post with cargo: selling is free, always cash in.
-    if ctx.at_trading_post and ctx.nutrinium > 0:
-        return {"actionType": "SELL", "payload": {"nutrinium": ctx.nutrinium}}
+        return self._travel_towards(post_xy)
+    # --- Productive intent (ignores solar-panel state) ---
+    def _work_action(self):
+        ctx = self.ctx
+        # Standing on a post with cargo: selling is free, always cash in.
+        if ctx.at_trading_post and ctx.nutrinium > 0:
+            return {"actionType": "SELL", "payload": {"nutrinium": ctx.nutrinium}}
 
-    # Haul to a post once the load is worthwhile or nothing left to mine.
-    if ctx.nutrinium > 0 and (
-            ctx.nutrinium >= Tunables.SELL_CARGO_THRESHOLD or not ctx.mineable_asteroids
-    ):
-        nearest_post = ShipUtils.nearest(ctx.location, ctx.trading_posts)
-        if nearest_post is not None:
-            travel = self._travel_towards(ShipUtils.location(nearest_post))
+        # Haul to a post once the load is worthwhile or nothing left to mine.
+        if ctx.nutrinium > 0 and (
+                ctx.nutrinium >= Tunables.SELL_CARGO_THRESHOLD or not ctx.mineable_asteroids
+        ):
+            nearest_post = ShipUtils.nearest(ctx.location, ctx.trading_posts)
+            if nearest_post is not None:
+                travel = self._travel_towards(ShipUtils.location(nearest_post))
+                if travel is not None:
+                    return travel
+
+        # PLUNDER a same-zone enemy (keeps their cargo, unlike ATTACK).
+        # Skip for one tick if our last offence just failed (target left the
+        # zone): retrying immediately against a mobile enemy only loops on the
+        # same failure -- do productive work (mine/move) instead.
+        if ctx.energy >= ctx.plunder_cost and not ctx.shields_up and not ctx.offence_target_lost:
+            plunder_targets = [
+                e for e in ctx.same_zone_enemies
+                if ShipUtils.safe_int(e.get("nutrinium")) >= Tunables.PLUNDER_THRESHOLD
+            ]
+            if plunder_targets:
+                richest = max(
+                    plunder_targets,
+                    key=lambda e: (ShipUtils.safe_int(e.get("nutrinium")), e.get("playerId") or ""),
+                )
+                if richest.get("playerId"):
+                    return {"actionType": "PLUNDER", "payload": {"target": richest["playerId"]}}
+
+        # MINE the current asteroid while it still holds nutrinium.
+        if ctx.at_asteroid and ctx.energy >= ctx.mine_cost:
+            current = next(
+                (a for a in ctx.asteroids
+                 if ShipUtils.location(a) == ctx.location
+                 and ShipUtils.safe_int(a.get("nutrinium")) > 0),
+                None,
+            )
+            if current is not None:
+                return {"actionType": "MINE"}
+
+        # Travel to the best mineable asteroid we can approach safely. Rocks
+        # with an enemy sitting on (or next to) them are pushed to the back of
+        # the queue so we prefer an uncontested target, only diverting to a
+        # threatened one when nothing safer is reachable.
+        for ast in sorted(
+                ctx.mineable_asteroids,
+                key=lambda a: (
+                                      1 if self._threat_at_destination(ShipUtils.location(a)) else 0,
+                                      -ctx.asteroid_score(a),
+                              ) + ShipUtils.location(a),
+        ):
+            target = ShipUtils.location(ast)
+            travel = self._travel_towards(target)
             if travel is not None:
+                logger.debug(
+                    "WORK travel to asteroid %s (nutrinium=%s score=%.3f) -> %s",
+                    target,
+                    ShipUtils.safe_int(ast.get("nutrinium")),
+                    ctx.asteroid_score(ast),
+                    travel.get("actionType"),
+                )
                 return travel
 
-    # PLUNDER a same-zone enemy (keeps their cargo, unlike ATTACK).
-    # Skip for one tick if our last offence just failed (target left the
-    # zone): retrying immediately against a mobile enemy only loops on the
-    # same failure -- do productive work (mine/move) instead.
-    if ctx.energy >= ctx.plunder_cost and not ctx.shields_up and not ctx.offence_target_lost:
-        plunder_targets = [
-            e for e in ctx.same_zone_enemies
-            if ShipUtils.safe_int(e.get("nutrinium")) >= Tunables.PLUNDER_THRESHOLD
-        ]
-        if plunder_targets:
-            richest = max(
-                plunder_targets,
-                key=lambda e: (ShipUtils.safe_int(e.get("nutrinium")), e.get("playerId") or ""),
-            )
-            if richest.get("playerId"):
-                return {"actionType": "PLUNDER", "payload": {"target": richest["playerId"]}}
+        # Nothing left to mine but still carrying cargo: go sell it.
+        if ctx.nutrinium > 0 and not ctx.mineable_asteroids:
+            nearest_post = ShipUtils.nearest(ctx.location, ctx.trading_posts)
+            if nearest_post is not None:
+                travel = self._travel_towards(ShipUtils.location(nearest_post))
+                if travel is not None:
+                    return travel
 
-    # MINE the current asteroid while it still holds nutrinium.
-    if ctx.at_asteroid and ctx.energy >= ctx.mine_cost:
-        current = next(
-            (a for a in ctx.asteroids
-             if ShipUtils.location(a) == ctx.location
-             and ShipUtils.safe_int(a.get("nutrinium")) > 0),
-            None,
-        )
-        if current is not None:
-            return {"actionType": "MINE"}
+        # NEGOTIATE to build the team sell bonus when idle at the objective post.
+        if ctx.at_objective_post and ctx.nutrinium == 0 and ctx.energy >= ctx.negotiate_cost:
+            return {"actionType": "NEGOTIATE"}
 
-    # Travel to the best mineable asteroid we can approach safely. Rocks
-    # with an enemy sitting on (or next to) them are pushed to the back of
-    # the queue so we prefer an uncontested target, only diverting to a
-    # threatened one when nothing safer is reachable.
-    for ast in sorted(
-            ctx.mineable_asteroids,
-            key=lambda a: (
-                                  1 if self.threat_at_destination(ShipUtils.location(a)) else 0,
-                                  -ctx.asteroid_score(a),
-                          ) + ShipUtils.location(a),
-    ):
-        target = ShipUtils.location(ast)
-        travel = self._travel_towards(target)
-        if travel is not None:
-            logger.debug(
-                "WORK travel to asteroid %s (nutrinium=%s score=%.3f) -> %s",
-                target,
-                ShipUtils.safe_int(ast.get("nutrinium")),
-                ctx.asteroid_score(ast),
-                travel.get("actionType"),
-            )
-            return travel
+        return {"actionType": "WAIT"}
 
-    # Nothing left to mine but still carrying cargo: go sell it.
-    if ctx.nutrinium > 0 and not ctx.mineable_asteroids:
-        nearest_post = ShipUtils.nearest(ctx.location, ctx.trading_posts)
-        if nearest_post is not None:
-            travel = self._travel_towards(ShipUtils.location(nearest_post))
-            if travel is not None:
-                return travel
+    # --- Top-level decision (wraps work with panel management) ---
+    def _choose(self):
+        ctx = self.ctx
+        if ctx.state == "DESTROYED":
+            return {"actionType": "RESPAWN"}
 
-    # NEGOTIATE to build the team sell bonus when idle at the objective post.
-    if ctx.at_objective_post and ctx.nutrinium == 0 and ctx.energy >= ctx.negotiate_cost:
-        return {"actionType": "NEGOTIATE"}
+        # DEADLOCK ESCAPE: the server has rejected our action for several ticks
+        # running with zero change in position or energy (e.g. ~588 refused
+        # RECHARGES in game 37102 round 2). Re-submitting the same rejected
+        # action will keep failing, so force a cheap MOVE to break out before
+        # any other logic can re-pick it.
+        if ctx.stuck_count >= Tunables.STUCK_ESCAPE_THRESHOLD:
+            escape = self._escape_action()
+            if escape is not None:
+                return escape
 
-    return {"actionType": "WAIT"}
+        # END-GAME: bank cargo before the round clock runs out (takes priority).
+    endgame = self._endgame_bank_action()
+    if endgame is not None:
+        return endgame
 
-# --- Top-level decision (wraps work with panel management) ---
-def _choose(self):
-    ctx = self.ctx
-    if ctx.state == "DESTROYED":
-        return {"actionType": "RESPAWN"}
+    # DEFENSE: flee an overwhelming nearby threat (banking first if on a post).
+    if self.is_overwhelmed:
+        if ctx.at_trading_post and ctx.nutrinium > 0 and not ctx.recharging:
+            return {"actionType": "SELL", "payload": {"nutrinium": ctx.nutrinium}}
+        flee = self._flee_action()
+        if flee is not None:
+            return flee
 
-    # DEADLOCK ESCAPE: the server has rejected our action for several ticks
-    # running with zero change in position or energy (e.g. ~588 refused
-    # RECHARGES in game 37102 round 2). Re-submitting the same rejected
-    # action will keep failing, so force a cheap MOVE to break out before
-    # any other logic can re-pick it.
-    if ctx.stuck_count >= Tunables.STUCK_ESCAPE_THRESHOLD:
-        escape = self._escape_action()
-        if escape is not None:
-            return escape
+    # DEFENSIVE RETRACT: panels out next to a real threat is the worst footing.
+    if ctx.recharging and self.threats:
+        return {"actionType": "RECHARGE_END"}
 
-    # END-GAME: bank cargo before the round clock runs out (takes priority).
-endgame = self._endgame_bank_action()
-if endgame is not None:
-    return endgame
+    # ATTACK: press a clear advantage over an in-zone enemy.
+    attack = self._attack_opportunity()
+    if attack is not None:
+        return attack
 
-# DEFENSE: flee an overwhelming nearby threat (banking first if on a post).
-if self.is_overwhelmed:
-    if ctx.at_trading_post and ctx.nutrinium > 0 and not ctx.recharging:
-        return {"actionType": "SELL", "payload": {"nutrinium": ctx.nutrinium}}
-    flee = self._flee_action()
-    if flee is not None:
-        return flee
+    work = self.work_action()
+    work_type = work.get("actionType", "WAIT")
 
-# DEFENSIVE RETRACT: panels out next to a real threat is the worst footing.
-if ctx.recharging and self.threats:
-    return {"actionType": "RECHARGE_END"}
+    if ctx.recharging:
+        # MINE/MOVE/PLUNDER allowed while recharging -> keep working.
+        if not ctx.allowed_while_recharging(work_type):
+            return {"actionType": "RECHARGE_END"}
+        if work_type == "WAIT" and ctx.energy >= ctx.max_energy:
+            return {"actionType": "RECHARGE_END"}
+        return work
 
-# ATTACK: press a clear advantage over an in-zone enemy.
-attack = self._attack_opportunity()
-if attack is not None:
-    return attack
-
-work = self.work_action()
-work_type = work.get("actionType", "WAIT")
-
-if ctx.recharging:
-    # MINE/MOVE/PLUNDER allowed while recharging -> keep working.
+    # Panels stowed: do blocked-while-recharging work now; otherwise only
+    # deploy panels when too low on energy to mine and no threat is present.
     if not ctx.allowed_while_recharging(work_type):
-        return {"actionType": "RECHARGE_END"}
-    if work_type == "WAIT" and ctx.energy >= ctx.max_energy:
-        return {"actionType": "RECHARGE_END"}
-    return work
-
-# Panels stowed: do blocked-while-recharging work now; otherwise only
-# deploy panels when too low on energy to mine and no threat is present.
-if not ctx.allowed_while_recharging(work_type):
-    return work
-# Bank energy for a worthwhile jump: when crawling toward a distant
-# target we cannot yet afford to jump to, deploy panels so we recharge
-# WHILE WE MOVE (MOVE is allowed while recharging). Once energy reaches
-# jumpMinCost the travel logic jumps the remaining distance, saving many
-# crawl ticks. Skipped near threats and once energy is already capped.
-if (
-        work_type == "MOVE"
-        and self.bank_for_jump
-        and ctx.has_jump
-        and ctx.energy < ctx.jump_min_cost
-        and ctx.energy < ctx.max_energy
-        and not self.threats
-):
-    logger.debug(
-        "BANK energy for jump: energy=%d < jumpMinCost=%d while crawling "
-        "to a distant target -> RECHARGE (jump once charged)",
-        ctx.energy, ctx.jump_min_cost,
-    )
-    return {"actionType": "RECHARGE"}
-if ctx.energy < ctx.mine_cost and ctx.energy < ctx.max_energy and not self.threats:
-    return {"actionType": "RECHARGE"}
-return work
-
-# --- Anti-oscillation + bounds sanitisers ---
-def _undoes_previous_step(self, action):
-    ctx = self.ctx
-    if ctx.prev_cell is None or action.get("actionType") != "MOVE":
-        return False
-    direction = action.get("payload", {}).get("direction")
-    if direction not in ("N", "S", "E", "W"):
-        return False
-    return ShipUtils.next_position(ctx.location, direction) == ctx.prev_cell
-
-def _sanitize(self, action):
-    ctx = self.ctx
-    action_type = action.get("actionType")
-    if action_type == "MOVE":
-        direction = action.get("payload", {}).get("direction")
-        nx, ny = ShipUtils.next_position(ctx.location, direction)
-        if not ctx.in_bounds(nx, ny):
-            return {"actionType": "WAIT"}
-    elif action_type == "JUMP":
-        tgt = action.get("payload", {}).get("target_location", {}) or {}
-        tx = min(max(0, ShipUtils.safe_int(tgt.get("x"), ctx.location[0])), ctx.map_width - 1)
-        ty = min(max(0, ShipUtils.safe_int(tgt.get("y"), ctx.location[1])), ctx.map_height - 1)
-        if (tx, ty) == ctx.location:
-            return {"actionType": "WAIT"}
-        return {"actionType": "JUMP", "payload": {"target_location": {"x": tx, "y": ty}}}
-    return action
-
-def _log_decision_inputs(self):
-    """Summarise the action-request signals that drive the next choice.
-
-    Two compact lines complement the TICK header with the inputs the policy
-    actually reasons over: the mining picture (current-cell odds + the
-    best-scored targets and nearest post) and the combat picture (our power
-    vs. acting/dominant threats). They let post-game log analysis explain
-    *why* a MINE failed, which rock was chosen and whether a fight was
-    (correctly) avoided.
-    """
-    if not _LOGGING_ENABLED:
-        return
-    ctx = self.ctx
-def rock_odds(asteroid):
-    nutr = ShipUtils.safe_int(asteroid.get("nutrinium"))
-    mass = max(ShipUtils.safe_int(asteroid.get("mass"), 1), 1)
-    density = nutr / mass
-    success = min(1.0, density * 10.0 * ctx.mine_base_success)
-    return nutr, mass, density, success
-
-# Current-cell mining odds (explains MINE success/FAIL on this rock).
-on_rock = next(
-    (a for a in ctx.asteroids
-     if ShipUtils.location(a) == ctx.location
-     and ShipUtils.safe_int(a.get("nutrinium")) > 0),
-    None,
-)
-if on_rock is not None:
-    nutr, mass, density, success = rock_odds(on_rock)
-    rock_str = "onRock n=%d m=%d dens=%.3f mineSucc=%.0f%%" % (
-        nutr, mass, density, success * 100,
-    )
-else:
-    rock_str = "onRock=None"
-
-# Top mineable candidates by score (shows target-selection quality).
-ranked = sorted(ctx.mineable_asteroids, key=lambda a: -ctx.asteroid_score(a))[:3]
-candidates = []
-for asteroid in ranked:
-    loc = ShipUtils.location(asteroid)
-    nutr, mass, density, success = rock_odds(asteroid)
-    candidates.append(
-        "%s n=%d dens=%.2f succ=%.0f%% score=%.2f dist=%.1f" % (
-            loc, nutr, density, success * 100,
-            ctx.asteroid_score(asteroid),
-            ShipUtils.distance(ctx.location, loc),
-        )
-    )
-
-# Nearest post (drives banking / haul economics).
-nearest_post = ShipUtils.nearest(ctx.location, ctx.trading_posts)
-if nearest_post is not None:
-    post_loc = ShipUtils.location(nearest_post)
-    post_dist = ShipUtils.distance(ctx.location, post_loc)
-    post_str = "nearestPost=%s dist=%.1f jumpCost=%d" % (
-        post_loc, post_dist, ctx.jump_energy(post_dist),
-    )
-else:
-    post_str = "nearestPost=None"
-
-logger.debug(
-    "SCAN %s | mineable=%d top=[%s] | %s",
-    rock_str, len(ctx.mineable_asteroids), "; ".join(candidates), post_str,
-)
-
-# Combat picture: our power vs. the acting/dominant threats we weigh.
-def power_list(ships):
-    return ", ".join(
-        "%s p=%.1f" % (ShipUtils.location(e), ctx.combat.rough_power(e))
-        for e in sorted(ships, key=lambda e: -ctx.combat.rough_power(e))[:3]
-    )
-
-logger.debug(
-    "COMBAT myPower=%.1f eff=%.1f overwhelmed=%s | acting=%d sameZone=%d | "
-    "threats=%d [%s] | dominant=%d [%s]",
-    self.my_power, self.my_power_eff, self.is_overwhelmed,
-    len(self.acting_enemies), len(ctx.same_zone_enemies),
-    len(self.threats), power_list(self.threats),
-    len(self.dominant_threats), power_list(self.dominant_threats),
-)
-
-def decide(self):
-    ctx = self.ctx
-    self._log_decision_inputs()
-    chosen = self._choose()
-    logger.debug(
-        "DECIDE loc=%s prev_cell=%s energy=%s nutrinium=%s recharging=%s "
-        "overwhelmed=%s threats=%d bankJump=%s chosen=%s payload=%s",
-        ctx.location, ctx.prev_cell, ctx.energy, ctx.nutrinium, ctx.recharging,
-        self.is_overwhelmed, len(self.threats), self.bank_for_jump,
-        chosen.get("actionType"), chosen.get("payload"),
-    )
-
-    chosen = _enforce(self.ctx, chosen)
-
-    # Damp two-cell oscillation (exempt genuine flight).
-    if not self.is_overwhelmed and self._undoes_previous_step(chosen):
+        return work
+    # Bank energy for a worthwhile jump: when crawling toward a distant
+    # target we cannot yet afford to jump to, deploy panels so we recharge
+    # WHILE WE MOVE (MOVE is allowed while recharging). Once energy reaches
+    # jumpMinCost the travel logic jumps the remaining distance, saving many
+    # crawl ticks. Skipped near threats and once energy is already capped.
+    if (
+            work_type == "MOVE"
+            and self.bank_for_jump
+            and ctx.has_jump
+            and ctx.energy < ctx.jump_min_cost
+            and ctx.energy < ctx.max_energy
+            and not self.threats
+    ):
         logger.debug(
-            "OSCILLATION damp: MOVE %s from %s would step back onto prev_cell "
-            "%s -> WAIT instead",
-            chosen.get("payload", {}).get("direction"),
-            ctx.location, ctx.prev_cell,
+            "BANK energy for jump: energy=%d < jumpMinCost=%d while crawling "
+            "to a distant target -> RECHARGE (jump once charged)",
+            ctx.energy, ctx.jump_min_cost,
         )
-        chosen = {"actionType": "WAIT"}
+        return {"actionType": "RECHARGE"}
+    if ctx.energy < ctx.mine_cost and ctx.energy < ctx.max_energy and not self.threats:
+        return {"actionType": "RECHARGE"}
+    return work
 
-    final = self._sanitize(chosen)
-    logger.debug("DECIDE final action=%s payload=%s", final.get("actionType"), final.get("payload"))
-    return final
+    # --- Anti-oscillation + bounds sanitisers ---
+    def _undoes_previous_step(self, action):
+        ctx = self.ctx
+        if ctx.prev_cell is None or action.get("actionType") != "MOVE":
+            return False
+        direction = action.get("payload", {}).get("direction")
+        if direction not in ("N", "S", "E", "W"):
+            return False
+        return ShipUtils.next_position(ctx.location, direction) == ctx.prev_cell
+
+    def _sanitize(self, action):
+        ctx = self.ctx
+        action_type = action.get("actionType")
+        if action_type == "MOVE":
+            direction = action.get("payload", {}).get("direction")
+            nx, ny = ShipUtils.next_position(ctx.location, direction)
+            if not ctx.in_bounds(nx, ny):
+                return {"actionType": "WAIT"}
+        elif action_type == "JUMP":
+            tgt = action.get("payload", {}).get("target_location", {}) or {}
+            tx = min(max(0, ShipUtils.safe_int(tgt.get("x"), ctx.location[0])), ctx.map_width - 1)
+            ty = min(max(0, ShipUtils.safe_int(tgt.get("y"), ctx.location[1])), ctx.map_height - 1)
+            if (tx, ty) == ctx.location:
+                return {"actionType": "WAIT"}
+            return {"actionType": "JUMP", "payload": {"target_location": {"x": tx, "y": ty}}}
+        return action
+
+    def _log_decision_inputs(self):
+        """Summarise the action-request signals that drive the next choice.
+
+        Two compact lines complement the TICK header with the inputs the policy
+        actually reasons over: the mining picture (current-cell odds + the
+        best-scored targets and nearest post) and the combat picture (our power
+        vs. acting/dominant threats). They let post-game log analysis explain
+        *why* a MINE failed, which rock was chosen and whether a fight was
+        (correctly) avoided.
+        """
+        if not _LOGGING_ENABLED:
+            return
+        ctx = self.ctx
+    def rock_odds(asteroid):
+        nutr = ShipUtils.safe_int(asteroid.get("nutrinium"))
+        mass = max(ShipUtils.safe_int(asteroid.get("mass"), 1), 1)
+        density = nutr / mass
+        success = min(1.0, density * 10.0 * ctx.mine_base_success)
+        return nutr, mass, density, success
+
+    # Current-cell mining odds (explains MINE success/FAIL on this rock).
+    on_rock = next(
+        (a for a in ctx.asteroids
+         if ShipUtils.location(a) == ctx.location
+         and ShipUtils.safe_int(a.get("nutrinium")) > 0),
+        None,
+    )
+    if on_rock is not None:
+        nutr, mass, density, success = rock_odds(on_rock)
+        rock_str = "onRock n=%d m=%d dens=%.3f mineSucc=%.0f%%" % (
+            nutr, mass, density, success * 100,
+        )
+    else:
+        rock_str = "onRock=None"
+
+    # Top mineable candidates by score (shows target-selection quality).
+    ranked = sorted(ctx.mineable_asteroids, key=lambda a: -ctx.asteroid_score(a))[:3]
+    candidates = []
+    for asteroid in ranked:
+        loc = ShipUtils.location(asteroid)
+        nutr, mass, density, success = rock_odds(asteroid)
+        candidates.append(
+            "%s n=%d dens=%.2f succ=%.0f%% score=%.2f dist=%.1f" % (
+                loc, nutr, density, success * 100,
+                ctx.asteroid_score(asteroid),
+                ShipUtils.distance(ctx.location, loc),
+            )
+        )
+
+    # Nearest post (drives banking / haul economics).
+    nearest_post = ShipUtils.nearest(ctx.location, ctx.trading_posts)
+    if nearest_post is not None:
+        post_loc = ShipUtils.location(nearest_post)
+        post_dist = ShipUtils.distance(ctx.location, post_loc)
+        post_str = "nearestPost=%s dist=%.1f jumpCost=%d" % (
+            post_loc, post_dist, ctx.jump_energy(post_dist),
+        )
+    else:
+        post_str = "nearestPost=None"
+
+    logger.debug(
+        "SCAN %s | mineable=%d top=[%s] | %s",
+        rock_str, len(ctx.mineable_asteroids), "; ".join(candidates), post_str,
+    )
+
+    # Combat picture: our power vs. the acting/dominant threats we weigh.
+    def power_list(ships):
+        return ", ".join(
+            "%s p=%.1f" % (ShipUtils.location(e), ctx.combat.rough_power(e))
+            for e in sorted(ships, key=lambda e: -ctx.combat.rough_power(e))[:3]
+        )
+
+    logger.debug(
+        "COMBAT myPower=%.1f eff=%.1f overwhelmed=%s | acting=%d sameZone=%d | "
+        "threats=%d [%s] | dominant=%d [%s]",
+        self.my_power, self.my_power_eff, self.is_overwhelmed,
+        len(self.acting_enemies), len(ctx.same_zone_enemies),
+        len(self.threats), power_list(self.threats),
+        len(self.dominant_threats), power_list(self.dominant_threats),
+    )
+
+    def decide(self):
+        ctx = self.ctx
+        self._log_decision_inputs()
+        chosen = self._choose()
+        logger.debug(
+            "DECIDE loc=%s prev_cell=%s energy=%s nutrinium=%s recharging=%s "
+            "overwhelmed=%s threats=%d bankJump=%s chosen=%s payload=%s",
+            ctx.location, ctx.prev_cell, ctx.energy, ctx.nutrinium, ctx.recharging,
+            self.is_overwhelmed, len(self.threats), self.bank_for_jump,
+            chosen.get("actionType"), chosen.get("payload"),
+        )
+
+        chosen = _enforce(self.ctx, chosen)
+
+        # Damp two-cell oscillation (exempt genuine flight).
+        if not self.is_overwhelmed and self._undoes_previous_step(chosen):
+            logger.debug(
+                "OSCILLATION damp: MOVE %s from %s would step back onto prev_cell "
+                "%s -> WAIT instead",
+                chosen.get("payload", {}).get("direction"),
+                ctx.location, ctx.prev_cell,
+            )
+            chosen = {"actionType": "WAIT"}
+
+        final = self._sanitize(chosen)
+        logger.debug("DECIDE final action=%s payload=%s", final.get("actionType"), final.get("payload"))
+        return final
 
 # ---------------------------------
 # Action-mask safety net (shared utils.action_masker)
