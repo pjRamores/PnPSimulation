@@ -68,7 +68,7 @@ def _expand_opponents_with_counts(raw_opponents: str) -> List[str]:
     import re
 
     # name = everything up to an optional "[N]" suffix; name may contain "::SPEC".
-    pattern = re.comple(r'^(?P<name>.*?)\s*\[\s*(?P<count>\d+)\s*\]$')
+    pattern = re.compile(r'^(?P<name>.*?)\s*\[\s*(?P<count>\d+)\s*\]$')
     expanded: List[str] = []
     for token in raw_opponents.split(','):
         token = token.strip()
@@ -84,7 +84,7 @@ def _expand_opponents_with_counts(raw_opponents: str) -> List[str]:
         elif '[' in token or ']' in token:
             # Bracket present but not a well-formed "[N]" suffix.
             raise ValueError(
-                f"Invalid opponent count syntax: '{token}'. Expected NAME[N], e.g. BOT_V3[3]"
+                f"Invalid opponent count syntax: '{token}'. Expected NAME[N], e.g. BOT_V3[3]."
             )
         else:
             expanded.append(token)
@@ -345,25 +345,27 @@ class GameSimulator:
 
         # Prepare columns and widths
         headers = ["Ship", "Credits", "Pos", "State", "Action", "Payload", "Energy", "Health", "Nutrinium", "Status"]
-        cols = list(zip(*[[str(h) for h in headers]] + [[str(v) for v in row] for row in rows]))
+        cols = list(zip(*([[str(h) for h in headers]] + [[str(v) for v in row] for row in rows])))
         widths = [max(len(cell) for cell in col) for col in cols]
 
         # Print header
-        header_line = " ".join(h.ljust(w) for h, w in zip(headers, widths))
-        sep_line = " ".join('-' * w for w in widths)
+        header_line = "  ".join(h.ljust(w) for h, w in zip(headers, widths))
+        sep_line = "  ".join('-' * w for w in widths)
         print("\n" + header_line)
         print(sep_line)
 
         # Print rows
         for row in rows:
-            line = " ".join(str(cell).ljust(w) for cell, w in zip(row, widths))
+            line = "  ".join(str(cell).ljust(w) for cell, w in zip(row, widths))
             print(line)
 
     def load_model(self, env):
         """Load the trained model for the given environment.
 
-        Handles compatibility with old models trained with 14 actions by wrapping them in a compatibility layer.
-        Also handles old models trained with flat Box observation space vs new Dict observation space (action masking).
+        Handles compatibility with old models trained with 14 actions
+        by wrapping them in a compatibility layer.
+        Also handles old models trained with flat Box observation space
+        vs new Dict observation space (action masking).
         """
         from gymnasium import spaces
 
@@ -378,62 +380,64 @@ class GameSimulator:
             else:
                 raise ValueError(f"Unknown algorithm: {self.algorithm}")
 
-            # Native models trained with the current environment use a MultiDiscrete action space ([action_type, target_x, target_y, energy_bin]) that matches
-            # the env directly. Load them as-is - the compatibility adapter below only supports legacy scalar Discrete models and cannot consume a vector action.
+            # Native models trained with the current environment use a MultiDiscrete
+            # action space ([action_type, target_x, target_y, energy_bin]) that matches
+            # the env directly. Load them as-is - the compatibility adapter below only
+            # supports legacy scalar Discrete models and cannot consume a vector action.
             if isinstance(temp_model.action_space, spaces.MultiDiscrete):
                 # If the env observation is larger than what the model was trained on
-                # (e.g., appended action-restriction features), the native PPO.load(env=env)
+                # (e.g. appended action-restriction features), the native PPO.load(env=env)
                 # rejects the space mismatch. Wrap such models so the observation is
                 # truncated to the model's expected size; otherwise load natively.
                 model_obs_size = None
                 env_obs_size = None
                 if (isinstance(temp_model.observation_space, spaces.Dict) and
-                    isinstance(env.observation_space, spaces.Dict) and
-                    'observation' in temp_model.observation_space.spaces and
-                    'observation' in env.observation_space.spaces):
+                        isinstance(env.observation_space, spaces.Dict) and
+                        'observation' in temp_model.observation_space.spaces and
+                        'observation' in env.observation_space.spaces):
                     model_obs_size = temp_model.observation_space['observation'].shape[0]
                     env_obs_size = env.observation_space['observation'].shape[0]
                 if (model_obs_size is not None and env_obs_size is not None
-                    and model_obs_size != env_obs_size):
+                        and model_obs_size != env_obs_size):
                     print(f"\nWARNING: Model observation size ({model_obs_size}) != Environment observation size ({env_obs_size})")
                     print(f"Using observation-truncation wrapper for native MultiDiscrete model.\n")
                     from model_adapter import wrap_multidiscrete_model_with_obs_compat
                     return wrap_multidiscrete_model_with_obs_compat(temp_model)
-            if self.algorithm == "PPO":
-                return PPO.load(self.model_path, env=env)
-            elif self.algorithm == "DQN":
-                return DQN.load(self.model_path, env=env)
-            else:  # A2C
-                return A2C.load(self.model_path, env=env)
+                if self.algorithm == "PPO":
+                    return PPO.load(self.model_path, env=env)
+                elif self.algorithm == "DQN":
+                    return DQN.load(self.model_path, env=env)
+                else:  # A2C
+                    return A2C.load(self.model_path, env=env)
 
-        # Check if action spaces match. The env now uses a MultiDiscrete action space
-        # whose first dimension is the number of action *types* (19). Legacy models are
-        # scalar Discrete(14/15); their scalar output is still a valid action type in the
-        # new space (action ids 0-13 are unchanged), so we accept them through the compat
-        # wrapper which maps/masks model action ids into the env action-type set.
-        model_action_space = getattr(temp_model.action_space, 'n', None)
-        env_action_space = getattr(env, 'num_action_types', None)
-        if env_action_space is None:
-            env_action_space = (
-                int(env.action_space.nvec[0]) if hasattr(env.action_space, 'nvec')
-                else getattr(env.action_space, 'n', None)
-            )
+            # Check if action spaces match. The env now uses a MultiDiscrete action space
+            # whose first dimension is the number of action *types* (19). Legacy models are
+            # scalar Discrete(14/15); their scalar output is still a valid action type in the
+            # new space (action ids 0-13 are unchanged), so we accept them through the compat
+            # wrapper which maps/masks model action ids into the env action-type set.
+            model_action_space = getattr(temp_model.action_space, 'n', None)
+            env_action_space = getattr(env, 'num_action_types', None)
+            if env_action_space is None:
+                env_action_space = (
+                    int(env.action_space.nvec[0]) if hasattr(env.action_space, 'nvec')
+                    else getattr(env.action_space, 'n', None)
+                )
 
-        needs_action_compat = False
-        if model_action_space is None:
-            raise ValueError(
-                "Model uses a structured (non-Discrete) action space; unsupported for legacy load")
-        if model_action_space != env_action_space:
-            print(f"\nWARNING: Model action space ({model_action_space}) != Environment action space ({env_action_space})")
-            print(f"This model was trained with an older version of the environment.")
+            needs_action_compat = False
+            if model_action_space is None:
+                raise ValueError(
+                    "Model uses a structured (non-Discrete) action space; unsupported for legacy load")
+            if model_action_space != env_action_space:
+                print(f"\nWARNING: Model action space ({model_action_space}) != Environment action space ({env_action_space})")
+                print(f"This model was trained with an older version of the environment.")
 
-            if model_action_space <= env_action_space:
-                print(f"Detected: legacy {model_action_space}-action model vs current {env_action_space}-action environment")
-                print(f"Solution: Using compatibility mode - legacy action ids mapped into the new action set")
-                print(f"Note: For best results, retrain the model with the new action space\n")
-                needs_action_compat = True
-        else:
-            raise ValueError(f"Incompatible action spaces: {model_action_space} vs {env_action_space}")
+                if model_action_space <= env_action_space:
+                    print(f"Detected: legacy {model_action_space}-action model vs current {env_action_space}-action environment")
+                    print(f"Solution: Using compatibility mode - legacy action ids mapped into the new action set")
+                    print(f"Note: For best results, retrain the model with the new action space\n")
+                    needs_action_compat = True
+            else:
+                raise ValueError(f"Incompatible action spaces: {model_action_space} vs {env_action_space}")
 
             # Check if model expects flat observation (Box) vs new Dict space
             model_obs_space = temp_model.observation_space
@@ -447,16 +451,16 @@ class GameSimulator:
 
             if needs_obs_compat:
                 if not spec_requests_flat_box:
-                    print(f"Model expects flat observation (Box), environment provides Dict.")
-                    print(f"Using compatibility wrapper to extract flat observation.\n")
+                    print(f"  Model expects flat observation (Box), environment provides Dict.")
+                    print(f"  Using compatibility wrapper to extract flat observation.\n")
 
             # Check if model expects Dict obs with a different (smaller) observation size
             needs_obs_size_compat = False
             spec_handles_obs_size = False
-            if isinstance(model_obs_space, spaces.Dict) and \
-                isinstance(env.observation_space, spaces.Dict) and \
-                'observation' in model_obs_space.spaces and \
-                'observation' in env.observation_space.spaces:
+            if (isinstance(model_obs_space, spaces.Dict) and
+                    isinstance(env.observation_space, spaces.Dict) and
+                    'observation' in model_obs_space.spaces and
+                    'observation' in env.observation_space.spaces):
                 model_obs_size = model_obs_space['observation'].shape[0]
                 env_obs_size = env.observation_space['observation'].shape[0]
                 if model_obs_size != env_obs_size:
@@ -465,11 +469,11 @@ class GameSimulator:
                     spec_obs_size = spec.observation_spec.observation_size if spec else None
                     if spec_obs_size is not None and spec_obs_size == model_obs_size:
                         spec_handles_obs_size = True  # Spec system handles obs - use temp_model
-                else:
-                    print(f"\nWARNING: Model observation size ({model_obs_size}) != Environment observation size ({env_obs_size})")
-                    print(f"This model was trained with an older version of the environment.")
-                    print(f"Using compatibility mode - observation will be truncated to {model_obs_size} features.\n")
-                    needs_obs_size_compat = True
+                    else:
+                        print(f"\nWARNING: Model observation size ({model_obs_size}) != Environment observation size ({env_obs_size})")
+                        print(f"This model was trained with an older version of the environment.")
+                        print(f"Using compatibility mode - observation will be truncated to {model_obs_size} features.\n")
+                        needs_obs_size_compat = True
 
             # Use compatibility wrapper if needed for action, observation type, or obs size.
             # Also use temp_model (loaded without env) when the spec system handles obs sizing
@@ -505,17 +509,17 @@ class GameSimulator:
             raise RuntimeError(f"Failed to load model: {e}")
 
     def run_episode(self,
-                    num_opponents: int,
-                    render: bool = True,
-                    render_interval: int = 20,
-                    deterministic: bool = True,
-                    pause_each_step: bool = False,
-                    print_all_actions: bool = False,
-                    print_each_step: bool = False,
-                    cell_width: Optional[int] = None,
-                    minimap: bool = False,
-                    minimap_radius: int = 3,
-                    forced_opponent_types: Optional[List[str]] = None) -> Tuple[Dict, Dict]:
+                   num_opponents: int,
+                   render: bool = True,
+                   render_interval: int = 20,
+                   deterministic: bool = True,
+                   pause_each_step: bool = False,
+                   print_all_actions: bool = False,
+                   print_each_step: bool = False,
+                   cell_width: Optional[int] = None,
+                   minimap: bool = False,
+                   minimap_radius: int = 3,
+                   forced_opponent_types: Optional[List[str]] = None) -> Tuple[Dict, Dict]:
         """
         Run a single episode with the trained model.
 
@@ -533,213 +537,217 @@ class GameSimulator:
             - control: dict with keys 'skip' (bool) and 'quit' (bool) to inform caller
         """
         # Create environment
-    env = ProspectorsPiratesEnv(
-        map_width=self.map_width,
-        map_height=self.map_height,
-        num_opponents=num_opponents,
-        max_steps=self.max_steps,
-        render_mode="human" if render else None,
-        use_predefined_asteroids=self.use_predefined_asteroids,
-        asteroid_config_path=self.asteroid_config_path,
-        use_predefined_start=self.use_predefined_start,
-        start_position_config_path=self.start_position_config_path,
-        terminate_on_player_death=False,  # Allow game to continue after player death for full simulation
-        cell_width=cell_width,
-        minimap_mode=minimap,
-        minimap_radius=minimap_radius,
-        forced_opponent_types=forced_opponent_types
-    )
-
-    # Apply optional player MODEL_SPEC from --model-path (MODEL_PATH::SPEC_NAME)
-    env.player_model_spec = self.player_model_spec
-
-    # Load model and reset the environment
-    model = self.load_model(env)
-    observation, info = env.reset()
-
-    # Print opponent AI types at start
-    if print_each_step or pause_each_step:
-        self._print_opponents(env)
-
-    total_reward = 0
-    done = False
-    step = 0
-    control = {'skip': False, 'quit': False}
-    # Track per-participant kills for this episode.
-    player_kills = 0
-    enemy_kills_by_index = {i: 0 for i in range(len(env.opponent_ships))}
-
-    while not done:
-        action = self._predict_player_action(model, observation, deterministic, env)
-
-        # Log/render periodically - BEFORE executing the action so the table
-        # reflects the current (pre-action) state. Always log to file when a
-        # logger is enabled, but only show in console when render=True.
-        should_log_details = (self.logger is not None) or (render and step % render_interval == 0)
-        show_step_tables = should_log_details and step % render_interval == 0
-
-        predicted_action_name = None
-        if show_step_tables:
-            predicted_action_name = self._render_pre_action_table(env, action, step, render)
-
-        # Pause if requested (before action execution)
-        if pause_each_step and not control['skip'] and not control['quit']:
-            rv = self.wait_for_spacebar()
-            if rv == 'skip':
-                control['skip'] = True
-            elif rv == 'quit':
-                control['quit'] = True
-                # Set done to True to break out and finish this episode early
-                done = True
-
-        # Execute the action
-        observation, reward, terminated, truncated, info = env.step(action)
-        total_reward += reward
-        done = terminated or truncated
-
-        # Track kill events from this step's action payloads.
-        player_kills, enemy_kills_by_index = self.track_step_kills(
-            env, info, player_kills, enemy_kills_by_index
-        )
-
-        # Show action results (after execution)
-        if show_step_tables:
-            self.render_post_action_table(
-                env, info, total_reward, step, render, predicted_action_name
-            )
-
-        step += 1
-
-    # Final render
-    if render:
-        env.render()
-        if pause_each_step and not control['skip']:
-            print("\n[Episode Complete - Press SPACE to continue or ESC to quit...]")
-            rv = self.wait_for_spacebar()
-            if rv == 'skip':
-                control['skip'] = True
-            elif rv == 'quit':
-                control['quit'] = True
-
-    episode_stats = self._build_episode_stats(
-        env, info, step, total_reward, player_kills, enemy_kills_by_index, num_opponents
-    )
-    env.close()
-    return episode_stats, control
-
-    def run_simulation(self,
-    verbose: bool = True,
-    pause_each_step: bool = False,
-    cell_width: Optional[int] = None,
-    minimap: bool = False,
-    minimap_radius: int = 3,
-    print_each_step: bool = False,
-    forced_opponent_types: Optional[List[str]] = None) -> List[Dict]:
-
-    """
-    Run multiple episodes with random number of opponents.
-
-    Args:
-        num_episodes: Number of episodes to run
-        min_opponents: Minimum number of opponents
-        max_opponents: Maximum number of opponents
-        render: Whether to render the game
-        render_interval: Steps between renders
-        verbose: Print detailed output
-        pause_each_step: If True, pause and wait for spacebar after each render
-        print_each_step: If True, print detailed info for each step during simulation
-
-    Returns:
-        List of episode statistics
-    """
-
-    # Set process title for Task Manager visibility
-    if SETPROCTITLE_AVAILABLE:
-        setproctitle("PnP Playing")
-    # Set console window title (more visible on Windows)
-    set_console_title("PnP Playing")
-
-    if verbose:
-        self._print("\n" + "=" * 70, to_episode=False)
-        self._print("PROSPECTORS N PIRATES - Trained Model Simulation", to_episode=False)
-        self._print(f"Model: {self.model_path}", to_episode=False)
-        self._print(f"Algorithm: {self.algorithm}", to_episode=False)
-        self._print(f"Episodes: {num_episodes}", to_episode=False)
-        if forced_opponent_types:
-            self._print(f"Opponents: {' '.join(forced_opponent_types)}", to_episode=False)
-        else:
-            self._print(f"Opponents: {min_opponents} to {max_opponents}", to_episode=False)
-        if pause_each_step:
-            self._print("Mode: Interactive (press SPACE to advance, Q to skip pauses, ESC to quit)", to_episode=False)
-        if self.logger:
-            self._print(f"Logging to: {self.logger.output_dir}", to_episode=False)
-        self._print("=" * 70, to_episode=False)
-
-    self.episode_stats = []
-    skip_pauses = False
-
-    for episode in range(num_episodes):
-        # Start episode logging
-        if self.logger:
-            self.logger.start_episode(episode + 1, num_episodes)
-
-        # Determine number of opponents for this episode
-        if forced_opponent_types:
-            num_opponents = len(forced_opponent_types)
-        else:
-            num_opponents = random.randint(min_opponents, max_opponents)
-
-        if verbose:
-            self._print(f"\n{'=' * 70}")
-            self._print(f"EPISODE {episode + 1}/{num_episodes} - {num_opponents} opponent(s)")
-            self._print(f"{'=' * 70}")
-
-        # Run episode
-        stats, control = self.run_episode(
+        env = ProspectorsPiratesEnv(
+            map_width=self.map_width,
+            map_height=self.map_height,
             num_opponents=num_opponents,
-            render=render,
-            render_interval=render_interval,
-            pause_each_step=pause_each_step and not skip_pauses,
+            max_steps=self.max_steps,
+            render_mode="human" if render else None,
+            use_predefined_asteroids=self.use_predefined_asteroids,
+            asteroid_config_path=self.asteroid_config_path,
+            use_predefined_start=self.use_predefined_start,
+            start_position_config_path=self.start_position_config_path,
+            terminate_on_player_death=False,  # Allow game to continue after player death for full simulation
             cell_width=cell_width,
-            minimap=minimap,
+            minimap_mode=minimap,
             minimap_radius=minimap_radius,
-            print_each_step=print_each_step,
             forced_opponent_types=forced_opponent_types
         )
 
-        # Append stats collected so far
-        self.episode_stats.append(stats)
+        # Apply optional player MODEL_SPEC from --model-path (MODEL_PATH::SPEC_NAME)
+        env.player_model_spec = self.player_model_spec
 
-        # If user chose to skip remaining pauses, update flag so subsequent episodes won't pause
-        if control.get('skip'):
-            skip_pauses = True
+        # Load model and reset the environment
+        model = self.load_model(env)
+        observation, info = env.reset()
 
-        # If user requested quit (ESC), stop the simulation early
-        if control.get('quit'):
+        # Print opponent AI types at start
+        if print_each_step or pause_each_step:
+            self._print_opponents(env)
+
+        total_reward = 0
+        done = False
+        step = 0
+        control = {'skip': False, 'quit': False}
+        # Track per-participant kills for this episode.
+        player_kills = 0
+        enemy_kills_by_index = {i: 0 for i in range(len(env.opponent_ships))}
+
+        while not done:
+            action = self._predict_player_action(model, observation, deterministic, env)
+
+            # Log/render periodically - BEFORE executing the action so the table
+            # reflects the current (pre-action) state. Always log to file when a
+            # logger is enabled, but only show in console when render=True.
+            should_log_details = (self.logger is not None) or (render and step % render_interval == 0)
+            show_step_tables = should_log_details and step % render_interval == 0
+
+            predicted_action_name = None
+            if show_step_tables:
+                predicted_action_name = self._render_pre_action_table(env, action, step, render)
+
+                # Pause if requested (before action execution)
+                if pause_each_step and not control['skip'] and not control['quit']:
+                    rv = self.wait_for_spacebar()
+                    if rv == 'skip':
+                        control['skip'] = True
+                    elif rv == 'quit':
+                        control['quit'] = True
+                        # Set done to True to break out and finish this episode early
+                        done = True
+
+            # Execute the action
+            observation, reward, terminated, truncated, info = env.step(action)
+            total_reward += reward
+            done = terminated or truncated
+
+            # Track kill events from this step's action payloads.
+            player_kills, enemy_kills_by_index = self.track_step_kills(
+                env, info, player_kills, enemy_kills_by_index
+            )
+
+            # Show action results (after execution)
+            if show_step_tables:
+                self.render_post_action_table(
+                    env, info, total_reward, step, render, predicted_action_name
+                )
+
+            step += 1
+
+        # Final render
+        if render:
+            env.render()
+            if pause_each_step and not control['skip']:
+                print("\n[Episode Complete - Press SPACE to continue or ESC to quit...]")
+                rv = self.wait_for_spacebar()
+                if rv == 'skip':
+                    control['skip'] = True
+                elif rv == 'quit':
+                    control['quit'] = True
+
+        episode_stats = self._build_episode_stats(
+            env, info, step, total_reward, player_kills, enemy_kills_by_index, num_opponents
+        )
+        env.close()
+        return episode_stats, control
+
+    def run_simulation(self,
+                       num_episodes: int = 5,
+                       min_opponents: int = 1,
+                       max_opponents: int = 5,
+                       render: bool = True,
+                       render_interval: int = 20,
+                       verbose: bool = True,
+                       pause_each_step: bool = False,
+                       cell_width: Optional[int] = None,
+                       minimap: bool = False,
+                       minimap_radius: int = 3,
+                       print_each_step: bool = False,
+                       forced_opponent_types: Optional[List[str]] = None) -> List[Dict]:
+        """
+        Run multiple episodes with random number of opponents.
+
+        Args:
+            num_episodes: Number of episodes to run
+            min_opponents: Minimum number of opponents
+            max_opponents: Maximum number of opponents
+            render: Whether to render the game
+            render_interval: Steps between renders
+            verbose: Print detailed output
+            pause_each_step: If True, pause and wait for spacebar after each render
+            print_each_step: If True, print detailed info for each step during simulation
+
+        Returns:
+            List of episode statistics
+        """
+
+        # Set process title for Task Manager visibility
+        if SETPROCTITLE_AVAILABLE:
+            setproctitle("PnP Playing")
+        # Set console window title (more visible on Windows)
+        set_console_title("PnP Playing")
+
+        if verbose:
+            self._print("\n" + "=" * 70, to_episode=False)
+            self._print("PROSPECTORS N PIRATES - Trained Model Simulation", to_episode=False)
+            self._print(f"Model: {self.model_path}", to_episode=False)
+            self._print(f"Algorithm: {self.algorithm}", to_episode=False)
+            self._print(f"Episodes: {num_episodes}", to_episode=False)
+            if forced_opponent_types:
+                self._print(f"Opponents: {' '.join(forced_opponent_types)}", to_episode=False)
+            else:
+                self._print(f"Opponents: {min_opponents} to {max_opponents}", to_episode=False)
+            if pause_each_step:
+                self._print("Mode: Interactive (press SPACE to advance, Q to skip pauses, ESC to quit)", to_episode=False)
+            if self.logger:
+                self._print(f"Logging to: {self.logger.output_dir}", to_episode=False)
+            self._print("=" * 70, to_episode=False)
+
+        self.episode_stats = []
+        skip_pauses = False
+
+        for episode in range(num_episodes):
+            # Start episode logging
+            if self.logger:
+                self.logger.start_episode(episode + 1, num_episodes)
+
+            # Determine number of opponents for this episode
+            if forced_opponent_types:
+                num_opponents = len(forced_opponent_types)
+            else:
+                num_opponents = random.randint(min_opponents, max_opponents)
+
             if verbose:
-                self._print('\n[User requested to quit simulation early (ESC pressed).]')
-            # End episode logging before breaking
+                self._print(f"\n{'=' * 70}")
+                self._print(f"EPISODE {episode + 1}/{num_episodes} - {num_opponents} opponent(s)")
+                self._print(f"{'=' * 70}")
+
+            # Run episode
+            stats, control = self.run_episode(
+                num_opponents=num_opponents,
+                render=render,
+                render_interval=render_interval,
+                pause_each_step=pause_each_step and not skip_pauses,
+                cell_width=cell_width,
+                minimap=minimap,
+                minimap_radius=minimap_radius,
+                print_each_step=print_each_step,
+                forced_opponent_types=forced_opponent_types
+            )
+
+            # Append stats collected so far
+            self.episode_stats.append(stats)
+
+            # If user chose to skip remaining pauses, update flag so subsequent episodes won't pause
+            if control.get('skip'):
+                skip_pauses = True
+
+            # If user requested quit (ESC), stop the simulation early
+            if control.get('quit'):
+                if verbose:
+                    self._print('\n[User requested to quit simulation early (ESC pressed).]')
+                # End episode logging before breaking
+                if self.logger:
+                    self.logger.end_episode()
+                break
+
+            # Print episode results
+            if verbose:
+                self.print_episode_results(episode + 1, stats)
+
+            # End episode logging
             if self.logger:
                 self.logger.end_episode()
-            break
 
-        # Print episode results
+        # Print summary
         if verbose:
-            self.print_episode_results(episode + 1, stats)
+            self.print_summary()
 
-        # End episode logging
+        # Close logger
         if self.logger:
-            self.logger.end_episode()
+            self.logger.close()
 
-    # Print summary
-    if verbose:
-        self.print_summary()
-
-    # Close logger
-    if self.logger:
-        self.logger.close()
-
-    return self.episode_stats
+        return self.episode_stats
 
     def print_episode_results(self, episode_num: int, stats: Dict):
         """Print detailed results for a single episode."""
