@@ -649,7 +649,7 @@ class GameContext:
         # machine resultCode (e.g. "RECHARGE_FAILURE") plus a human message.
         # Surfacing these makes a server refusal (such as the ~588 rejected
         # RECHARGEs in game 37102 round 2) visible instead of an opaque FAIL.
-        last_payload = last_result.get("payload", {} or {})
+        last_payload = last_result.get("payload", {}) or {}
         self.last_action_result_code = str(last_payload.get("resultCode", "") or "")
         self.last_action_message = str(last_payload.get("message", "") or "")
         self.offence_target_lost = (
@@ -824,7 +824,7 @@ class HeuristicStrategy:
         def threat_dist(enemy):
             return ShipUtils.chebyshev(ShipUtils.location(enemy), ctx.location)
 
-        # Ever enemy that can still act this turn (has energy). Used to judge
+        # Every enemy that can still act this turn (has energy). Used to judge
         # whether a navigation *destination* is contested -- not just the
         # overwhelming "dominant" raiders we actively flee.
         self.acting_enemies = [e for e in ctx.enemy_ships if can_act(e)]
@@ -896,11 +896,11 @@ class HeuristicStrategy:
     def _escape_action(self):
         """Force a fresh in-bounds MOVE to break a server-rejection deadlock.
 
-        Called only when `ctx.stuck_count` shows our action has been refused
+        Called only when ``ctx.stuck_count`` shows our action has been refused
         repeatedly with no change in position or energy. We rotate the tried
         direction by the stuck count so successive escape attempts probe
         different headings, guaranteeing forward motion (MOVE is free) that
-        dislodges whatever the server keeps rejecting. Returns `None` only if
+        dislodges whatever the server keeps rejecting. Returns ``None`` only if
         no neighbouring cell is in bounds (impossible on a >1x1 map).
         """
         ctx = self.ctx
@@ -913,11 +913,10 @@ class HeuristicStrategy:
                 logger.debug(
                     "ESCAPE deadlock: stuck=%d last=%s/%s reason=%s/%s -> MOVE %s "
                     "from %s to %s",
-                    ctx.stuck_count,
-                    ctx.last_action_type or "-",
+                    ctx.stuck_count, ctx.last_action_type or "-",
                     "FAIL" if ctx.last_action_failed else "ok",
                     ctx.last_action_result_code or "-",
-                    ctx.last_action_message or "_",
+                    ctx.last_action_message or "-",
                     direction, ctx.location, (nx, ny),
                 )
                 return {"actionType": "MOVE", "payload": {"direction": direction}}
@@ -946,24 +945,13 @@ class HeuristicStrategy:
             logger.debug(
                 "NAV _safe_move_dir from %s -> target %s: dx=%d dy=%d order=%s "
                 "chose %s (rejected=%s)",
-                ctx.location,
-                (tx, ty),
-                dx,
-                dy,
-                order,
-                direction,
-                rejected,
+                ctx.location, (tx, ty), dx, dy, order, direction, rejected,
             )
             return direction
         logger.debug(
             "NAV _safe_move_dir from %s -> target %s: dx=%d dy=%d order=%s "
             "NO safe direction (rejected=%s)",
-            ctx.location,
-            (tx, ty),
-            dx,
-            dy,
-            order,
-            rejected,
+            ctx.location, (tx, ty), dx, dy, order, rejected,
         )
         return None
 
@@ -976,7 +964,7 @@ class HeuristicStrategy:
         # (targets beyond maxJumpDistance). Falls back to a free MOVE step.
         # Reset here so the flag reflects only this (the chosen) travel target:
         # _work_action returns on the first travel that yields an action, so the
-        # last_jump_waypoint call is the one that matters.
+        # last _jump_waypoint call is the one that matters.
         self.bank_for_jump = False
         jump_target = self._jump_waypoint(target_xy)
         if jump_target is not None:
@@ -1012,76 +1000,76 @@ class HeuristicStrategy:
                 "JUMP skip: target %s is adjacent (dist=%.2f); free MOVE is cheaper",
                 (tx, ty), dist,
             )
-    return None
-    # In range and safe: jump straight onto the target.
-    if dist <= ctx.max_jump_distance:
-        affordable = ctx.can_jump(dist)
-        unsafe = self._is_unsafe((tx, ty))
-        threatened = self._threat_at_destination(target_xy)
-        if affordable and not unsafe and not threatened:
-            logger.debug(
-                "JUMP direct: %s -> %s dist=%.2f cost=%d energy=%d",
-                ctx.location, (tx, ty), dist, ctx.jump_energy(dist), ctx.energy,
-            )
-            return (tx, ty)
-    if not affordable:
-        if dist >= ctx.jump_bank_min_distance:
-            # Far enough that banking energy to jump beats crawling.
-            self.bank_for_jump = True
-            logger.debug(
-                "JUMP skip (in range): target=%s dist=%.2f need_energy=%d "
-                "have=%d bank=%s -> MOVE one grid",
-                (tx, ty), dist, ctx.jump_energy(dist), ctx.energy,
-                self.bank_for_jump,
-            )
             return None
-    # Affordable but the destination itself is contested/unsafe. Rather
-    # than crawl the entire way into the danger zone, fall through and
-    # jump to the farthest SAFE cell short of it.
-    logger.debug(
-        "JUMP in range but target contested: target=%s dist=%.2f "
-        "unsafe=%s threatened=%s -> seeking safe waypoint short of it",
-        (tx, ty), dist, unsafe, threatened,
-    )
-    # Hop to the farthest safe, affordable cell along the line to target.
-    # Covers both out-of-range targets and in-range contested ones. We stop
-    # at a 2-cell minimum hop: paying a flat ~jumpMinCost to advance a
-    # single grid (when MOVE is free) is never worth it.
-    max_reach = min(ctx.max_jump_distance, int(math.ceil(dist)))
-    ux, uy = (tx - ox) / dist, (ty - oy) / dist
-    rejected = []
-    for reach in range(max_reach, 1, -1):
-        cx = min(max(0, int(round(ox + ux * reach))), ctx.map_width - 1)
-        cy = min(max(0, int(round(oy + uy * reach))), ctx.map_height - 1)
-        if (cx, cy) == (ox, oy) or (cx, cy) == (tx, ty):
-            continue
-        hop = ShipUtils.distance(ctx.location, (cx, cy))
-        if hop < 2:
-            continue
-        if not ctx.can_jump(hop):
-            rejected.append((reach, "unaffordable", hop))
-            continue
-        if self._is_unsafe((cx, cy)) or self._threat_at_destination((cx, cy)):
-            rejected.append((reach, "blocked", hop))
-            continue
-    logger.debug(
-        "JUMP waypoint: %s -> %s (reach=%d hop=%.2f cost=%d energy=%d) "
-        "toward target %s dist=%.2f",
-        ctx.location, (cx, cy), reach, hop, ctx.jump_energy(hop),
-        ctx.energy, (tx, ty), dist,
-    )
-    return (cx, cy)
-    if ctx.energy < ctx.jump_min_cost:
-        # The far target's hops were unaffordable: bank energy to jump (the
-        # distance always exceeds jump_bank_min_distance here).
-        self.bank_for_jump = True
+        # In range and safe: jump straight onto the target.
+        if dist <= ctx.max_jump_distance:
+            affordable = ctx.can_jump(dist)
+            unsafe = self._is_unsafe((tx, ty))
+            threatened = self._threat_at_destination(target_xy)
+            if affordable and not unsafe and not threatened:
+                logger.debug(
+                    "JUMP direct: %s -> %s dist=%.2f cost=%d energy=%d",
+                    ctx.location, (tx, ty), dist, ctx.jump_energy(dist), ctx.energy,
+                )
+                return (tx, ty)
+        if not affordable:
+            if dist >= ctx.jump_bank_min_distance:
+                # Far enough that banking energy to jump beats crawling.
+                self.bank_for_jump = True
+                logger.debug(
+                    "JUMP skip (in range): target=%s dist=%.2f need_energy=%d "
+                    "have=%d bank=%s -> MOVE one grid",
+                    (tx, ty), dist, ctx.jump_energy(dist), ctx.energy,
+                    self.bank_for_jump,
+                )
+                return None
+        # Affordable but the destination itself is contested/unsafe. Rather
+        # than crawl the entire way into the danger zone, fall through and
+        # jump to the farthest SAFE cell short of it.
+        logger.debug(
+            "JUMP in range but target contested: target=%s dist=%.2f "
+            "unsafe=%s threatened=%s -> seeking safe waypoint short of it",
+            (tx, ty), dist, unsafe, threatened,
+        )
+        # Hop to the farthest safe, affordable cell along the line to target.
+        # Covers both out-of-range targets and in-range contested ones. We stop
+        # at a 2-cell minimum hop: paying a flat ~jumpMinCost to advance a
+        # single grid (when MOVE is free) is never worth it.
+        max_reach = min(ctx.max_jump_distance, int(math.ceil(dist)))
+        ux, uy = (tx - ox) / dist, (ty - oy) / dist
+        rejected = []
+        for reach in range(max_reach, 1, -1):
+            cx = min(max(0, int(round(ox + ux * reach))), ctx.map_width - 1)
+            cy = min(max(0, int(round(oy + uy * reach))), ctx.map_height - 1)
+            if (cx, cy) == (ox, oy) or (cx, cy) == (tx, ty):
+                continue
+            hop = ShipUtils.distance(ctx.location, (cx, cy))
+            if hop < 2:
+                continue
+            if not ctx.can_jump(hop):
+                rejected.append((reach, "unaffordable", hop))
+                continue
+            if self._is_unsafe((cx, cy)) or self._threat_at_destination((cx, cy)):
+                rejected.append((reach, "blocked", hop))
+                continue
+            logger.debug(
+                "JUMP waypoint: %s -> %s (reach=%d hop=%.2f cost=%d energy=%d) "
+                "toward target %s dist=%.2f",
+                ctx.location, (cx, cy), reach, hop, ctx.jump_energy(hop),
+                ctx.energy, (tx, ty), dist,
+            )
+            return (cx, cy)
+        if ctx.energy < ctx.jump_min_cost:
+            # The far target's hops were unaffordable: bank energy to jump (the
+            # distance always exceeds jump_bank_min_distance here).
+            self.bank_for_jump = True
         logger.debug(
             "JUMP skip (target %s dist=%.2f): no reachable/safe waypoint "
             "energy=%d need>%d bank=%s rejected=%s -> MOVE one grid",
             (tx, ty), dist, ctx.energy, ctx.jump_min_cost, self.bank_for_jump,
             rejected,
         )
-    return None
+        return None
 
     def _flee_action(self):
         ctx = self.ctx
