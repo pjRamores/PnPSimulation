@@ -34,6 +34,32 @@ class EnvGeometryMixin:
                 return entity
         return None
 
+    def _build_static_location_cache(self):
+        """Build (x,y)->entity and (x,y)->indices maps for the STATIC entry lists.
+
+        Asteroid and trading-post positions do not change within an episode, so
+        these maps are built once per reset and reused every step (only the moving
+        opponents are refreshed by :meth:`_rebuild_location_cache`). The index map
+        records every list position at each cell so windowed queries can return
+        entities in original list order (see :meth:`_entities_in_window`).
+        """
+        static_loc = {}
+        self._static_cell_index = {}
+        for name, entities in (('asteroids', self.asteroids), ('trading_posts', self.trading_posts)):
+            loc_map = {}
+            idx_map = {}
+            for idx, entity in enumerate(entities):
+                if entity.get('destroyed', False):
+                    continue
+                key = (entity['x'], entity['y'])
+                if key not in loc_map:
+                    loc_map[key] = entity  # first wins (matches legacy linear scan)
+                idx_map.setdefault(key, []).append(idx)
+            static_loc[name] = loc_map
+            self._static_cell_index[name] = idx_map
+        self._build_static_location_cache = static_loc
+        self._static_cache_ready = True
+
     def _rebuild_location_cache(self):
         """Rebuild spatial lookup cache for all entity lists. Call once per step."""
         self._entity_location_cache = {}
