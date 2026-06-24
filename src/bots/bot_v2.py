@@ -1012,10 +1012,10 @@ class HeuristicStrategy:
                     ctx.location, (tx, ty), dist, ctx.jump_energy(dist), ctx.energy,
                 )
                 return (tx, ty)
-        if not affordable:
-            if dist >= ctx.jump_bank_min_distance:
-                # Far enough that banking energy to jump beats crawling.
-                self.bank_for_jump = True
+            if not affordable:
+                if dist >= ctx.jump_bank_min_distance:
+                    # Far enough that banking energy to jump beats crawling.
+                    self.bank_for_jump = True
                 logger.debug(
                     "JUMP skip (in range): target=%s dist=%.2f need_energy=%d "
                     "have=%d bank=%s -> MOVE one grid",
@@ -1023,14 +1023,14 @@ class HeuristicStrategy:
                     self.bank_for_jump,
                 )
                 return None
-        # Affordable but the destination itself is contested/unsafe. Rather
-        # than crawl the entire way into the danger zone, fall through and
-        # jump to the farthest SAFE cell short of it.
-        logger.debug(
-            "JUMP in range but target contested: target=%s dist=%.2f "
-            "unsafe=%s threatened=%s -> seeking safe waypoint short of it",
-            (tx, ty), dist, unsafe, threatened,
-        )
+            # Affordable but the destination itself is contested/unsafe. Rather
+            # than crawl the entire way into the danger zone, fall through and
+            # jump to the farthest SAFE cell short of it.
+            logger.debug(
+                "JUMP in range but target contested: target=%s dist=%.2f "
+                "unsafe=%s threatened=%s -> seeking safe waypoint short of it",
+                (tx, ty), dist, unsafe, threatened,
+            )
         # Hop to the farthest safe, affordable cell along the line to target.
         # Covers both out-of-range targets and in-range contested ones. We stop
         # at a 2-cell minimum hop: paying a flat ~jumpMinCost to advance a
@@ -1065,7 +1065,7 @@ class HeuristicStrategy:
             self.bank_for_jump = True
         logger.debug(
             "JUMP skip (target %s dist=%.2f): no reachable/safe waypoint "
-            "energy=%d need>%d bank=%s rejected=%s -> MOVE one grid",
+            "energy=%d need>=%d bank=%s rejected=%s -> MOVE one grid",
             (tx, ty), dist, ctx.energy, ctx.jump_min_cost, self.bank_for_jump,
             rejected,
         )
@@ -1133,8 +1133,8 @@ class HeuristicStrategy:
             dominate = my_atk >= Tunables.ATTACK_OFFENSE_MARGIN * e_surv
             survive = my_surv >= Tunables.ATTACK_DEFENSE_MARGIN * max(e_atk_now, 1.0)
             worthwhile = (
-                    cargo >= Tunables.PLUNDER_THRESHOLD
-                    or e_atk_latent >= Tunables.ATTACK_THREAT_FRACTION * my_surv
+                cargo >= Tunables.PLUNDER_THRESHOLD
+                or e_atk_latent >= Tunables.ATTACK_THREAT_FRACTION * my_surv
             )
             if dominate and survive and worthwhile:
                 key = (cargo, e_surv, enemy.get("playerId") or "")
@@ -1157,16 +1157,15 @@ class HeuristicStrategy:
         travel = 1 if (ctx.can_jump(dist) and dist <= ctx.max_jump_distance) else int(math.ceil(dist))
         return travel + 1
 
-    def endgame_bank_action(self):
+    def _endgame_bank_action(self):
         ctx = self.ctx
         if ctx.ticks_remaining is None or ctx.nutrinium <= 0:
             return None
         nearest_post = ShipUtils.nearest(ctx.location, ctx.trading_posts)
         if nearest_post is None:
             logger.debug(
-                "ENDGAME no reachable post to bank nutrinium=%d (ticks left=%.1f)",
-                ctx.nutrinium,
-                ctx.ticks_remaining,
+                "ENDGAME no reachable post to bank nutrinium=%d (ticks_left=%.1f)",
+                ctx.nutrinium, ctx.ticks_remaining,
             )
             return None
         post_xy = ShipUtils.location(nearest_post)
@@ -1188,19 +1187,18 @@ class HeuristicStrategy:
             logger.debug(
                 "ENDGAME defer bank: nutrinium=%d post=%s dist=%.1f needed=%d "
                 "safety=%.1f ticks_left=%.1f -> keep working",
-                ctx.nutrinium,
-                post_xy, ShipUtils.distance(ctx.location, post_xy),
+                ctx.nutrinium, post_xy, ShipUtils.distance(ctx.location, post_xy),
                 needed, safety, ctx.ticks_remaining,
             )
             return None
         logger.debug(
             "ENDGAME rush to bank: nutrinium=%d post=%s dist=%.1f needed=%d "
             "safety=%.1f ticks_left=%.1f -> head to post",
-            ctx.nutrinium,
-            post_xy, ShipUtils.distance(ctx.location, post_xy),
+            ctx.nutrinium, post_xy, ShipUtils.distance(ctx.location, post_xy),
             needed, safety, ctx.ticks_remaining,
         )
         return self._travel_towards(post_xy)
+
     # --- Productive intent (ignores solar-panel state) ---
     def _work_action(self):
         ctx = self.ctx
@@ -1210,7 +1208,7 @@ class HeuristicStrategy:
 
         # Haul to a post once the load is worthwhile or nothing left to mine.
         if ctx.nutrinium > 0 and (
-                ctx.nutrinium >= Tunables.SELL_CARGO_THRESHOLD or not ctx.mineable_asteroids
+            ctx.nutrinium >= Tunables.SELL_CARGO_THRESHOLD or not ctx.mineable_asteroids
         ):
             nearest_post = ShipUtils.nearest(ctx.location, ctx.trading_posts)
             if nearest_post is not None:
@@ -1251,11 +1249,11 @@ class HeuristicStrategy:
         # the queue so we prefer an uncontested target, only diverting to a
         # threatened one when nothing safer is reachable.
         for ast in sorted(
-                ctx.mineable_asteroids,
-                key=lambda a: (
-                                      1 if self._threat_at_destination(ShipUtils.location(a)) else 0,
-                                      -ctx.asteroid_score(a),
-                              ) + ShipUtils.location(a),
+            ctx.mineable_asteroids,
+            key=lambda a: (
+                1 if self._threat_at_destination(ShipUtils.location(a)) else 0,
+                -ctx.asteroid_score(a),
+            ) + ShipUtils.location(a),
         ):
             target = ShipUtils.location(ast)
             travel = self._travel_towards(target)
@@ -1291,7 +1289,7 @@ class HeuristicStrategy:
 
         # DEADLOCK ESCAPE: the server has rejected our action for several ticks
         # running with zero change in position or energy (e.g. ~588 refused
-        # RECHARGES in game 37102 round 2). Re-submitting the same rejected
+        # RECHARGEs in game 37102 round 2). Re-submitting the same rejected
         # action will keep failing, so force a cheap MOVE to break out before
         # any other logic can re-pick it.
         if ctx.stuck_count >= Tunables.STUCK_ESCAPE_THRESHOLD:
@@ -1300,64 +1298,64 @@ class HeuristicStrategy:
                 return escape
 
         # END-GAME: bank cargo before the round clock runs out (takes priority).
-    endgame = self._endgame_bank_action()
-    if endgame is not None:
-        return endgame
+        endgame = self._endgame_bank_action()
+        if endgame is not None:
+            return endgame
 
-    # DEFENSE: flee an overwhelming nearby threat (banking first if on a post).
-    if self.is_overwhelmed:
-        if ctx.at_trading_post and ctx.nutrinium > 0 and not ctx.recharging:
-            return {"actionType": "SELL", "payload": {"nutrinium": ctx.nutrinium}}
-        flee = self._flee_action()
-        if flee is not None:
-            return flee
+        # DEFENSE: flee an overwhelming nearby threat (banking first if on a post).
+        if self.is_overwhelmed:
+            if ctx.at_trading_post and ctx.nutrinium > 0 and not ctx.recharging:
+                return {"actionType": "SELL", "payload": {"nutrinium": ctx.nutrinium}}
+            flee = self._flee_action()
+            if flee is not None:
+                return flee
 
-    # DEFENSIVE RETRACT: panels out next to a real threat is the worst footing.
-    if ctx.recharging and self.threats:
-        return {"actionType": "RECHARGE_END"}
+        # DEFENSIVE RETRACT: panels out next to a real threat is the worst footing.
+        if ctx.recharging and self.threats:
+            return {"actionType": "RECHARGE_END"}
 
-    # ATTACK: press a clear advantage over an in-zone enemy.
-    attack = self._attack_opportunity()
-    if attack is not None:
-        return attack
+        # ATTACK: press a clear advantage over an in-zone enemy.
+        attack = self._attack_opportunity()
+        if attack is not None:
+            return attack
 
-    work = self.work_action()
-    work_type = work.get("actionType", "WAIT")
+        work = self.work_action()
+        work_type = work.get("actionType", "WAIT")
 
-    if ctx.recharging:
-        # MINE/MOVE/PLUNDER allowed while recharging -> keep working.
+        if ctx.recharging:
+            # MINE/MOVE/PLUNDER allowed while recharging -> keep working.
+            if not ctx.allowed_while_recharging(work_type):
+                return {"actionType": "RECHARGE_END"}
+            if work_type == "WAIT" and ctx.energy >= ctx.max_energy:
+                return {"actionType": "RECHARGE_END"}
+            return work
+
+        # Panels stowed: do blocked-while-recharging work now; otherwise only
+        # deploy panels when too low on energy to mine and no threat is present.
         if not ctx.allowed_while_recharging(work_type):
-            return {"actionType": "RECHARGE_END"}
-        if work_type == "WAIT" and ctx.energy >= ctx.max_energy:
-            return {"actionType": "RECHARGE_END"}
-        return work
-
-    # Panels stowed: do blocked-while-recharging work now; otherwise only
-    # deploy panels when too low on energy to mine and no threat is present.
-    if not ctx.allowed_while_recharging(work_type):
-        return work
-    # Bank energy for a worthwhile jump: when crawling toward a distant
-    # target we cannot yet afford to jump to, deploy panels so we recharge
-    # WHILE WE MOVE (MOVE is allowed while recharging). Once energy reaches
-    # jumpMinCost the travel logic jumps the remaining distance, saving many
-    # crawl ticks. Skipped near threats and once energy is already capped.
-    if (
+            return work
+        # Bank energy for a worthwhile jump: when crawling toward a distant
+        # target we cannot yet afford to jump to, deploy panels so we recharge
+        # WHILE WE MOVE (MOVE is allowed while recharging). Once energy reaches
+        # jumpMinCost the travel logic jumps the remaining distance, saving many
+        # crawl ticks. Skipped near threats and once energy is already capped.
+        if (
             work_type == "MOVE"
             and self.bank_for_jump
             and ctx.has_jump
             and ctx.energy < ctx.jump_min_cost
             and ctx.energy < ctx.max_energy
             and not self.threats
-    ):
-        logger.debug(
-            "BANK energy for jump: energy=%d < jumpMinCost=%d while crawling "
-            "to a distant target -> RECHARGE (jump once charged)",
-            ctx.energy, ctx.jump_min_cost,
-        )
-        return {"actionType": "RECHARGE"}
-    if ctx.energy < ctx.mine_cost and ctx.energy < ctx.max_energy and not self.threats:
-        return {"actionType": "RECHARGE"}
-    return work
+        ):
+            logger.debug(
+                "BANK energy for jump: energy=%d < jumpMinCost=%d while crawling "
+                "to a distant target -> RECHARGE (jump once charged)",
+                ctx.energy, ctx.jump_min_cost,
+            )
+            return {"actionType": "RECHARGE"}
+        if ctx.energy < ctx.mine_cost and ctx.energy < ctx.max_energy and not self.threats:
+            return {"actionType": "RECHARGE"}
+        return work
 
     # --- Anti-oscillation + bounds sanitisers ---
     def _undoes_previous_step(self, action):
@@ -1399,73 +1397,74 @@ class HeuristicStrategy:
         if not _LOGGING_ENABLED:
             return
         ctx = self.ctx
-    def rock_odds(asteroid):
-        nutr = ShipUtils.safe_int(asteroid.get("nutrinium"))
-        mass = max(ShipUtils.safe_int(asteroid.get("mass"), 1), 1)
-        density = nutr / mass
-        success = min(1.0, density * 10.0 * ctx.mine_base_success)
-        return nutr, mass, density, success
 
-    # Current-cell mining odds (explains MINE success/FAIL on this rock).
-    on_rock = next(
-        (a for a in ctx.asteroids
-         if ShipUtils.location(a) == ctx.location
-         and ShipUtils.safe_int(a.get("nutrinium")) > 0),
-        None,
-    )
-    if on_rock is not None:
-        nutr, mass, density, success = rock_odds(on_rock)
-        rock_str = "onRock n=%d m=%d dens=%.3f mineSucc=%.0f%%" % (
-            nutr, mass, density, success * 100,
+        def rock_odds(asteroid):
+            nutr = ShipUtils.safe_int(asteroid.get("nutrinium"))
+            mass = max(ShipUtils.safe_int(asteroid.get("mass"), 1), 1)
+            density = nutr / mass
+            success = min(1.0, density * 10.0 * ctx.mine_base_success)
+            return nutr, mass, density, success
+
+        # Current-cell mining odds (explains MINE success/FAIL on this rock).
+        on_rock = next(
+            (a for a in ctx.asteroids
+             if ShipUtils.location(a) == ctx.location
+             and ShipUtils.safe_int(a.get("nutrinium")) > 0),
+            None,
         )
-    else:
-        rock_str = "onRock=None"
-
-    # Top mineable candidates by score (shows target-selection quality).
-    ranked = sorted(ctx.mineable_asteroids, key=lambda a: -ctx.asteroid_score(a))[:3]
-    candidates = []
-    for asteroid in ranked:
-        loc = ShipUtils.location(asteroid)
-        nutr, mass, density, success = rock_odds(asteroid)
-        candidates.append(
-            "%s n=%d dens=%.2f succ=%.0f%% score=%.2f dist=%.1f" % (
-                loc, nutr, density, success * 100,
-                ctx.asteroid_score(asteroid),
-                ShipUtils.distance(ctx.location, loc),
+        if on_rock is not None:
+            nutr, mass, density, success = rock_odds(on_rock)
+            rock_str = "onRock n=%d m=%d dens=%.3f mineSucc=%.0f%%" % (
+                nutr, mass, density, success * 100,
             )
+        else:
+            rock_str = "onRock=None"
+
+        # Top mineable candidates by score (shows target-selection quality).
+        ranked = sorted(ctx.mineable_asteroids, key=lambda a: -ctx.asteroid_score(a))[:3]
+        candidates = []
+        for asteroid in ranked:
+            loc = ShipUtils.location(asteroid)
+            nutr, mass, density, success = rock_odds(asteroid)
+            candidates.append(
+                "%s n=%d dens=%.2f succ=%.0f%% score=%.2f dist=%.1f" % (
+                    loc, nutr, density, success * 100,
+                    ctx.asteroid_score(asteroid),
+                    ShipUtils.distance(ctx.location, loc),
+                )
+            )
+
+        # Nearest post (drives banking / haul economics).
+        nearest_post = ShipUtils.nearest(ctx.location, ctx.trading_posts)
+        if nearest_post is not None:
+            post_loc = ShipUtils.location(nearest_post)
+            post_dist = ShipUtils.distance(ctx.location, post_loc)
+            post_str = "nearestPost=%s dist=%.1f jumpCost=%d" % (
+                post_loc, post_dist, ctx.jump_energy(post_dist),
+            )
+        else:
+            post_str = "nearestPost=None"
+
+        logger.debug(
+            "SCAN %s | mineable=%d top=[%s] | %s",
+            rock_str, len(ctx.mineable_asteroids), "; ".join(candidates), post_str,
         )
 
-    # Nearest post (drives banking / haul economics).
-    nearest_post = ShipUtils.nearest(ctx.location, ctx.trading_posts)
-    if nearest_post is not None:
-        post_loc = ShipUtils.location(nearest_post)
-        post_dist = ShipUtils.distance(ctx.location, post_loc)
-        post_str = "nearestPost=%s dist=%.1f jumpCost=%d" % (
-            post_loc, post_dist, ctx.jump_energy(post_dist),
+        # Combat picture: our power vs. the acting/dominant threats we weigh.
+        def power_list(ships):
+            return ", ".join(
+                "%s p=%.1f" % (ShipUtils.location(e), ctx.combat.rough_power(e))
+                for e in sorted(ships, key=lambda e: -ctx.combat.rough_power(e))[:3]
+            )
+
+        logger.debug(
+            "COMBAT myPower=%.1f eff=%.1f overwhelmed=%s | acting=%d sameZone=%d | "
+            "threats=%d [%s] | dominant=%d [%s]",
+            self.my_power, self.my_power_eff, self.is_overwhelmed,
+            len(self.acting_enemies), len(ctx.same_zone_enemies),
+            len(self.threats), power_list(self.threats),
+            len(self.dominant_threats), power_list(self.dominant_threats),
         )
-    else:
-        post_str = "nearestPost=None"
-
-    logger.debug(
-        "SCAN %s | mineable=%d top=[%s] | %s",
-        rock_str, len(ctx.mineable_asteroids), "; ".join(candidates), post_str,
-    )
-
-    # Combat picture: our power vs. the acting/dominant threats we weigh.
-    def power_list(ships):
-        return ", ".join(
-            "%s p=%.1f" % (ShipUtils.location(e), ctx.combat.rough_power(e))
-            for e in sorted(ships, key=lambda e: -ctx.combat.rough_power(e))[:3]
-        )
-
-    logger.debug(
-        "COMBAT myPower=%.1f eff=%.1f overwhelmed=%s | acting=%d sameZone=%d | "
-        "threats=%d [%s] | dominant=%d [%s]",
-        self.my_power, self.my_power_eff, self.is_overwhelmed,
-        len(self.acting_enemies), len(ctx.same_zone_enemies),
-        len(self.threats), power_list(self.threats),
-        len(self.dominant_threats), power_list(self.dominant_threats),
-    )
 
     def decide(self):
         ctx = self.ctx
@@ -1495,15 +1494,17 @@ class HeuristicStrategy:
         logger.debug("DECIDE final action=%s payload=%s", final.get("actionType"), final.get("payload"))
         return final
 
+
 # ---------------------------------
 # Action-mask safety net (shared utils.action_masker)
 # ---------------------------------
 _MASKER = "unset"  # sentinel -> the utils.action_masker module, or None on failure
 
-def _get_masker():
-    """Lazily import and cache `utils.action_masker`. Returns the module or None.
 
-    The 'src' directory (parent of 'bots') is added to `sys.path` so the
+def _get_masker():
+    """Lazily import and cache ``utils.action_masker``. Returns the module or None.
+
+    The ``src`` directory (parent of ``bots``) is added to ``sys.path`` so the
     utility resolves both inside the simulator and when run as a standalone
     lambda. Any failure (e.g. numpy missing) degrades gracefully -- the caller
     keeps the heuristic's action unmasked.
@@ -1514,7 +1515,7 @@ def _get_masker():
     result = None
     try:
         here = os.path.dirname(os.path.abspath(__file__))
-        src_dir = os.path.dirname(here)  # ../src
+        src_dir = os.path.dirname(here)  # .../src
         if src_dir not in sys.path:
             sys.path.insert(0, src_dir)
         from utils import action_masker
@@ -1524,7 +1525,8 @@ def _get_masker():
     _MASKER = result
     return result
 
-def flatten_entities(contacts, keys):
+
+def _flatten_entities(contacts, keys):
     """Flatten raw sensor contacts (nested `location`) to `{x,y,...}` dicts."""
     out = []
     for contact in contacts:
@@ -1535,8 +1537,8 @@ def flatten_entities(contacts, keys):
         out.append(entity)
     return out
 
-def build_mask_state(ctx, masker):
-    """Adapt the parsed :class:`GameContext` into a `MaskState`."""
+def _build_mask_state(ctx, masker):
+    """Adapt the parsed :class:`GameContext` into a ``MaskState``."""
     energy_costs = {
         "mine": ctx.mine_cost,
         "move": ctx.move_cost,
@@ -1557,16 +1559,16 @@ def build_mask_state(ctx, masker):
         destroyed=(ctx.state == "DESTROYED"),
         recharging=ctx.recharging,
         just_recharged=False,
-        shield_state=ctx._shield_state,
+        shield_state=ctx.shield_state,
         shield_value=ctx.shield_value,
         shield_capacity=ctx.shield_capacity,
         shields_up=ctx.shields_up,
         modules=ctx.modules,
         negotiate_post_id=negotiate_post_id,
-        enemies=flatten_entities(ctx.enemy_ships, ("nutrinium", "playerId", "shield")),
-        asteroids=flatten_entities(ctx.asteroids, ("nutrinium", "mass")),
-        trading_posts=flatten_entities(ctx.trading_posts, ("id", "name")),
-        wreckage=flatten_entities(ctx.wreckage, ("nutrinium",)),
+        enemies=_flatten_entities(ctx.enemy_ships, ("nutrinium", "playerId", "shield")),
+        asteroids=_flatten_entities(ctx.asteroids, ("nutrinium", "mass")),
+        trading_posts=_flatten_entities(ctx.trading_posts, ("id", "name")),
+        wreckage=_flatten_entities(ctx.wreckage, ("nutrinium",)),
         map_width=ctx.map_width,
         map_height=ctx.map_height,
         max_energy=ctx.max_energy,
@@ -1576,6 +1578,7 @@ def build_mask_state(ctx, masker):
         repair_cost=0,
         action_restrictions=ctx.action_restrictions,
     )
+
 
 def _action_name_to_id(masker, action, ctx):
     """Map a response dict back to the env action id the masker validates."""
@@ -1596,23 +1599,24 @@ def _action_name_to_id(masker, action, ctx):
         "SALVAGE": masker.SALVAGE,
         "REPAIR": masker.REPAIR,
     }
-if action_type in simple:
-    return simple[action_type]
-if action_type == "MOVE":
-    return {
-        "N": masker.MOVE_NORTH,
-        "S": masker.MOVE_SOUTH,
-        "E": masker.MOVE_EAST,
-        "W": masker.MOVE_WEST,
-    }.get(payload.get("direction"), masker.WAIT)
-if action_type == "JUMP":
-    tgt = payload.get("target_location", {}) or {}
-    tx = ShipUtils.safe_int(tgt.get("x"), ctx.location[0])
-    ty = ShipUtils.safe_int(tgt.get("y"), ctx.location[1])
-    if any(ShipUtils.location(p) == (tx, ty) for p in ctx.trading_posts):
-        return masker.JUMP_TO_TRADING_POST
-    return masker.JUMP_TO_ASTEROID
-return masker.WAIT
+    if action_type in simple:
+        return simple[action_type]
+    if action_type == "MOVE":
+        return {
+            "N": masker.MOVE_NORTH,
+            "S": masker.MOVE_SOUTH,
+            "E": masker.MOVE_EAST,
+            "W": masker.MOVE_WEST,
+        }.get(payload.get("direction"), masker.WAIT)
+    if action_type == "JUMP":
+        tgt = payload.get("target_location", {}) or {}
+        tx = ShipUtils.safe_int(tgt.get("x"), ctx.location[0])
+        ty = ShipUtils.safe_int(tgt.get("y"), ctx.location[1])
+        if any(ShipUtils.location(p) == (tx, ty) for p in ctx.trading_posts):
+            return masker.JUMP_TO_TRADING_POST
+        return masker.JUMP_TO_ASTEROID
+    return masker.WAIT
+
 
 def _masked_to_response(ctx, action_id, masker):
     """Rebuild a response dict for an enforced (valid) action id."""
@@ -1658,6 +1662,7 @@ def _masked_to_response(ctx, action_id, masker):
         tx, ty = ShipUtils.location(nearest)
         return {"actionType": "JUMP", "payload": {"target_location": {"x": tx, "y": ty}}}
     return {"actionType": "WAIT"}
+
 
 def _enforce(ctx, action):
     """Validate the heuristic's action via the shared masker; substitute if invalid.
