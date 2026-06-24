@@ -224,8 +224,8 @@ def _reset_game_logging():
 # mapping by watching the result of our own MOVEs and then steer with the
 # learned signs. Defaults match the documented convention; a single observed
 # move corrects a flipped axis. Orientation is a server-wide constant so it is
-# kept across games; the last-move record is per game_round.
-_axis = {"ns": -1, "ew": 1}         # ns: dy produced by "N"; ew: dx produced by "E"
+# kept across games; the last-move record is per game+round.
+_axis = {"ns": -1, "ew": 1}        # ns: dy produced by "N"; ew: dx produced by "E"
 _last_move = {"key": None, "direction": None, "frm": None}
 # Deadlock tracking: consecutive ticks where our last action FAILED and left
 # our position AND energy unchanged (the server keeps rejecting whatever we
@@ -257,9 +257,9 @@ def _update_stuck_state(ctx):
     """
     key = (ctx.game_id, ctx.round)
     no_change = (
-            _stuck["key"] == key
-            and _stuck["cell"] == ctx.location
-            and _stuck["energy"] == ctx.energy
+        _stuck["key"] == key
+        and _stuck["cell"] == ctx.location
+        and _stuck["energy"] == ctx.energy
     )
     if no_change and ctx.last_action_failed:
         _stuck["count"] += 1
@@ -271,6 +271,7 @@ def _update_stuck_state(ctx):
     ctx.stuck_count = _stuck["count"]
     return _stuck["count"]
 
+
 def _calibrate_from_last_move(ctx):
     """Learn the real axis orientation from the result of our previous MOVE.
 
@@ -278,7 +279,6 @@ def _calibrate_from_last_move(ctx):
     for anti-oscillation, or None when no usable prior move is known. Updates
     the module-level ``_axis`` map in place when an observed move contradicts the
     current mapping (e.g. a commanded "N" that increased y).
-
     """
     key = (ctx.game_id, ctx.round)
     direction = _last_move["direction"]
@@ -305,8 +305,8 @@ def _calibrate_from_last_move(ctx):
             elif direction in ("E", "W") and x in (0, ctx.map_width - 1):
                 _axis["ew"] = -_axis["ew"]
                 logger.debug(
-                "CALIBRATION ew flip -> %+d (MOVE %s rejected at x-edge %s)",
-                _axis["ew"], direction, cur,
+                    "CALIBRATION ew flip -> %+d (MOVE %s rejected at x-edge %s)",
+                    _axis["ew"], direction, cur,
                 )
         return None
     dx, dy = cur[0] - frm[0], cur[1] - frm[1]
@@ -346,16 +346,16 @@ def _record_move(ctx, action):
 class Tunables:
     """Decision thresholds. Defaults mirror the reference heuristic."""
 
-    RECHARGE_LOW = 20          # start recharging below this absolute energy
-    RECHARGE_HIGH_FRAC = 0.80   # stop recharging above this fraction of maxEnergy
-    SELL_CARGO_THRESHOLD = 10   # cargo worth hauling to a (possibly distant) post
-    PLUNDER_THRESHOLD = 5      # min stolen cargo worth a PLUNDER
+    RECHARGE_LOW = 20            # start recharging below this absolute energy
+    RECHARGE_HIGH_FRAC = 0.80    # stop recharging above this fraction of maxEnergy
+    SELL_CARGO_THRESHOLD = 10    # cargo worth hauling to a (possibly distant) post
+    PLUNDER_THRESHOLD = 5        # min stolen cargo worth a PLUNDER
     # Margins for committing to a fight: we must clearly out-gun the target on
     # BOTH offence (can we break them) and defence (can we take their hits).
     ATTACK_OFFENSE_MARGIN = 1.3
     ATTACK_DEFENSE_MARGIN = 1.3
     ATTACK_THREAT_FRACTION = 0.5
-    COMPETITION_WEIGHT = 1.0    # penalty per competing miner on an asteroid
+    COMPETITION_WEIGHT = 1.0     # penalty per competing miner on an asteroid
     # Only deploy panels to bank energy for a JUMP when the travel target is at
     # least this far. Below it, free MOVEs reach the target faster than banking
     # a flat ~jumpMinCost would (banking pays off only over long distances).
@@ -371,7 +371,6 @@ class Tunables:
 # ---------------------------------------------------------
 # Reusable utility classes
 # ---------------------------------------------------------
-
 class ShipUtils:
     """Stateless geometry and parsing helpers shared across strategies."""
 
@@ -380,14 +379,14 @@ class ShipUtils:
     @staticmethod
     def safe_int(value, default=0):
         try:
-        return int(value)
-    except (TypeError, ValueError):
-    return default
+            return int(value)
+        except (TypeError, ValueError):
+            return default
 
     @staticmethod
     def location(entity):
         loc = entity.get("location", {}) if isinstance(entity, dict) else {}
-    return int(loc.get("x", 0)), int(loc.get("y", 0))
+        return int(loc.get("x", 0)), int(loc.get("y", 0))
 
     @staticmethod
     def distance(a, b):
@@ -401,12 +400,12 @@ class ShipUtils:
     def nearest(cls, origin, entities):
         if not entities:
             return None
-    # Deterministic tie-break on coordinates so equidistant targets never
-    # flip between turns (which would make the ship oscillate).
-    return min(
-        entities,
-        key=lambda e: (cls.distance(origin, cls.location(e)),) + cls.location(e),
-    )
+        # Deterministic tie-break on coordinates so equidistant targets never
+        # flip between turns (which would make the ship oscillate).
+        return min(
+            entities,
+            key=lambda e: (cls.distance(origin, cls.location(e)),) + cls.location(e),
+        )
 
     @staticmethod
     def opposite(direction):
@@ -436,11 +435,12 @@ class ShipUtils:
             return "N" if dy * _axis["ns"] > 0 else "S"
         return None
 
+
 class CombatEvaluator:
     """Estimates attack / defence power from observable ship fields.
 
     Enemy skills/stats are stripped on sensors (we only see a ReducedContactShip),
-    so combat ability is proxied from `skillPointsSpent`. Our own skills are
+    so combat ability is proxied from ``skillPointsSpent``. Our own skills are
     known exactly. Grounded in the engine's combat-score weights:
         offence ~ attack_power*10 + attack_accuracy*5 + energy*0.5
         defence ~ health + shield_strength*8 + evade*3 (+ shield pool)
@@ -453,8 +453,8 @@ class CombatEvaluator:
     def skill_offense(self, skills, points):
         if skills:
             return (
-                    ShipUtils.safe_int(skills.get("attack_power")) * 10.0
-                    + ShipUtils.safe_int(skills.get("attack_accuracy")) * 5.0
+                 ShipUtils.safe_int(skills.get("attack_power")) * 10.0
+                 + ShipUtils.safe_int(skills.get("attack_accuracy")) * 5.0
             )
         # Skills hidden: assume points could be invested in offence (worst case).
         return points * 12.0
@@ -462,32 +462,32 @@ class CombatEvaluator:
     def skill_defense(self, skills, points):
         if skills:
             return (
-                    ShipUtils.safe_int(skills.get("shield_strength")) * 8.0
-                    + ShipUtils.safe_int(skills.get("evade")) * 3.0
+                 ShipUtils.safe_int(skills.get("shield_strength")) * 8.0
+                 + ShipUtils.safe_int(skills.get("evade")) * 3.0
             )
         return points * 8.0
 
-    def rough_power(self, self, ship):
+    def rough_power(self, ship):
         """Cheap overall power proxy used for flee/stand thresholds."""
         hp = ShipUtils.safe_int(ship.get("health"))
         en = ShipUtils.safe_int(ship.get("energy"))
-        shield_val = ShipUtils.safe_int((ship.get("shield", {})) or {}).get("value")
+        shield_val = ShipUtils.safe_int((ship.get("shield", {}) or {}).get("value"))
         skill_pts = ShipUtils.safe_int(ship.get("skillPointsSpent"))
         return hp * 1.0 + en * 1.0 + shield_val * 0.5 + skill_pts * 25.0
 
-    def attack_power(self, self, ship, *, recharging=None, energy=None, skills=None, latent=False):
+    def attack_power(self, ship, *, recharging=None, energy=None, skills=None, latent=False):
         """Estimated damage the ship can deal this turn.
 
-        `latent` considers what they could do after retracting solar panels.
-        Pass `skills` for our own ship (known); omit for enemies (proxied).
+        ``latent`` considers what they could do after retracting solar panels.
+        Pass ``skills`` for our own ship (known); omit for enemies (proxied).
         """
         rech = bool(ship.get("recharging")) if recharging is None else recharging
         en = ShipUtils.safe_int(ship.get("energy")) if energy is None else energy
         if not latent and (rech or en < self.attack_cost):
             return 0.0
         base = (
-                self.skill_offense(skills, ShipUtils.safe_int(ship.get("skillPointsSpent")))
-                + min(en, self.max_energy) * 0.5
+             self.skill_offense(skills, ShipUtils.safe_int(ship.get("skillPointsSpent")))
+             + min(en, self.max_energy) * 0.5
         )
         if latent and rech:
             base *= 0.5  # delayed: must end recharge before it can attack
@@ -512,6 +512,7 @@ class CombatEvaluator:
         if rech:
             base *= 0.5  # panels out: cannot raise shields, combat-penalised
         return base
+
 
 # -------------------------------------------------
 # Parsed game state
@@ -580,7 +581,7 @@ class GameContext:
         self.skills = self.me.get("skills", {}) or {}
         self.modules = self.me.get("modules", []) or []
         self.has_jump = "JUMP" in self.modules
-        self.shields_up = str((self.me.get("shield", {})).get("state", "DOWN")).upper() == "POWERED"
+        self.shields_up = str((self.me.get("shield", {}) or {}).get("state", "DOWN")).upper() == "POWERED"
 
         objectives = self.me.get("objectives", {}) or {}
         negotiate_objective = objectives.get("negotiate", {}) or {}
@@ -597,86 +598,86 @@ class GameContext:
         self.same_zone_enemies = [
             e for e in self.enemy_ships if ShipUtils.location(e) == self.location
         ]
-    # Other live ships (enemies AND teammates) for contention scoring.
-    self.ship_contacts = [
-        c for c in self.contacts
-        if c.get("type") == "ship"
-           and str(c.get("state", "")).upper() != "DESTROYED"
-           and c.get("playerId") != self.player_id
-    ]
+        # Other live ships (enemies AND teammates) for contention scoring.
+        self.ship_contacts = [
+            c for c in self.contacts
+            if c.get("type") == "ship"
+            and str(c.get("state", "")).upper() != "DESTROYED"
+            and c.get("playerId") != self.player_id
+        ]
 
-    self.at_trading_post = any(
-        ShipUtils.location(tp) == self.location for tp in self.trading_posts
-    )
-    self.at_asteroid = any(
-        ShipUtils.location(a) == self.location and ShipUtils.safe_int(a.get("nutrinium")) > 0
-        for a in self.asteroids
-    )
-    self.objective_post = next(
-        (tp for tp in self.trading_posts if tp.get("name") == self.objective_post_name),
-        None,
-    )
-    self.at_objective_post = (
-            self.objective_post is not None
-            and ShipUtils.location(self.objective_post) == self.location
-    )
+        self.at_trading_post = any(
+            ShipUtils.location(tp) == self.location for tp in self.trading_posts
+        )
+        self.at_asteroid = any(
+            ShipUtils.location(a) == self.location and ShipUtils.safe_int(a.get("nutrinium")) > 0
+            for a in self.asteroids
+        )
+        self.objective_post = next(
+            (tp for tp in self.trading_posts if tp.get("name") == self.objective_post_name),
+            None,
+        )
+        self.at_objective_post = (
+                self.objective_post is not None
+                and ShipUtils.location(self.objective_post) == self.location
+        )
 
-    # --- Round clock (end-game banking) ---
-    self.ticks_remaining = self._estimate_ticks_remaining(now_ms)
+        # --- Round clock (end-game banking) ---
+        self.ticks_remaining = self._estimate_ticks_remaining(now_ms)
 
-    # --- Movement history (anti-oscillation) ---
-    self.prev_cell_source = "none"
-    self.prev_cell = self._previous_cell()
-    if self.prev_cell == self.location:
-        self.prev_cell = None
+        # --- Movement history (anti-oscillation) ---
         self.prev_cell_source = "none"
+        self.prev_cell = self._previous_cell()
+        if self.prev_cell == self.location:
+            self.prev_cell = None
+            self.prev_cell_source = "none"
 
-    # --- Last-action outcome (avoid re-emitting a just-failed action) ---
-    # PLUNDER/ATTACK target a same-zone enemy from a snapshot that is one
-    # tick stale: the enemy may have moved out of the zone before the action
-    # resolved ("the target is no longer in the zone"). When our previous
-    # offence action FAILED we back off offence for a tick and do productive
-    # work instead, so a mobile enemy passing through cannot trap us in a
-    # fail-retry loop (retrying ATTACK after a failed PLUNDER -- or vice versa -- hits the same absent target).
-    last_result = self.request.get("actionResult", {} or {})
-    self.last_action_type = str(last_result.get("actionType", "")).upper()
-    self.last_action_failed = (
-            str(last_result.get("outcome", "")).upper() == "FAILURE"
-    )
-    # Why an action was accepted/rejected: the result payload carries a
-    # machine resultCode (e.g. "RECHARGE_FAILURE") plus a human message.
-    # Surfacing these makes a server refusal (such as the ~588 rejected
-    # RECHARGES in game 37102 round 2) visible instead of an opaque FAIL.
-    last_payload = last_result.get("payload", {} or {})
-    self.last_action_result_code = str(last_payload.get("resultCode", "") or "")
-    self.last_action_message = str(last_payload.get("message", "") or "")
-    self.offence_target_lost = (
-            self.last_action_failed and self.last_action_type in ("PLUNDER", "ATTACK")
-    )
-    # Consecutive no-progress ticks (filled per tick by _update_stuck_state).
-    self.stuck_count = 0
+        # --- Last-action outcome (avoid re-emitting a just-failed action) ---
+        # PLUNDER/ATTACK target a same-zone enemy from a snapshot that is one
+        # tick stale: the enemy may have moved out of the zone before the action
+        # resolved ("the target is no longer in the zone"). When our previous
+        # offence action FAILED we back off offence for a tick and do productive
+        # work instead, so a mobile enemy passing through cannot trap us in a
+        # fail-retry loop (retrying ATTACK after a failed PLUNDER -- or vice versa -- hits the same absent target).
+        last_result = self.request.get("actionResult", {} or {})
+        self.last_action_type = str(last_result.get("actionType", "")).upper()
+        self.last_action_failed = (
+                str(last_result.get("outcome", "")).upper() == "FAILURE"
+        )
+        # Why an action was accepted/rejected: the result payload carries a
+        # machine resultCode (e.g. "RECHARGE_FAILURE") plus a human message.
+        # Surfacing these makes a server refusal (such as the ~588 rejected
+        # RECHARGES in game 37102 round 2) visible instead of an opaque FAIL.
+        last_payload = last_result.get("payload", {} or {})
+        self.last_action_result_code = str(last_payload.get("resultCode", "") or "")
+        self.last_action_message = str(last_payload.get("message", "") or "")
+        self.offence_target_lost = (
+                self.last_action_failed and self.last_action_type in ("PLUNDER", "ATTACK")
+        )
+        # Consecutive no-progress ticks (filled per tick by _update_stuck_state).
+        self.stuck_count = 0
 
-    # --- Scoreboard / outcome fields (end-of-game reporting) ---
-    self.game_id = self.game_state.get("gameId", self.me.get("gameId"))
-    self.tick = ShipUtils.safe_int(self.game_state.get("tick"))
-    self.round = ShipUtils.safe_int(self.game_state.get("round"))
-    self.credits = ShipUtils.safe_int(self.me.get("credits"))
-    self.stats = self.me.get("stats", {} or {})
-    self.round_scores = self.me.get("roundScores", [] or [])
-    self.leaderboard = self.request.get("leaderboard", [] or [])
-    self.skill_points_spent = ShipUtils.safe_int(self.me.get("skillPointsSpent"))
-    self.skill_points_total = ShipUtils.safe_int(self.me.get("skillPointsTotal"))
+        # --- Scoreboard / outcome fields (end-of-game reporting) ---
+        self.game_id = self.game_state.get("gameId", self.me.get("gameId"))
+        self.tick = ShipUtils.safe_int(self.game_state.get("tick"))
+        self.round = ShipUtils.safe_int(self.game_state.get("round"))
+        self.credits = ShipUtils.safe_int(self.me.get("credits"))
+        self.stats = self.me.get("stats", {} or {})
+        self.round_scores = self.me.get("roundScores", [] or [])
+        self.leaderboard = self.request.get("leaderboard", [] or [])
+        self.skill_points_spent = ShipUtils.safe_int(self.me.get("skillPointsSpent"))
+        self.skill_points_total = ShipUtils.safe_int(self.me.get("skillPointsTotal"))
 
-    # Extra fields the shared action-masker safety net validates against.
-    self.shields_cost = int(energy_costs.get("shields", 5))
-    self.salvage_energy_cost = int(energy_costs.get("salvage", 999))
-    self.max_health = int(ship_config.get("maxHealth", 100))
-    shield = self.me.get("shield", {} or {})
-    self._shield_state = str(shield.get("state", "DOWN")).upper()
-    self.shield_value = ShipUtils.safe_int(shield.get("value", shield.get("strength", 0)))
-    self.shield_capacity = ShipUtils.safe_int(shield.get("capacity", shield.get("maxStrength", 0)))
+        # Extra fields the shared action-masker safety net validates against.
+        self.shields_cost = int(energy_costs.get("shields", 5))
+        self.salvage_energy_cost = int(energy_costs.get("salvage", 999))
+        self.max_health = int(ship_config.get("maxHealth", 100))
+        shield = self.me.get("shield", {} or {})
+        self._shield_state = str(shield.get("state", "DOWN")).upper()
+        self.shield_value = ShipUtils.safe_int(shield.get("value", shield.get("strength", 0)))
+        self.shield_capacity = ShipUtils.safe_int(shield.get("capacity", shield.get("maxStrength", 0)))
 
-    self.combat = CombatEvaluator(self.attack_cost, self.max_energy)
+        self.combat = CombatEvaluator(self.attack_cost, self.max_energy)
 
     def my_leaderboard_entry(self):
         """My row in the leaderboard (carries rank/position + gameScore), or None."""
@@ -695,6 +696,7 @@ class GameContext:
         if self.team_id is not None and contact_team is not None:
             return contact_team != self.team_id
         return contact.get("playerId") != self.player_id
+
     def miners_at(self, loc):
         return sum(1 for s in self.ship_contacts if ShipUtils.location(s) == loc)
 
@@ -706,7 +708,7 @@ class GameContext:
         start = ShipUtils.safe_int(self.game_state.get("start"))
         end = ShipUtils.safe_int(self.game_state.get("end"))
         tick = ShipUtils.safe_int(self.game_state.get("tick"))
-        now = int(time.time()) * 1000 if now_ms is None else now_ms
+        now = int(time.time() * 1000) if now_ms is None else now_ms
         # Only trust a genuinely live round window (replayed fixtures are stale).
         live = end > start and start <= now <= end
         if live and tick > 0:
@@ -732,7 +734,7 @@ class GameContext:
             return ShipUtils.next_position(self.location, ShipUtils.opposite(direction))
         return None
 
-    def previous_cell(self):
+    def _previous_cell(self):
         last_result = self.request.get("actionResult", {}) or {}
         cell = self._cell_before_move(
             last_result.get("actionType"),
@@ -751,9 +753,9 @@ class GameContext:
             if cell is not None:
                 self.prev_cell_source = "eventLog"
                 return cell
-        break
-    self.prev_cell_source = "none"
-    return None
+            break
+        self.prev_cell_source = "none"
+        return None
 
     # --- Restriction helpers (driven by round metadata) ---
     def allowed_while_recharging(self, action_type):
@@ -785,15 +787,17 @@ class GameContext:
         success_chance = min(1.0, density * 10.0 * self.mine_base_success)
         expected_payout = (self.mine_min_payout + min(self.mine_max_payout, nutr)) / 2.0
         expected_yield = success_chance * expected_payout
-        pool_factor = 1.0 + math.logp(nutr)
+        pool_factor = 1.0 + math.log1p(nutr)
         dist = ShipUtils.distance(self.location, ShipUtils.location(asteroid))
         competition_factor = 1.0 + Tunables.COMPETITION_WEIGHT * self.miners_at(
             ShipUtils.location(asteroid)
         )
         return (expected_yield * pool_factor) / ((dist + 1.0) * competition_factor)
 
+
 # -----------------------------------
 # Heuristic strategy
+# -----------------------------------
 class HeuristicStrategy:
     """Priority-ordered decision policy with an action-mask safety net."""
 
