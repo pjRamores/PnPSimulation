@@ -815,7 +815,7 @@ class ProspectorsPiratesEnv(
                         ay = min(self.map_height - 1, max(0, ay + random.randint(-1, 1)))
                         attempts += 1
                     if (ax, ay) in placed:
-                        # As a last resort, find any free cell Rejection-sample first
+                        # As a last resort, find any free cell. Rejection-sample first
                         # (O(1) expected on sparse maps), then fall back to a single
                         # scan only if sampling keeps colliding (near-full map).
                         found_free = False
