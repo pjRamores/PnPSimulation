@@ -1319,7 +1319,7 @@ class HeuristicStrategy:
         if attack is not None:
             return attack
 
-        work = self.work_action()
+        work = self._work_action()
         work_type = work.get("actionType", "WAIT")
 
         if ctx.recharging:
@@ -1336,7 +1336,7 @@ class HeuristicStrategy:
             return work
         # Bank energy for a worthwhile jump: when crawling toward a distant
         # target we cannot yet afford to jump to, deploy panels so we recharge
-        # WHILE WE MOVE (MOVE is allowed while recharging). Once energy reaches
+        # WHILE we MOVE (MOVE is allowed while recharging). Once energy reaches
         # jumpMinCost the travel logic jumps the remaining distance, saving many
         # crawl ticks. Skipped near threats and once energy is already capped.
         if (
@@ -1418,7 +1418,7 @@ class HeuristicStrategy:
                 nutr, mass, density, success * 100,
             )
         else:
-            rock_str = "onRock=None"
+            rock_str = "onRock=none"
 
         # Top mineable candidates by score (shows target-selection quality).
         ranked = sorted(ctx.mineable_asteroids, key=lambda a: -ctx.asteroid_score(a))[:3]
@@ -1443,11 +1443,11 @@ class HeuristicStrategy:
                 post_loc, post_dist, ctx.jump_energy(post_dist),
             )
         else:
-            post_str = "nearestPost=None"
+            post_str = "nearestPost=none"
 
         logger.debug(
             "SCAN %s | mineable=%d top=[%s] | %s",
-            rock_str, len(ctx.mineable_asteroids), "; ".join(candidates), post_str,
+            rock_str, len(ctx.mineable_asteroids), " ; ".join(candidates), post_str,
         )
 
         # Combat picture: our power vs. the acting/dominant threats we weigh.
@@ -1527,7 +1527,7 @@ def _get_masker():
 
 
 def _flatten_entities(contacts, keys):
-    """Flatten raw sensor contacts (nested `location`) to `{x,y,...}` dicts."""
+    """Flatten raw sensor contacts (nested ``location``) to ``{'x','y',...}`` dicts."""
     out = []
     for contact in contacts:
         loc = contact.get("location", {}) or {}
@@ -1536,6 +1536,7 @@ def _flatten_entities(contacts, keys):
             entity[key] = contact.get(key)
         out.append(entity)
     return out
+
 
 def _build_mask_state(ctx, masker):
     """Adapt the parsed :class:`GameContext` into a ``MaskState``."""
@@ -1647,8 +1648,9 @@ def _masked_to_response(ctx, action_id, masker):
         richest = max(enemies, key=lambda e: ShipUtils.safe_int(e.get("nutrinium")))
         target = richest.get("playerId")
         if target is None:
-            return {"actionType": "ATTACK"}
-        return {"actionType": "ATTACK", "payload": {"target": target, "energy": min(20, ctx.energy)}}
+            return {"actionType": "WAIT"}
+        return {"actionType": "ATTACK",
+                "payload": {"target": target, "energy": min(20, ctx.energy)}}
     if action_id == masker.JUMP_TO_ASTEROID:
         nearest = ShipUtils.nearest(ctx.location, ctx.mineable_asteroids)
         if nearest is None:
@@ -1674,7 +1676,7 @@ def _enforce(ctx, action):
     if masker is None:
         return action
     state = _build_mask_state(ctx, masker)
-    action_id = action_name_to_id(masker, action, ctx)
+    action_id = _action_name_to_id(masker, action, ctx)
     is_valid, _ = masker.is_action_valid(action_id, state)
     if is_valid:
         return action
@@ -1686,19 +1688,23 @@ def _enforce(ctx, action):
     )
     return enforced
 
-#
+
+# --------------------------------------------------------------------------
 # Public lambda contract
-#
+# --------------------------------------------------------------------------
 def get_action(action_request):
     logger.info(action_request)
     action = get_heuristic_action(action_request)
     return _to_response(action)
+
+
 def _log_round_state(ctx):
     """Once per game+round, log the full round setup the bot will play under.
 
-    A single ROUND-START line captures the fixed parameters (map, costs, ship caps,
-    mining/market economics, objective) plus our opening ship state and so a finished round's
-    conditions can be reviewed without inferring them from per-tick traces.
+    A single ROUND-START line captures the fixed parameters (map, costs, ship
+    caps, mining/market economics, objective) plus our opening ship state and
+    so a finished round's conditions can be reviewed without inferring them
+    from per-tick traces.
     """
     if not _LOGGING_ENABLED or ctx.game_id is None:
         return
@@ -1713,9 +1719,9 @@ def _log_round_state(ctx):
     market = md.get("market", {}) or {}
     sell = market.get("sell", {}) or {}
     buy = market.get("buy", {}) or {}
-    sensor_range = (ship_cfg.get("sensors", {}).get("range") or {})
+    sensor_range = (ship_cfg.get("sensors", {}) or {}).get("range")
     energy_per_recharge = ship_cfg.get("energyPerRecharge")
-    sell_cost = (ship_cfg.get("energyCosts", {}).get("sell", 0) or 0)
+    sell_cost = (ship_cfg.get("energyCosts", {}) or {}).get("sell", 0)
     entry = ctx.my_leaderboard_entry() or {}
     ticks_left = "n/a" if ctx.ticks_remaining is None else "%.1f" % ctx.ticks_remaining
 
@@ -1736,7 +1742,7 @@ def _log_round_state(ctx):
         ctx.plunder_cost, ctx.negotiate_cost, ctx.attack_cost, sell_cost,
         ctx.max_energy, ctx.max_jump_distance, energy_per_recharge,
         ctx.mine_base_success, ctx.mine_min_payout, ctx.mine_max_payout,
-        (md.get("mining", {}).get("payoutModifier") or {}),
+        (md.get("mining", {}) or {}).get("payoutModifier"),
         sell.get("nutrinium"), buy.get("repair"), buy.get("ship"),
         ctx.location, ctx.energy, ctx.health, ctx.nutrinium, ctx.credits,
         "UP" if ctx.shields_up else "DOWN", ctx.modules,
@@ -1745,14 +1751,16 @@ def _log_round_state(ctx):
         len(ctx.enemy_ships), len(ctx.mineable_asteroids), len(ctx.asteroids),
         len(ctx.trading_posts), len(ctx.wreckage),
         len(ctx.leaderboard) or "?", entry.get("position", "?"),
-        entry.get("gameScore", "?"), ticks_left
+        entry.get("gameScore", "?"), ticks_left,
     )
+
 
 def _log_endgame_stats(ctx):
     """Once per game+round, when the round clock is about to expire, log final stats.
 
-    Captures the ship's outcome (credits, leaderboard rank, score) and the cumulative combat/mining/salvage/repair tallies so a finished
-    round can be reviewed without replaying every tick.
+    Captures the ship's outcome (credits, leaderboard rank, score) and the
+    cumulative combat/mining/salvage/repair tallies so a finished round can be
+    reviewed without replaying every tick.
     """
     if not _LOGGING_ENABLED or ctx.game_id is None:
         return
@@ -1779,16 +1787,20 @@ def _log_endgame_stats(ctx):
         ctx.game_id, ctx.round, ctx.player_id, ctx.me.get("name"),
         entry.get("position", "?"), len(ctx.leaderboard) or "?",
         entry.get("gameScore", "?"), ctx.credits, ctx.nutrinium, ctx.health,
+        ctx.skill_points_spent, ctx.skill_points_total,
         ctx.location, ctx.energy, ctx.recharging,
         "UP" if ctx.shields_up else "DOWN",
         len(ctx.enemy_ships), len(ctx.mineable_asteroids), len(ctx.asteroids),
         len(ctx.trading_posts),
-        mining.get("nutriniumMined"), mining.get("attempts"), mining.get("success"),
+        mining.get("nutriniumMined"), mining.get("success"), mining.get("attempts"),
         combat.get("damageDealt"), combat.get("damageTaken"), combat.get("damageBlocked"),
         combat.get("destroyed"), combat.get("respawns"),
         combat.get("nutriniumWon"), combat.get("nutriniumLost"),
         salvage.get("nutriniumSalvaged"), repair.get("healthRestored"),
         ctx.round_scores,
+    )
+
+
 def get_heuristic_action(action_request):
     ctx = GameContext(action_request)
     _ensure_game_log_file(ctx.game_id, ctx.round)
@@ -1802,10 +1814,10 @@ def get_heuristic_action(action_request):
         ctx.prev_cell = None if own_prev == ctx.location else own_prev
         ctx.prev_cell_source = "own-move"
     logger.debug(
-        "PREV_CELL %s (source=%s)%",
+        "PREV_CELL %s (source=%s)%s",
         ctx.prev_cell, ctx.prev_cell_source,
         "" if ctx.prev_cell is not None
-        else "-- anti-oscillation cannot fire without a known previous cell",
+        else " -- anti-oscillation cannot fire without a known previous cell",
     )
 
     # Track no-progress ticks so the strategy can break a server-rejection
@@ -1815,7 +1827,7 @@ def get_heuristic_action(action_request):
     ticks_left = "n/a" if ctx.ticks_remaining is None else "%.1f" % ctx.ticks_remaining
     logger.debug(
         "TICK game=%s tick=%s round=%s loc=%s state=%s energy=%s nutrinium=%s "
-        "health=%s recharging=%s shields=%s modules=%s axis=ns%d/ew%d | "
+        "health=%s recharging=%s shields=%s modules=%s axis=ns%+d/ew%+d | "
         "enemies=%d sameZone=%d asteroids=%d posts=%d ticks_left=%s | "
         "last=%s/%s reason=%s/%s stuck=%d offenceLost=%s",
         ctx.game_id, ctx.tick, ctx.round, ctx.location, ctx.state, ctx.energy,
@@ -1825,9 +1837,9 @@ def get_heuristic_action(action_request):
         len(ctx.enemy_ships), len(ctx.same_zone_enemies),
         len(ctx.mineable_asteroids), len(ctx.trading_posts), ticks_left,
         ctx.last_action_type or "-", "FAIL" if ctx.last_action_failed else "ok",
-        ctx.last_action_result_code or "-", ctx.last_action_message or "_",
+        ctx.last_action_result_code or "-", ctx.last_action_message or "-",
         ctx.stuck_count, ctx.offence_target_lost,
-        )
+    )
 
     action = HeuristicStrategy(ctx).decide()
     _record_move(ctx, action)
