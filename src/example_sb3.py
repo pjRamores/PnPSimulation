@@ -177,6 +177,30 @@ class ActionMaskWrapper(gym.Wrapper):
         return obs, reward, terminated, truncated, info
 
 
+def _make_env_fn(rank, env_kwargs, min_opponents, max_opponents, use_dynamic_opponents):
+    """Return a no-arg callable that builds one fully wrapped training env.
+
+    Defined at module scope so it is picklable by SubprocVecEnv (on Windows the
+    'spawn' start method re-imports this module in every worker process). The
+    wrapper stack is IDENTICAL to the single-env path:
+    ProperctorsPiratesEnv -> DynamicOpponentsWrapper? -> ActionMaskWrapper -> Monitor.
+
+    Args:
+        rank: Worker index (0..n_envs-1); reserved for future per-worker seeding.
+        env_kwargs: Keyword args forwarded verbatim to ProspectorsPiratesEnv.
+        min_opponents, max_opponents: Bounds for per-episode opponent sampling.
+        use_dynamic_opponents: Wrap with DynamicOpponentsWrapper when True.
+    """
+    def _init():
+        env = ProspectorsPiratesEnv(**env_kwargs)
+        if use_dynamic_opponents:
+            env = DynamicOpponentsWrapper(env, min_opponents, max_opponents)
+        env = ActionMaskWrapper(env)
+        env = Monitor(env)
+        return env
+    return _init
+
+
 # Try to import torch for CPU/thread control
 try:
     import torch
@@ -985,7 +1009,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                    use_predefined_asteroids=False, asteroid_config_path='asteroids.config',
                    use_predefined_start=False, start_position_config_path='start_positions.config',
                    use_composite=True, composite_components: Optional[List[object]] = None,
-                   efficiency_mode=False, num_threads=None):
+                   efficiency_mode=False, num_threads=None, n_envs=1):
     """
     Train agent using Stable Baselines3 with optional transfer learning
 
@@ -1009,6 +1033,9 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         composite_components: List of reward components for composite calculator
         efficiency_mode: If True, limit CPU usage for efficiency. If False, maximize CPU usage for faster training
         num_threads: Specific number of CPU threads to use (overrides efficiency_mode if set)
+        n_envs: Number of parallel environments. When >1 (PPO only), training runs on a
+            SubprocVecEnv of n_envs worker processes for higher throughput. n_envs=1 keeps the
+            original single-process env path unchanged.
     """
 
     if not SB3_AVAILABLE:
@@ -1068,7 +1095,12 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         print(f"\nOpponent Configuration:")
         print(f"  Fixed count: {initial_num_opponents} opponents per episode")
 
-    env = ProspectorsPiratesEnv(
+    # Determine whether to run parallel vectorized environments. SubprocVecEnv is
+    # PPO-only here and strictly opt-in (n_envs>1); n_envs=1 keeps the original
+    # single-process env path byte-for-byte unchanged.
+    use_vec_env = (algorithm == 'PPO' and n_envs is not None and n_envs > 1)
+
+    env_kwargs = dict(
         map_width=map_width,
         map_height=map_height,
         num_opponents=initial_num_opponents,
@@ -1080,27 +1112,59 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         reward_config=reward_cfg
     )
 
-    # Apply dynamic opponents wrapper if using variable opponent counts
-    if use_dynamic_opponents:
-        env = DynamicOpponentsWrapper(env, min_opponents, max_opponents)
+    if use_vec_env:
+        from stable_baselines3.common.vec_env import SubprocVecEnv
 
-    # Apply action mask wrapper for standard PPO.
-    # This intercepts invalid actions, replaces them with a random valid action,
-    # and applies a penalty so the model learns to respect the mask.
-    env = ActionMaskWrapper(env)
-    print("  Action masking: penalty-based enforcement")
+        # Keep each worker's numpy/BLAS single-threaded so n_envs processes don't
+        # oversubscribe the CPU and thrash. Only set if the user hasn't already.
+        os.environ.setdefault('OMP_NUM_THREADS', '1')
+        os.environ.setdefault('MKL_NUM_THREADS', '1')
 
-    # Wrap environment with Monitor for logging
-    env = Monitor(env)
+        print(f"  Action masking: penalty-based enforcement")
+        print(f"  Parallel envs: {n_envs} (SubprocVecEnv")
 
-    # Check environment
-    print("\nChecking environment compatibility...")
-    try:
-        check_env(env, warn=True)
-        print("Environment check passed!")
-    except Exception as e:
-        print(f"Environment check failed: {e}")
-        return None
+        # Validate the gym API on a single throwaway env before spawning workers
+        # (running check_env on a SubprocVecEnv is not supported / meaningful).
+        print("\nChecking environment compatibility...")
+        try:
+            _probe_env = _make_env_fn(
+                0, env_kwargs, min_opponents, max_opponents, use_dynamic_opponents)()
+            check_env(_probe_env, warn=True)
+            _probe_env.close()
+            print("Environment check passed!")
+        except Exception as e:
+            print(f"Environment check failed: {e}")
+            return None
+
+        env = SubprocVecEnv(
+            [_make_env_fn(i, env_kwargs, min_opponents, max_opponents, use_dynamic_opponents)
+             for i in range(n_envs)],
+            start_method='spawn'
+        )
+    else:
+        env = ProspectorsPiratesEnv(**env_kwargs)
+
+        # Apply dynamic opponents wrapper if using variable opponent counts
+        if use_dynamic_opponents:
+            env = DynamicOpponentsWrapper(env, min_opponents, max_opponents)
+
+        # Apply action mask wrapper for standard PPO.
+        # This intercepts invalid actions, replaces them with a random valid action,
+        # and applies a penalty so the model learns to respect the mask.
+        env = ActionMaskWrapper(env)
+        print("  Action masking: penalty-based enforcement")
+
+        # Wrap environment with Monitor for logging
+        env = Monitor(env)
+
+        # Check environment
+        print("\nChecking environment compatibility...")
+        try:
+            check_env(env, warn=True)
+            print("Environment check passed!")
+        except Exception as e:
+            print(f"Environment check failed: {e}")
+            return None
 
     os.makedirs(save_path, exist_ok=True)
 
@@ -1228,13 +1292,25 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         print(f"\nCreating new {algorithm} model...")
 
         if algorithm == 'PPO':
+            ppo_n_steps = 2048  # Per-env rollout length; total rollout = ppo_n_steps * n_envs
+            ppo_batch_size = 256
+            # PPO requires the full rollout buffer (n_steps * n_envs) to be divisible
+            # by batch_size. Fail fast with a clear message if a future tweak breaks this.
+            rollout_size = ppo_n_steps * max(1, n_envs)
+            if rollout_size % ppo_batch_size != 0:
+                print(f"x Invalid PPO config: rollout (n_steps {ppo_n_steps} * n_envs {n_envs} "
+                      f"= {rollout_size}) is not divisible by batch_size {ppo_batch_size}.")
+                return None
+            if n_envs and n_envs > 1:
+                print(f"  PPO rollout: {ppo_n_steps} steps x {n_envs} envs = {rollout_size} "
+                      f"samples per update")
             model = PPO(
                 'MultiInputPolicy',
                 env,
                 verbose=0,
                 learning_rate=3e-4,
-                n_steps=2048,  # 2048 steps ≈ 6-7 episodes per rollout (optimized for 300-step episodes)
-                batch_size=256,  # 256 samples per gradient update for stable learning
+                n_steps=ppo_n_steps,  # 2048 steps ≈ 6-7 episodes per rollout (optimized for 300-step episodes)
+                batch_size=ppo_batch_size,  # 256 samples per gradient update for stable learning
                 n_epochs=10,  # Increased to 10 for better sample efficiency (standard PPO)
                 gamma=0.99,  # Standard discount factor (0.99 works well for 300-step horizon)
                 gae_lambda=0.95,
@@ -1713,6 +1789,10 @@ Examples:
                         help='Run in efficiency mode (lower CPU usage, slower training) - good for background training')
     parser.add_argument('--num-threads', type=int, default=None,
                         help='Specific number of CPU threads to use (overrides efficiency mode)')
+    parser.add_argument('--n-envs', type=int, default=1,
+                        help='Nuber of parallel environments for training (PPO only). '
+                             '>1 uses SubprocVecEnv worker processes for higher throughput; '
+                             '1 (default) keeps the single-process path (default: 1')
 
     args = parser.parse_args()
 
@@ -1786,7 +1866,8 @@ Examples:
             use_composite=use_composite_flag,
             composite_components=composite_specs,
             efficiency_mode=args.efficiency_mode,
-            num_threads=args.num_threads
+            num_threads=args.num_threads,
+            n_envs=args.n_envs
         )
         if model:
             # After training and saving the model, ask the user whether to proceed to evaluation
