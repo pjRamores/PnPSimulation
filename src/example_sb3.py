@@ -178,12 +178,12 @@ class ActionMaskWrapper(gym.Wrapper):
 
 
 def _make_env_fn(rank, env_kwargs, min_opponents, max_opponents, use_dynamic_opponents):
-    """Return a no-arg callable that builds one fully wrapped training env.
+    """Return a no-arg callable that builds one fully-wrapped training env.
 
     Defined at module scope so it is picklable by SubprocVecEnv (on Windows the
     'spawn' start method re-imports this module in every worker process). The
     wrapper stack is IDENTICAL to the single-env path:
-    ProperctorsPiratesEnv -> DynamicOpponentsWrapper? -> ActionMaskWrapper -> Monitor.
+    ProspectorsPiratesEnv -> DynamicOpponentsWrapper? -> ActionMaskWrapper -> Monitor.
 
     Args:
         rank: Worker index (0..n_envs-1); reserved for future per-worker seeding.
@@ -1121,7 +1121,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         os.environ.setdefault('MKL_NUM_THREADS', '1')
 
         print(f"  Action masking: penalty-based enforcement")
-        print(f"  Parallel envs: {n_envs} (SubprocVecEnv")
+        print(f"  Parallel envs: {n_envs} (SubprocVecEnv)")
 
         # Validate the gym API on a single throwaway env before spawning workers
         # (running check_env on a SubprocVecEnv is not supported / meaningful).
@@ -1790,9 +1790,9 @@ Examples:
     parser.add_argument('--num-threads', type=int, default=None,
                         help='Specific number of CPU threads to use (overrides efficiency mode)')
     parser.add_argument('--n-envs', type=int, default=1,
-                        help='Nuber of parallel environments for training (PPO only). '
+                        help='Number of parallel environments for training (PPO only). '
                              '>1 uses SubprocVecEnv worker processes for higher throughput; '
-                             '1 (default) keeps the single-process path (default: 1')
+                             '1 (default) keeps the single-process path (default: 1)')
 
     args = parser.parse_args()
 

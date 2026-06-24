@@ -815,16 +815,27 @@ class ProspectorsPiratesEnv(
                         ay = min(self.map_height - 1, max(0, ay + random.randint(-1, 1)))
                         attempts += 1
                     if (ax, ay) in placed:
-                        # As a last resort, find any free cell
-                        for xx in range(self.map_width):
-                            found = False
-                            for yy in range(self.map_height):
-                                if (xx, yy) not in placed:
-                                    ax, ay = xx, yy
-                                    found = True
-                                    break
-                            if found:
+                        # As a last resort, find any free cell Rejection-sample first
+                        # (O(1) expected on sparse maps), then fall back to a single
+                        # scan only if sampling keeps colliding (near-full map).
+                        found_free = False
+                        for _ in range(64):
+                            rx = random.randint(0, self.map_width - 1)
+                            ry = random.randint(0, self.map_height - 1)
+                            if (rx, ry) not in placed:
+                                ax, ay = rx, ry
+                                found_free = True
                                 break
+                        if not found_free:
+                            for xx in range(self.map_width):
+                                found = False
+                                for yy in range(self.map_height):
+                                    if (xx, yy) not in placed:
+                                        ax, ay = xx, yy
+                                        found = True
+                                        break
+                                if found:
+                                    break
 
                     placed.add((ax, ay))
 
@@ -956,16 +967,26 @@ class ProspectorsPiratesEnv(
                         found = True
 
                     if not found:
-                        # Fallback: find any available cell
-                        for xx in range(self.map_width):
-                            for yy in range(self.map_height):
-                                if (xx, yy) not in occupied and (xx, yy) not in placed_posts:
-                                    self.trading_posts.append({'x': xx, 'y': yy})
-                                    placed_posts.add((xx, yy))
-                                    found = True
-                                    break
-                            if found:
+                        # Fallback: find any available cell. Rejection-sample first
+                        # (cheap on sparse maps), then scan once only if still colliding.
+                        for _ in range(64):
+                            rx = random.randint(0, self.map_width - 1)
+                            ry = random.randint(0, self.map_height - 1)
+                            if (rx, ry) not in occupied and (rx, ry) not in placed_posts:
+                                self.trading_posts.append({'x': rx, 'y': ry})
+                                placed_posts.add((rx, ry))
+                                found = True
                                 break
+                        if not found:
+                            for xx in range(self.map_width):
+                                for yy in range(self.map_height):
+                                    if (xx, yy) not in occupied and (xx, yy) not in placed_posts:
+                                        self.trading_posts.append({'x': xx, 'y': yy})
+                                        placed_posts.add((xx, yy))
+                                        found = True
+                                        break
+                                if found:
+                                    break
                         if not found:
                             logger.warning('Unable to place an expected trading post due to lack of free cells.')
 
@@ -976,7 +997,10 @@ class ProspectorsPiratesEnv(
             post.setdefault('name', f'TP-{idx}')
         self._assign_negotiate_objectives()
 
-        # Build spatial lookup cache for fast entity-at-location queries
+        # Build spatial lookup cache for fast entity-at-location queries.
+        # Asteroid/trading-post positions are static for the whole episode, so
+        # invalidate and rebuild their index now; per-step refreshes only opponents.
+        self._static_cache_ready = False
         self._rebuild_location_cache()
 
         observation = self._get_observation()
