@@ -1184,7 +1184,7 @@ class GameSimulator:
         self._print(header_line, to_episode=False)
         self._print(sep_line, to_episode=False)
         for row in ranked_rows:
-            line = " ".join(str(cell).ljust(w) for cell, w in zip(row, widths))
+            line = "  ".join(str(cell).ljust(w) for cell, w in zip(row, widths))
             self._print(line, to_episode=False)
         self._print("=" * 70, to_episode=False)
 
@@ -1437,11 +1437,11 @@ class GameSimulator:
             widths[4] = max(widths[4], len(ship['energy']))
             widths[5] = max(widths[5], len(ship['health']))
             widths[6] = max(widths[6], len(ship['state']))
-            widths[7] = max(widths[7], len(ship['state']))
+            widths[7] = max(widths[7], len(ship['action']))
 
         # Print header
-        header_line = ' '.join(h.ljust(w) for h, w in zip(headers, widths))
-        sep_line = ' '.join('-' * w for w in widths)
+        header_line = '  '.join(h.ljust(w) for h, w in zip(headers, widths))
+        sep_line = '  '.join('-' * w for w in widths)
         self._log_episode_detail('\n' + header_line, render)
         self._log_episode_detail(sep_line, render)
 
@@ -1497,7 +1497,7 @@ class GameSimulator:
         """Render the post-action 'ACTION RESULTS' table for player + opponents."""
         self._log_episode_detail(f"\n{'=' * 70}", render)
         self._log_episode_detail(f"ACTION RESULTS (Step {step})", render)
-        self._log_episode_detail(f"\n{'=' * 70}", render)
+        self._log_episode_detail(f"{'=' * 70}", render)
 
         # Collect action results for all ships
         action_results = []
@@ -1567,7 +1567,7 @@ class GameSimulator:
                 'name': opp.get('name', f'E{i+1}'),
                 'action': opp_action_name,
                 'result': opp_result_str,
-                'reward': '-', # Don't show enemy rewards
+                'reward': '-',  # Don't show enemy rewards
                 'details': opp_payload_str,
                 'is_player': False
             })
@@ -1585,8 +1585,8 @@ class GameSimulator:
             widths[4] = max(widths[4], len(ar['details']))
 
         # Print header
-        header_line = ' '.join(h.ljust(w) for h, w in zip(headers, widths))
-        sep_line = ' '.join('-' * w for w in widths)
+        header_line = '  '.join(h.ljust(w) for h, w in zip(headers, widths))
+        sep_line = '  '.join('-' * w for w in widths)
         self._log_episode_detail('\n' + header_line, render)
         self._log_episode_detail(sep_line, render)
 
@@ -1599,7 +1599,7 @@ class GameSimulator:
                 ar['reward'].ljust(widths[3]),
                 ar['details'].ljust(widths[4])
             ]
-            line = ' '.join(row)
+            line = '  '.join(row)
             # Highlight player row
             if ar['is_player']:
                 self._log_episode_detail(f"? {line}", render)
@@ -1611,7 +1611,7 @@ class GameSimulator:
 
         # Show state validation warning if needed
         if not state_valid_flag:
-            self._log_episode_detail(f"WARN Warning: Action state invalid - {info.get('state_invalid_reason', '')}", render)
+            self._log_episode_detail(f"WARN Warning: Action state invalid - {info.get('state_invalid_reason','')}", render)
 
     def _build_episode_stats(self, env, info, step, total_reward, player_kills, enemy_kills_by_index, num_opponents) -> Dict:
         """Assemble the per-episode statistics dictionary from the final env state."""
@@ -1732,7 +1732,7 @@ class GameSimulator:
 
         if payout > 0:
             ship_nutr = payload.get('ship_nutr', '?')
-            parts.append(f"payout (payout) -> ship_nutr={ship_nutr}")
+            parts.append(f"payout {payout} -> ship_nutr={ship_nutr}")
         else:
             parts.append(f"MISS payout 0")
 
@@ -1740,6 +1740,7 @@ class GameSimulator:
         parts.append(f"SKILL[acc={mine_acc} yield={mine_yield} cost={mine_cost}] nrg={energy}")
 
         return ' | '.join(parts)
+
 
 def main():
     """Command-line interface for the simulator."""
@@ -1792,7 +1793,7 @@ def main():
     parser.add_argument('--print-each-step', action='store_true',
                        help='Print detailed info for each step during simulation')
     parser.add_argument('--opponents', type=str, default=None,
-                       help='Comma-separated list of exact opponents (e.g. BOT_V2,BOT_V3,BOT_V4,BOT_V5,BOT_V6,BOT_V7.models/ppo_pnp_model_v29). Overrides --min-opponents and --max-opponents')
+                       help='Comma-separated list of exact opponents (e.g. BOT_V2,BOT_V3,BOT_V4,BOT_V5,BOT_V6,BOT_V7,BOT_V8.models/ppo_pnp_model_v29). Each entry may carry an optional [N] repeat-count suffix, e.g. BOT_V2[1],BOT_V3[3],BOT_V4[4] is equivalent to listing each name N times. Overrides --min-opponents and --max-opponents.')
 
     args = parser.parse_args()
 
