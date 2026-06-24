@@ -374,27 +374,29 @@ class EnvOpponentMixin:
             }
 
         sensors = []
-        for a in self.asteroids:
-            if in_range(a['x'], a['y']):
-                sensors.append({
-                    'gameId': game_id,
-                    'location': {'x': a['x'], 'y': a['y']},
-                    'mass': int(a.get('mass', 0)),
-                    'name': a.get('name'),
-                    'nutrinium': int(a.get('nutrinium', 0)),
-                    'round': round_no,
-                    'type': 'asteroid',
-                })
-        for tp in self.trading_posts:
-            if in_range(tp['x'], tp['y']):
-                sensors.append({
-                    'gameId': game_id,
-                    'id': tp.get('id'),
-                    'location': {'x': tp['x'], 'y': tp['y']},
-                    'name': tp.get('name'),
-                    'round': round_no,
-                    'type': 'trading_post',
-                })
+        # Asteroids and trading posts are static within an episode; query only the
+        # cells inside the sensor window (O(window)) instead of scanning every
+        # entity (O(all)). _entities_in_window returns them in original list order
+        # so the emitted sensors list is identical to the legacy full scan.
+        for a in self._entities_in_window('asteroids', sx, sy, sensor_range):
+            sensors.append({
+                'gameId': game_id,
+                'location': {'x': a['x'], 'y': a['y']},
+                'mass': int(a.get('mass', 0)),
+                'name': a.get('name'),
+                'nutrinium': int(a.get('nutrinium', 0)),
+                'round': round_no,
+                'type': 'asteroid',
+            })
+        for tp in self._entities_in_window('trading_posts', sx, sy, sensor_range):
+            sensors.append({
+                'gameId': game_id,
+                'id': tp.get('id'),
+                'location': {'x': tp['x'], 'y': tp['y']},
+                'name': tp.get('name'),
+                'round': round_no,
+                'type': 'trading_post',
+            })
         for w in self.wreckage:
             if in_range(w['x'], w['y']):
                 sensors.append({
