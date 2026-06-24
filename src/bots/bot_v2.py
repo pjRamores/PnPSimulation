@@ -79,6 +79,7 @@ def _logging_enabled():
         return True
     return "AWS_LAMBDA_FUNCTION_NAME" not in os.environ
 
+
 def _refresh_logging_enabled():
     """Recompute the logging flag from the environment and apply it.
 
@@ -91,32 +92,45 @@ def _refresh_logging_enabled():
     logger.disabled = not _LOGGING_ENABLED
     return _LOGGING_ENABLED
 
+
 _LOGGING_ENABLED = False
 _refresh_logging_enabled()
+
+
+
 # -----------------------------------
 # Per-game file logging
 # -----------------------------------
-
-# Each game+round gets its own log file (named "<gameId>_<round>_game.log") so a single round's tick-by-tick trace can be inspected in isolation.
-# The file handler is created once per game+round and reused across ticks; switching to a new game or round detaches the previous handler so logs never cross-contaminate. Everything here is best-effort -- any filesystem error is swallowed so logging never breaks the bot's decision.
-
+# Each game+round gets its own log file (named "<gameId>_<round>_game.log") so a
+# single round's tick-by-tick trace can be inspected in isolation. The file
+# handler is created once per game+round and reused across ticks; switching to a
+# new game or round detaches the previous handler so logs never cross-
+# contaminate. Everything here is best-effort -- any filesystem error is
+# swallowed so logging never breaks the bot's decision.
+#
+# Performance: the file I/O is asynchronous. A QueueHandler (attached to the
+# logger once) only enqueues records -- a cheap, non-blocking operation on the
+# decision hot path -- while a background QueueListener thread drains the queue
+# and performs the actual disk writes off the critical path.
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(message)s"
-_game_log_handlers = {}  # (game_id, round) -> FileHandler
+_game_log_handlers = {}                       # (game_id, round) -> FileHandler
 _active_game_log = {"key": None, "handler": None}
-_endgame_logged = set()  # (game_id, round) stats written
-_round_start_logged = set()  # (game_id, round) start state written
+_endgame_logged = set()                       # (game_id, round) stats written
+_round_start_logged = set()                   # (game_id, round) start state written
 
-_log_queue = queue.SimpleQueue()  # records handed off to the writer thread
+_log_queue = queue.SimpleQueue()              # records handed off to the writer thread
 _queue_handler = logging.handlers.QueueHandler(_log_queue)
 _queue_handler.setLevel(logging.INFO)
 logger.addHandler(_queue_handler)
-_queue_listener = None  # background thread feeding the active file
+_queue_listener = None                        # background thread feeding the active file
 
 
 def _log_dir():
     """Directory for per-game log files.
 
-    Defaults to a `logs` folder next to this module (created on demand). Set PNP_LOG_DIR to override -- e.g. to `/tmp` on AWS Lambda, where only the temp dir is writable.
+    Defaults to a ``logs`` folder next to this module (created on demand). Set
+    PNP_LOG_DIR to override -- e.g. to ``/tmp`` on AWS Lambda, where only the
+    temp dir is writable.
     """
     return os.environ.get("PNP_LOG_DIR") or os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "logs"
@@ -124,7 +138,7 @@ def _log_dir():
 
 
 def _ensure_game_log_file(game_id, round_no):
-    """Attach a file handler writing this round's logs to `<game_id>_<round>_game.log`."""
+    """Attach a file handler writing this round's logs to ``<game_id>_<round>_game.log``."""
     global _queue_listener
     if not _LOGGING_ENABLED or game_id is None:
         return
@@ -146,8 +160,9 @@ def _ensure_game_log_file(game_id, round_no):
             _active_game_log["key"] = key
             _active_game_log["handler"] = None
             return
-
-    # Repoint the background writer thread at this round's file. Stopping the previous listener first flushes any records still queued for the prior round into that round's own file, so logs never cross-contaminate.
+    # Repoint the background writer thread at this round's file. Stopping the
+    # previous listener first flushes any records still queued for the prior
+    # round into that round's own file, so logs never cross-contaminate.
     if _queue_listener is not None:
         _queue_listener.stop()
     _queue_listener = logging.handlers.QueueListener(
@@ -158,10 +173,13 @@ def _ensure_game_log_file(game_id, round_no):
     _active_game_log["handler"] = handler
 
 
-def flush_game_logging():
+def _flush_game_logging():
     """Block until every queued record has been written to disk.
 
-    The file writes are asynchronous, so callers that need to read a log file immediately (chiefly the tests) must drain the queue first. Stopping the listener joins the writer thread after the queue empties; we then restart a fresh listener so subsequent logging in the same round still flows.
+    The file writes are asynchronous, so callers that need to read a log file
+    immediately (chiefly the tests) must drain the queue first. Stopping the
+    listener joins the writer thread after the queue empties; we then restart a
+    fresh listener so subsequent logging in the same round still flows.
     """
     global _queue_listener
     if _queue_listener is None:
@@ -177,88 +195,101 @@ def flush_game_logging():
     _queue_listener.start()
 
 
-def reset_game_logging():
+def _reset_game_logging():
     """Stop the writer thread, close and forget all per-game file handlers (used by tests)."""
     global _queue_listener
-if _queue_listener is not None:
-    _queue_listener.stop()
-    _queue_listener = None
-for handler in _game_log_handlers.values():
-    try:
-        handler.close()
-    except Exception:  # pragma: no cover - close is best-effort
-        pass
-_game_log_handlers.clear()
-_endgame_logged.clear()
-_round_start_logged.clear()
-_active_game_log["key"] = None
-_active_game_log["handler"] = None
+    if _queue_listener is not None:
+        _queue_listener.stop()
+        _queue_listener = None
+    for handler in _game_log_handlers.values():
+        try:
+            handler.close()
+        except Exception:  # pragma: no cover - close is best-effort
+            pass
+    _game_log_handlers.clear()
+    _endgame_logged.clear()
+    _round_start_logged.clear()
+    _active_game_log["key"] = None
+    _active_game_log["handler"] = None
+
 
 # -----------------------------------------
 # Coordinate-orientation self-calibration
 # -----------------------------------------
-
+# The local simulator documents N=y-1 / E=x+1, but the live competition server
+# has been observed to INVERT the N/S axis (a commanded "N" increases y), which
+# left the bot steering away from every target and oscillating between two cells
+# forever (never reaching an asteroid, so it never mined, recharged or jumped).
+# Rather than hard-code either convention, we LEARN the real direction->delta
+# mapping by watching the result of our own MOVEs and then steer with the
+# learned signs. Defaults match the documented convention; a single observed
+# move corrects a flipped axis. Orientation is a server-wide constant so it is
+# kept across games; the last-move record is per game_round.
 _axis = {"ns": -1, "ew": 1}         # ns: dy produced by "N"; ew: dx produced by "E"
 _last_move = {"key": None, "direction": None, "frm": None}
+# Deadlock tracking: consecutive ticks where our last action FAILED and left
+# our position AND energy unchanged (the server keeps rejecting whatever we
+# submit -- e.g. ~588 refused RECHARGEs in game 37102 round 2). Per game+round.
 _stuck = {"key": None, "cell": None, "energy": None, "count": 0}
+
 
 def _reset_navigation_state():
     """Forget learned orientation and last move (used by tests for isolation)."""
-    axis["ns"] = -1
-    axis["ew"] = 1
-    last_move["key"] = None
-    last_move["direction"] = None
-    last_move["frm"] = None
-    stuck["key"] = None
-    stuck["cell"] = None
-    stuck["energy"] = None
-    stuck["count"] = 0
+    _axis["ns"] = -1
+    _axis["ew"] = 1
+    _last_move["key"] = None
+    _last_move["direction"] = None
+    _last_move["frm"] = None
+    _stuck["key"] = None
+    _stuck["cell"] = None
+    _stuck["energy"] = None
+    _stuck["count"] = 0
+
 
 def _update_stuck_state(ctx):
-    """Count consecutive no-progress ticks and stash the run length on `ctx`.
+    """Count consecutive no-progress ticks and stash the run length on ``ctx``.
 
     A tick counts as "stuck" when our previous action was REJECTED (outcome
     FAILURE) yet our location and energy are identical to the prior tick -- i.e.
     the server keeps refusing what we send and we are making zero progress.
     Resets whenever anything changes or the action succeeds. The strategy reads
-    `ctx.stuck_count` to decide when to force an escape action.
-
+    ``ctx.stuck_count`` to decide when to force an escape action.
     """
     key = (ctx.game_id, ctx.round)
     no_change = (
-            stuck["key"] == key
-            and stuck["cell"] == ctx.location
-            and stuck["energy"] == ctx.energy
+            _stuck["key"] == key
+            and _stuck["cell"] == ctx.location
+            and _stuck["energy"] == ctx.energy
     )
     if no_change and ctx.last_action_failed:
-        stuck["count"] += 1
+        _stuck["count"] += 1
     else:
-        stuck["count"] = 0
-    stuck["key"] = key
-    stuck["cell"] = ctx.location
-    stuck["energy"] = ctx.energy
-    ctx.stuck_count = stuck["count"]
-    return stuck["count"]
+        _stuck["count"] = 0
+    _stuck["key"] = key
+    _stuck["cell"] = ctx.location
+    _stuck["energy"] = ctx.energy
+    ctx.stuck_count = _stuck["count"]
+    return _stuck["count"]
 
 def _calibrate_from_last_move(ctx):
     """Learn the real axis orientation from the result of our previous MOVE.
 
     Returns the cell we actually moved from this tick (our true previous cell)
     for anti-oscillation, or None when no usable prior move is known. Updates
-    the module-level ``axis`` map in place when an observed move contradicts the
-    current mapping (e.g., a commanded "N" that increased y).
+    the module-level ``_axis`` map in place when an observed move contradicts the
+    current mapping (e.g. a commanded "N" that increased y).
 
     """
     key = (ctx.game_id, ctx.round)
-    direction = last_move["direction"]
-    frm = last_move["frm"]
-    if last_move["key"] != key or direction is None or frm is None:
+    direction = _last_move["direction"]
+    frm = _last_move["frm"]
+    if _last_move["key"] != key or direction is None or frm is None:
         return None
     cur = ctx.location
     if cur == frm:
         # No net movement. If our last MOVE was explicitly REJECTED while we
         # sat on a map edge, the server pushed us off-map: its sign for that
-        # axis is the OPPOSITE of ours (e.g., we commanded "S" expecting y+1 from
+        # axis is the OPPOSITE of ours (e.g. we commanded "S" expecting y+1 from
         # y=0, but the server's "S" is y-1). Flip so we steer back inland next
         # tick. This is the only way to recalibrate at a boundary, where a wrong
         # axis otherwise pins us against the edge forever (the delta-based
@@ -266,72 +297,76 @@ def _calibrate_from_last_move(ctx):
         if ctx.last_action_type == "MOVE" and ctx.last_action_failed:
             x, y = cur
             if direction in ("N", "S") and y in (0, ctx.map_height - 1):
-                axis["ns"] = -axis["ns"]
-logger.debug(
-    "CALIBRATION ns flip -> %+d (MOVE %s rejected at y-edge %s)",
-    _axis["ns"], direction, cur,
-)
-) else if direction in ("E", "W") and x in (0, ctx.map_width - 1):
-    _axis["ew"] = -_axis["ew"]
-logger.debug(
-"CALIBRATION ew flip -> %+d (MOVE %s rejected at x-edge %s)",
-_axis["ew"], direction, cur,
-)
-return None
-dx, dy = cur[0] - frm[0], cur[1] - frm[1]
-if direction in ("N", "S") and dy != 0:
-    observed_ns = dy if direction == "N" else -dy
-new_ns = 1 if observed_ns > 0 else -1
-if new_ns != _axis["ns"]:
-    logger.debug(
-        "CALIBRATION ns %s -> %s (commanded %s from %s, now at %s)",
-        _axis["ns"], new_ns, direction, frm, cur,
-    )
-_axis["ns"] = new_ns
-elif direction in ("E", "W") and dx != 0:
-observed_ew = dx if direction == "E" else -dx
-new_ew = 1 if observed_ew > 0 else -1
-if new_ew != _axis["ew"]:
-    logger.debug(
-        "CALIBRATION ew %s -> %s (commanded %s from %s, now at %s)",
-        _axis["ew"], new_ew, direction, frm, cur,
-    )
-_axis["ew"] = new_ew
-return frm
+                _axis["ns"] = -_axis["ns"]
+                logger.debug(
+                    "CALIBRATION ns flip -> %+d (MOVE %s rejected at y-edge %s)",
+                    _axis["ns"], direction, cur,
+                )
+            elif direction in ("E", "W") and x in (0, ctx.map_width - 1):
+                _axis["ew"] = -_axis["ew"]
+                logger.debug(
+                "CALIBRATION ew flip -> %+d (MOVE %s rejected at x-edge %s)",
+                _axis["ew"], direction, cur,
+                )
+        return None
+    dx, dy = cur[0] - frm[0], cur[1] - frm[1]
+    if direction in ("N", "S") and dy != 0:
+        observed_ns = dy if direction == "N" else -dy
+        new_ns = 1 if observed_ns > 0 else -1
+        if new_ns != _axis["ns"]:
+            logger.debug(
+                "CALIBRATION ns %s -> %s (commanded %s from %s, now at %s)",
+                _axis["ns"], new_ns, direction, frm, cur,
+            )
+            _axis["ns"] = new_ns
+    elif direction in ("E", "W") and dx != 0:
+        observed_ew = dx if direction == "E" else -dx
+        new_ew = 1 if observed_ew > 0 else -1
+        if new_ew != _axis["ew"]:
+            logger.debug(
+                "CALIBRATION ew %s -> %s (commanded %s from %s, now at %s)",
+                _axis["ew"], new_ew, direction, frm, cur,
+            )
+            _axis["ew"] = new_ew
+    return frm
 
-def record_move(ctx, action):
+
+def _record_move(ctx, action):
     """Remember a just-emitted MOVE so the next tick can calibrate + reconstruct."""
-_last_move["key"] = (ctx.game_id, ctx.round)
-if action.get("actionType") == "MOVE":
-    _last_move["direction"] = action.get("payload", {}).get("direction")
-_last_move["frm"] = ctx.location
-else:
-_last_move["direction"] = None
-_last_move["frm"] = None
+    _last_move["key"] = (ctx.game_id, ctx.round)
+    if action.get("actionType") == "MOVE":
+        _last_move["direction"] = action.get("payload", {}).get("direction")
+        _last_move["frm"] = ctx.location
+    else:
+        _last_move["direction"] = None
+        _last_move["frm"] = None
+
+
 
 class Tunables:
     """Decision thresholds. Defaults mirror the reference heuristic."""
 
-RECHARGE_LOW = 20          # start recharging below this absolute energy
-RECHARGE_HIGH_FRAC = 0.80   # stop recharging above this fraction of maxEnergy
-SELL_CARGO_THRESHOLD = 10   # cargo worth hauling to a (possibly distant) post
-PLUNDER_THRESHOLD = 5      # min stolen cargo worth a PLUNDER
-# Margins for committing to a fight: we must clearly out-gun the target on
-# BOTH offence (can we break them) and defence (can we take their hits).
-ATTACK_OFFENSE_MARGIN = 1.3
-ATTACK_DEFENSE_MARGIN = 1.3
-ATTACK_THREAT_FRACTION = 0.5
-COMPETITION_WEIGHT = 1.0    # penalty per competing miner on an asteroid
-# Only deploy panels to bank energy for a JUMP when the travel target is at
-# least this far. Below it, free MOVES reach the target faster than banking
-# a flat ~jumpMinCost would (banking pays off only over long distances).
-# Used as the FLOOR for the per-map adaptive distance computed in
-# GameContext (slow recharge / pricey jumps push the real threshold higher).
-JUMP_BANK_MIN_DISTANCE = 12
-# Break a deadlock: if our last action is REJECTED with no change in
-# position or energy this many ticks in a row, the server keeps refusing
-# whatever we submit -- stop re-issuing it and force a cheap MOVE to dislodge.
-STUCK_ESCAPE_THRESHOLD = 3
+    RECHARGE_LOW = 20          # start recharging below this absolute energy
+    RECHARGE_HIGH_FRAC = 0.80   # stop recharging above this fraction of maxEnergy
+    SELL_CARGO_THRESHOLD = 10   # cargo worth hauling to a (possibly distant) post
+    PLUNDER_THRESHOLD = 5      # min stolen cargo worth a PLUNDER
+    # Margins for committing to a fight: we must clearly out-gun the target on
+    # BOTH offence (can we break them) and defence (can we take their hits).
+    ATTACK_OFFENSE_MARGIN = 1.3
+    ATTACK_DEFENSE_MARGIN = 1.3
+    ATTACK_THREAT_FRACTION = 0.5
+    COMPETITION_WEIGHT = 1.0    # penalty per competing miner on an asteroid
+    # Only deploy panels to bank energy for a JUMP when the travel target is at
+    # least this far. Below it, free MOVEs reach the target faster than banking
+    # a flat ~jumpMinCost would (banking pays off only over long distances).
+    # Used as the FLOOR for the per-map adaptive distance computed in
+    # GameContext (slow recharge / pricey jumps push the real threshold higher).
+    JUMP_BANK_MIN_DISTANCE = 12
+    # Break a deadlock: if our last action is REJECTED with no change in
+    # position or energy this many ticks in a row, the server keeps refusing
+    # whatever we submit -- stop re-issuing it and force a cheap MOVE to dislodge.
+    STUCK_ESCAPE_THRESHOLD = 3
+
 
 # ---------------------------------------------------------
 # Reusable utility classes
@@ -340,66 +375,66 @@ STUCK_ESCAPE_THRESHOLD = 3
 class ShipUtils:
     """Stateless geometry and parsing helpers shared across strategies."""
 
-_OPPOSITE = {"N": "S", "S": "N", "E": "W", "W": "E"}
+    _OPPOSITE = {"N": "S", "S": "N", "E": "W", "W": "E"}
 
-@staticmethod
-def safe_int(value, default=0):
-    try:
-    return int(value)
-except (TypeError, ValueError):
-return default
+    @staticmethod
+    def safe_int(value, default=0):
+        try:
+        return int(value)
+    except (TypeError, ValueError):
+    return default
 
-@staticmethod
-def location(entity):
-    loc = entity.get("location", {}) if isinstance(entity, dict) else {}
-return int(loc.get("x", 0)), int(loc.get("y", 0))
+    @staticmethod
+    def location(entity):
+        loc = entity.get("location", {}) if isinstance(entity, dict) else {}
+    return int(loc.get("x", 0)), int(loc.get("y", 0))
 
-@staticmethod
-def distance(a, b):
-    return math.dist(a, b)
+    @staticmethod
+    def distance(a, b):
+        return math.dist(a, b)
 
-@staticmethod
-def chebyshev(a, b):
-    return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
+    @staticmethod
+    def chebyshev(a, b):
+        return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
 
-@classmethod
-def nearest(cls, origin, entities):
-    if not entities:
+    @classmethod
+    def nearest(cls, origin, entities):
+        if not entities:
+            return None
+    # Deterministic tie-break on coordinates so equidistant targets never
+    # flip between turns (which would make the ship oscillate).
+    return min(
+        entities,
+        key=lambda e: (cls.distance(origin, cls.location(e)),) + cls.location(e),
+    )
+
+    @staticmethod
+    def opposite(direction):
+        return ShipUtils._OPPOSITE.get(direction)
+
+    @staticmethod
+    def next_position(origin, direction):
+        x, y = origin
+        if direction == "N":
+            return x, y + _axis["ns"]
+        if direction == "S":
+            return x, y - _axis["ns"]
+        if direction == "E":
+            return x + _axis["ew"], y
+        if direction == "W":
+            return x - _axis["ew"], y
+        return x, y
+
+    @staticmethod
+    def move_dominant_axis(origin, target):
+        ox, oy = origin
+        tx, ty = target
+        dx, dy = tx - ox, ty - oy
+        if abs(dx) > abs(dy):
+            return "E" if dx * _axis["ew"] > 0 else "W"
+        if dy != 0:
+            return "N" if dy * _axis["ns"] > 0 else "S"
         return None
-# Deterministic tie-break on coordinates so equidistant targets never
-# flip between turns (which would make the ship oscillate).
-return min(
-    entities,
-    key=lambda e: (cls.distance(origin, cls.location(e)),) + cls.location(e),
-)
-
-@staticmethod
-def opposite(direction):
-    return ShipUtils._OPPOSITE.get(direction)
-
-@staticmethod
-def next_position(origin, direction):
-    x, y = origin
-    if direction == "N":
-        return x, y + _axis["ns"]
-    if direction == "S":
-        return x, y - _axis["ns"]
-    if direction == "E":
-        return x + _axis["ew"], y
-    if direction == "W":
-        return x - _axis["ew"], y
-    return x, y
-
-@staticmethod
-def move_dominant_axis(origin, target):
-    ox, oy = origin
-    tx, ty = target
-    dx, dy = tx - ox, ty - oy
-    if abs(dx) > abs(dy):
-        return "E" if dx * _axis["ew"] > 0 else "W"
-    if dy != 0:
-        return "N" if dy * _axis["ns"] > 0 else "S"
-    return None
 
 class CombatEvaluator:
     """Estimates attack / defence power from observable ship fields.
@@ -458,25 +493,25 @@ class CombatEvaluator:
             base *= 0.5  # delayed: must end recharge before it can attack
         return base
 
-    def survivability(self, self, ship, *, recharging=None, shields_up=None, skills=None):
+    def survivability(self, ship, *, recharging=None, shields_up=None, skills=None):
         """Estimated ability to absorb incoming damage."""
         rech = bool(ship.get("recharging")) if recharging is None else recharging
         shield = ship.get("shield", {}) or {}
-        powered =
-str(shield.get("state", "")).upper() == "POWERED"
-if shields_up is None
-else shields_up
-)
-base = (
-ShipUtils.safe_int(ship.get("health")) * 1.0
-+ self.skill_defense(skills, ShipUtils.safe_int(ship.get("skillPointsSpent"))))
-)
-if powered:
-# Shields up: ~25% incoming reduction + the shield pool itself.
-    base = base * 1.33 + ShipUtils.safe_int(shield.get("value")) * 0.5
-if rech:
-    base *= 0.5  # panels out: cannot raise shields, combat-penalised
-return base
+        powered = (
+            str(shield.get("state", "")).upper() == "POWERED"
+            if shields_up is None
+            else shields_up
+        )
+        base = (
+            ShipUtils.safe_int(ship.get("health")) * 1.0
+            + self.skill_defense(skills, ShipUtils.safe_int(ship.get("skillPointsSpent"))))
+        )
+        if powered:
+            # Shields up: ~25% incoming reduction + the shield pool itself.
+            base = base * 1.33 + ShipUtils.safe_int(shield.get("value")) * 0.5
+        if rech:
+            base *= 0.5  # panels out: cannot raise shields, combat-penalised
+        return base
 
 # -------------------------------------------------
 # Parsed game state
@@ -533,229 +568,229 @@ class GameContext:
         self.mine_min_payout = int(mining_cfg.get("minPayout", 1))
         self.mine_max_payout = int(mining_cfg.get("maxPayout", 10))
 
-    # --- Ship state ---
-    self.state = str(self.me.get("state", "")).upper()
-    self.energy = ShipUtils.safe_int(self.me.get("energy"))
-    self.nutrinium = ShipUtils.safe_int(self.me.get("nutrinium"))
-    self.health = ShipUtils.safe_int(self.me.get("health"), 100)
-    self.recharging = bool(self.me.get("recharging", False))
-    self.location = ShipUtils.location(self.me)
-    self.player_id = self.me.get("playerId")
-    self.team_id = self.me.get("teamId")
-    self.skills = self.me.get("skills", {}) or {}
-    self.modules = self.me.get("modules", []) or []
-    self.has_jump = "JUMP" in self.modules
-    self.shields_up = str((self.me.get("shield", {})).get("state", "DOWN")).upper() == "POWERED"
+        # --- Ship state ---
+        self.state = str(self.me.get("state", "")).upper()
+        self.energy = ShipUtils.safe_int(self.me.get("energy"))
+        self.nutrinium = ShipUtils.safe_int(self.me.get("nutrinium"))
+        self.health = ShipUtils.safe_int(self.me.get("health"), 100)
+        self.recharging = bool(self.me.get("recharging", False))
+        self.location = ShipUtils.location(self.me)
+        self.player_id = self.me.get("playerId")
+        self.team_id = self.me.get("teamId")
+        self.skills = self.me.get("skills", {}) or {}
+        self.modules = self.me.get("modules", []) or []
+        self.has_jump = "JUMP" in self.modules
+        self.shields_up = str((self.me.get("shield", {})).get("state", "DOWN")).upper() == "POWERED"
 
-    objectives = self.me.get("objectives", {}) or {}
-    negotiate_objective = objectives.get("negotiate", {}) or {}
-    self.objective_post_name = negotiate_objective.get("tradingPostName")
+        objectives = self.me.get("objectives", {}) or {}
+        negotiate_objective = objectives.get("negotiate", {}) or {}
+        self.objective_post_name = negotiate_objective.get("tradingPostName")
 
-    # --- Sensor groups ---
-    self.trading_posts = [c for c in self.contacts if c.get("type") == "trading_post"]
-    self.asteroids = [c for c in self.contacts if c.get("type") == "asteroid"]
-    self.wreckage = [c for c in self.contacts if c.get("type") == "wreckage"]
-    self.mineable_asteroids = [
-        a for a in self.asteroids if ShipUtils.safe_int(a.get("nutrinium")) > 0
+        # --- Sensor groups ---
+        self.trading_posts = [c for c in self.contacts if c.get("type") == "trading_post"]
+        self.asteroids = [c for c in self.contacts if c.get("type") == "asteroid"]
+        self.wreckage = [c for c in self.contacts if c.get("type") == "wreckage"]
+        self.mineable_asteroids = [
+            a for a in self.asteroids if ShipUtils.safe_int(a.get("nutrinium")) > 0
+        ]
+        self.enemy_ships = [c for c in self.contacts if self._is_enemy(c)]
+        self.same_zone_enemies = [
+            e for e in self.enemy_ships if ShipUtils.location(e) == self.location
+        ]
+    # Other live ships (enemies AND teammates) for contention scoring.
+    self.ship_contacts = [
+        c for c in self.contacts
+        if c.get("type") == "ship"
+           and str(c.get("state", "")).upper() != "DESTROYED"
+           and c.get("playerId") != self.player_id
     ]
-    self.enemy_ships = [c for c in self.contacts if self._is_enemy(c)]
-    self.same_zone_enemies = [
-        e for e in self.enemy_ships if ShipUtils.location(e) == self.location
-    ]
-# Other live ships (enemies AND teammates) for contention scoring.
-self.ship_contacts = [
-    c for c in self.contacts
-    if c.get("type") == "ship"
-       and str(c.get("state", "")).upper() != "DESTROYED"
-       and c.get("playerId") != self.player_id
-]
 
-self.at_trading_post = any(
-    ShipUtils.location(tp) == self.location for tp in self.trading_posts
-)
-self.at_asteroid = any(
-    ShipUtils.location(a) == self.location and ShipUtils.safe_int(a.get("nutrinium")) > 0
-    for a in self.asteroids
-)
-self.objective_post = next(
-    (tp for tp in self.trading_posts if tp.get("name") == self.objective_post_name),
-    None,
-)
-self.at_objective_post = (
-        self.objective_post is not None
-        and ShipUtils.location(self.objective_post) == self.location
-)
-
-# --- Round clock (end-game banking) ---
-self.ticks_remaining = self._estimate_ticks_remaining(now_ms)
-
-# --- Movement history (anti-oscillation) ---
-self.prev_cell_source = "none"
-self.prev_cell = self._previous_cell()
-if self.prev_cell == self.location:
-    self.prev_cell = None
-    self.prev_cell_source = "none"
-
-# --- Last-action outcome (avoid re-emitting a just-failed action) ---
-# PLUNDER/ATTACK target a same-zone enemy from a snapshot that is one
-# tick stale: the enemy may have moved out of the zone before the action
-# resolved ("the target is no longer in the zone"). When our previous
-# offence action FAILED we back off offence for a tick and do productive
-# work instead, so a mobile enemy passing through cannot trap us in a
-# fail-retry loop (retrying ATTACK after a failed PLUNDER -- or vice versa -- hits the same absent target).
-last_result = self.request.get("actionResult", {} or {})
-self.last_action_type = str(last_result.get("actionType", "")).upper()
-self.last_action_failed = (
-        str(last_result.get("outcome", "")).upper() == "FAILURE"
-)
-# Why an action was accepted/rejected: the result payload carries a
-# machine resultCode (e.g. "RECHARGE_FAILURE") plus a human message.
-# Surfacing these makes a server refusal (such as the ~588 rejected
-# RECHARGES in game 37102 round 2) visible instead of an opaque FAIL.
-last_payload = last_result.get("payload", {} or {})
-self.last_action_result_code = str(last_payload.get("resultCode", "") or "")
-self.last_action_message = str(last_payload.get("message", "") or "")
-self.offence_target_lost = (
-        self.last_action_failed and self.last_action_type in ("PLUNDER", "ATTACK")
-)
-# Consecutive no-progress ticks (filled per tick by _update_stuck_state).
-self.stuck_count = 0
-
-# --- Scoreboard / outcome fields (end-of-game reporting) ---
-self.game_id = self.game_state.get("gameId", self.me.get("gameId"))
-self.tick = ShipUtils.safe_int(self.game_state.get("tick"))
-self.round = ShipUtils.safe_int(self.game_state.get("round"))
-self.credits = ShipUtils.safe_int(self.me.get("credits"))
-self.stats = self.me.get("stats", {} or {})
-self.round_scores = self.me.get("roundScores", [] or [])
-self.leaderboard = self.request.get("leaderboard", [] or [])
-self.skill_points_spent = ShipUtils.safe_int(self.me.get("skillPointsSpent"))
-self.skill_points_total = ShipUtils.safe_int(self.me.get("skillPointsTotal"))
-
-# Extra fields the shared action-masker safety net validates against.
-self.shields_cost = int(energy_costs.get("shields", 5))
-self.salvage_energy_cost = int(energy_costs.get("salvage", 999))
-self.max_health = int(ship_config.get("maxHealth", 100))
-shield = self.me.get("shield", {} or {})
-self._shield_state = str(shield.get("state", "DOWN")).upper()
-self.shield_value = ShipUtils.safe_int(shield.get("value", shield.get("strength", 0)))
-self.shield_capacity = ShipUtils.safe_int(shield.get("capacity", shield.get("maxStrength", 0)))
-
-self.combat = CombatEvaluator(self.attack_cost, self.max_energy)
-
-def my_leaderboard_entry(self):
-    """My row in the leaderboard (carries rank/position + gameScore), or None."""
-    for entry in self.leaderboard:
-        if entry.get("playerId") == self.player_id:
-            return entry
-    return None
-
-# --- Identity / classification ---
-def _is_enemy(self, contact):
-    if contact.get("type") != "ship":
-        return False
-    if str(contact.get("state", "")).upper() == "DESTROYED":
-        return False
-    contact_team = contact.get("teamId")
-    if self.team_id is not None and contact_team is not None:
-        return contact_team != self.team_id
-    return contact.get("playerId") != self.player_id
-def miners_at(self, loc):
-    return sum(1 for s in self.ship_contacts if ShipUtils.location(s) == loc)
-
-def in_bounds(self, x, y):
-    return 0 <= x < self.map_width and 0 <= y < self.map_height
-
-# --- Round clock estimation ---
-def _estimate_ticks_remaining(self, now_ms):
-    start = ShipUtils.safe_int(self.game_state.get("start"))
-    end = ShipUtils.safe_int(self.game_state.get("end"))
-    tick = ShipUtils.safe_int(self.game_state.get("tick"))
-    now = int(time.time()) * 1000 if now_ms is None else now_ms
-    # Only trust a genuinely live round window (replayed fixtures are stale).
-    live = end > start and start <= now <= end
-    if live and tick > 0:
-        elapsed = max(now - start, 1)
-        ms_per_tick = elapsed / tick
-        return (end - now) / ms_per_tick
-    return None
-
-# --- Reconstruct our previous cell to damp two-cell oscillation ---
-def _cell_before_move(self, action_type, outcome, payload):
-    if str(action_type or "").upper() != "MOVE":
-        return None
-    if str(outcome or "SUCCESS").upper() != "SUCCESS":
-        return None
-    payload = payload or {}
-    frm = payload.get("from")
-    if isinstance(frm, (list, tuple)) and len(frm) == 2:
-        return (ShipUtils.safe_int(frm[0]), ShipUtils.safe_int(frm[1]))
-    if isinstance(frm, dict) and "x" in frm:
-        return (ShipUtils.safe_int(frm.get("x")), ShipUtils.safe_int(frm.get("y")))
-    direction = payload.get("direction")
-    if direction in ("N", "S", "E", "W"):
-        return ShipUtils.next_position(self.location, ShipUtils.opposite(direction))
-    return None
-
-def previous_cell(self):
-    last_result = self.request.get("actionResult", {}) or {}
-    cell = self._cell_before_move(
-        last_result.get("actionType"),
-        last_result.get("outcome", "SUCCESS"),
-        last_result.get("payload", {}),
+    self.at_trading_post = any(
+        ShipUtils.location(tp) == self.location for tp in self.trading_posts
     )
-    if cell is not None:
-        self.prev_cell_source = "actionResult"
-        return cell
-    for evt in reversed(self.request.get("eventLog", []) or []):
-        if evt.get("playerId") != self.player_id:
-            continue
+    self.at_asteroid = any(
+        ShipUtils.location(a) == self.location and ShipUtils.safe_int(a.get("nutrinium")) > 0
+        for a in self.asteroids
+    )
+    self.objective_post = next(
+        (tp for tp in self.trading_posts if tp.get("name") == self.objective_post_name),
+        None,
+    )
+    self.at_objective_post = (
+            self.objective_post is not None
+            and ShipUtils.location(self.objective_post) == self.location
+    )
+
+    # --- Round clock (end-game banking) ---
+    self.ticks_remaining = self._estimate_ticks_remaining(now_ms)
+
+    # --- Movement history (anti-oscillation) ---
+    self.prev_cell_source = "none"
+    self.prev_cell = self._previous_cell()
+    if self.prev_cell == self.location:
+        self.prev_cell = None
+        self.prev_cell_source = "none"
+
+    # --- Last-action outcome (avoid re-emitting a just-failed action) ---
+    # PLUNDER/ATTACK target a same-zone enemy from a snapshot that is one
+    # tick stale: the enemy may have moved out of the zone before the action
+    # resolved ("the target is no longer in the zone"). When our previous
+    # offence action FAILED we back off offence for a tick and do productive
+    # work instead, so a mobile enemy passing through cannot trap us in a
+    # fail-retry loop (retrying ATTACK after a failed PLUNDER -- or vice versa -- hits the same absent target).
+    last_result = self.request.get("actionResult", {} or {})
+    self.last_action_type = str(last_result.get("actionType", "")).upper()
+    self.last_action_failed = (
+            str(last_result.get("outcome", "")).upper() == "FAILURE"
+    )
+    # Why an action was accepted/rejected: the result payload carries a
+    # machine resultCode (e.g. "RECHARGE_FAILURE") plus a human message.
+    # Surfacing these makes a server refusal (such as the ~588 rejected
+    # RECHARGES in game 37102 round 2) visible instead of an opaque FAIL.
+    last_payload = last_result.get("payload", {} or {})
+    self.last_action_result_code = str(last_payload.get("resultCode", "") or "")
+    self.last_action_message = str(last_payload.get("message", "") or "")
+    self.offence_target_lost = (
+            self.last_action_failed and self.last_action_type in ("PLUNDER", "ATTACK")
+    )
+    # Consecutive no-progress ticks (filled per tick by _update_stuck_state).
+    self.stuck_count = 0
+
+    # --- Scoreboard / outcome fields (end-of-game reporting) ---
+    self.game_id = self.game_state.get("gameId", self.me.get("gameId"))
+    self.tick = ShipUtils.safe_int(self.game_state.get("tick"))
+    self.round = ShipUtils.safe_int(self.game_state.get("round"))
+    self.credits = ShipUtils.safe_int(self.me.get("credits"))
+    self.stats = self.me.get("stats", {} or {})
+    self.round_scores = self.me.get("roundScores", [] or [])
+    self.leaderboard = self.request.get("leaderboard", [] or [])
+    self.skill_points_spent = ShipUtils.safe_int(self.me.get("skillPointsSpent"))
+    self.skill_points_total = ShipUtils.safe_int(self.me.get("skillPointsTotal"))
+
+    # Extra fields the shared action-masker safety net validates against.
+    self.shields_cost = int(energy_costs.get("shields", 5))
+    self.salvage_energy_cost = int(energy_costs.get("salvage", 999))
+    self.max_health = int(ship_config.get("maxHealth", 100))
+    shield = self.me.get("shield", {} or {})
+    self._shield_state = str(shield.get("state", "DOWN")).upper()
+    self.shield_value = ShipUtils.safe_int(shield.get("value", shield.get("strength", 0)))
+    self.shield_capacity = ShipUtils.safe_int(shield.get("capacity", shield.get("maxStrength", 0)))
+
+    self.combat = CombatEvaluator(self.attack_cost, self.max_energy)
+
+    def my_leaderboard_entry(self):
+        """My row in the leaderboard (carries rank/position + gameScore), or None."""
+        for entry in self.leaderboard:
+            if entry.get("playerId") == self.player_id:
+                return entry
+        return None
+
+    # --- Identity / classification ---
+    def _is_enemy(self, contact):
+        if contact.get("type") != "ship":
+            return False
+        if str(contact.get("state", "")).upper() == "DESTROYED":
+            return False
+        contact_team = contact.get("teamId")
+        if self.team_id is not None and contact_team is not None:
+            return contact_team != self.team_id
+        return contact.get("playerId") != self.player_id
+    def miners_at(self, loc):
+        return sum(1 for s in self.ship_contacts if ShipUtils.location(s) == loc)
+
+    def in_bounds(self, x, y):
+        return 0 <= x < self.map_width and 0 <= y < self.map_height
+
+    # --- Round clock estimation ---
+    def _estimate_ticks_remaining(self, now_ms):
+        start = ShipUtils.safe_int(self.game_state.get("start"))
+        end = ShipUtils.safe_int(self.game_state.get("end"))
+        tick = ShipUtils.safe_int(self.game_state.get("tick"))
+        now = int(time.time()) * 1000 if now_ms is None else now_ms
+        # Only trust a genuinely live round window (replayed fixtures are stale).
+        live = end > start and start <= now <= end
+        if live and tick > 0:
+            elapsed = max(now - start, 1)
+            ms_per_tick = elapsed / tick
+            return (end - now) / ms_per_tick
+        return None
+
+    # --- Reconstruct our previous cell to damp two-cell oscillation ---
+    def _cell_before_move(self, action_type, outcome, payload):
+        if str(action_type or "").upper() != "MOVE":
+            return None
+        if str(outcome or "SUCCESS").upper() != "SUCCESS":
+            return None
+        payload = payload or {}
+        frm = payload.get("from")
+        if isinstance(frm, (list, tuple)) and len(frm) == 2:
+            return (ShipUtils.safe_int(frm[0]), ShipUtils.safe_int(frm[1]))
+        if isinstance(frm, dict) and "x" in frm:
+            return (ShipUtils.safe_int(frm.get("x")), ShipUtils.safe_int(frm.get("y")))
+        direction = payload.get("direction")
+        if direction in ("N", "S", "E", "W"):
+            return ShipUtils.next_position(self.location, ShipUtils.opposite(direction))
+        return None
+
+    def previous_cell(self):
+        last_result = self.request.get("actionResult", {}) or {}
         cell = self._cell_before_move(
-            evt.get("actionType"), evt.get("outcome", "SUCCESS"), evt.get("payload", {})
+            last_result.get("actionType"),
+            last_result.get("outcome", "SUCCESS"),
+            last_result.get("payload", {}),
         )
         if cell is not None:
-            self.prev_cell_source = "eventLog"
+            self.prev_cell_source = "actionResult"
             return cell
-    break
-self.prev_cell_source = "none"
-return None
+        for evt in reversed(self.request.get("eventLog", []) or []):
+            if evt.get("playerId") != self.player_id:
+                continue
+            cell = self._cell_before_move(
+                evt.get("actionType"), evt.get("outcome", "SUCCESS"), evt.get("payload", {})
+            )
+            if cell is not None:
+                self.prev_cell_source = "eventLog"
+                return cell
+        break
+    self.prev_cell_source = "none"
+    return None
 
-# --- Restriction helpers (driven by round metadata) ---
-def allowed_while_recharging(self, action_type):
-    return self.action_restrictions.get(action_type, {}).get("allowedWhileRecharging", True)
+    # --- Restriction helpers (driven by round metadata) ---
+    def allowed_while_recharging(self, action_type):
+        return self.action_restrictions.get(action_type, {}).get("allowedWhileRecharging", True)
 
-def allowed_with_shields_up(self, action_type):
-    return self.action_restrictions.get(action_type, {}).get("allowedWithShieldsUp", True)
+    def allowed_with_shields_up(self, action_type):
+        return self.action_restrictions.get(action_type, {}).get("allowedWithShieldsUp", True)
 
-# --- Jump economics ---
-def jump_energy(self, dist):
-    if dist <= 0:
-        return 0
-    return max(self.jump_min_cost, int(math.ceil(dist * self.jump_cost_per_unit)))
+    # --- Jump economics ---
+    def jump_energy(self, dist):
+        if dist <= 0:
+            return 0
+        return max(self.jump_min_cost, int(math.ceil(dist * self.jump_cost_per_unit)))
 
-def can_jump(self, dist):
-    return (
+    def can_jump(self, dist):
+        return (
             self.has_jump
             and 0 < dist <= self.max_jump_distance
             and self.energy >= self.jump_energy(dist)
-    )
+        )
 
-# --- Asteroid value model ---
-def asteroid_score(self, asteroid):
-    nutr = ShipUtils.safe_int(asteroid.get("nutrinium"))
-    if nutr <= 0:
-        return 0.0
-    mass = max(ShipUtils.safe_int(asteroid.get("mass"), 1), 1)
-    density = nutr / mass
-    success_chance = min(1.0, density * 10.0 * self.mine_base_success)
-    expected_payout = (self.mine_min_payout + min(self.mine_max_payout, nutr)) / 2.0
-    expected_yield = success_chance * expected_payout
-    pool_factor = 1.0 + math.logp(nutr)
-    dist = ShipUtils.distance(self.location, ShipUtils.location(asteroid))
-    competition_factor = 1.0 + Tunables.COMPETITION_WEIGHT * self.miners_at(
-        ShipUtils.location(asteroid)
-    )
-    return (expected_yield * pool_factor) / ((dist + 1.0) * competition_factor)
+    # --- Asteroid value model ---
+    def asteroid_score(self, asteroid):
+        nutr = ShipUtils.safe_int(asteroid.get("nutrinium"))
+        if nutr <= 0:
+            return 0.0
+        mass = max(ShipUtils.safe_int(asteroid.get("mass"), 1), 1)
+        density = nutr / mass
+        success_chance = min(1.0, density * 10.0 * self.mine_base_success)
+        expected_payout = (self.mine_min_payout + min(self.mine_max_payout, nutr)) / 2.0
+        expected_yield = success_chance * expected_payout
+        pool_factor = 1.0 + math.logp(nutr)
+        dist = ShipUtils.distance(self.location, ShipUtils.location(asteroid))
+        competition_factor = 1.0 + Tunables.COMPETITION_WEIGHT * self.miners_at(
+            ShipUtils.location(asteroid)
+        )
+        return (expected_yield * pool_factor) / ((dist + 1.0) * competition_factor)
 
 # -----------------------------------
 # Heuristic strategy
@@ -777,35 +812,35 @@ class HeuristicStrategy:
         # Panels out = weak: cannot ATTACK / RAISE_SHIELDS, combat-penalised.
         self.my_power_eff = self.my_power * (0.5 if ctx.recharging else 1.0)
 
-    def can_act(self, enemy):
-        return ShipUtils.safe_int(enemy.get("energy")) > 0
+        def can_act(self, enemy):
+            return ShipUtils.safe_int(enemy.get("energy")) > 0
 
-    def threat_dist(self, enemy):
-        return ShipUtils.chebyshev(ShipUtils.location(enemy), ctx.location)
+        def threat_dist(self, enemy):
+            return ShipUtils.chebyshev(ShipUtils.location(enemy), ctx.location)
 
-    self.acting_enemies = [e for e in ctx.enemy_ships if can_act(e)]
-    self.threats = [e for e in self.acting_enemies if threat_dist(e) <= 1]
-    threat_power = sum(combat.rough_power(e) for e in self.threats)
-    strongest = max((combat.rough_power(e) for e in self.threats), default=0.0)
+        self.acting_enemies = [e for e in ctx.enemy_ships if can_act(e)]
+        self.threats = [e for e in self.acting_enemies if threat_dist(e) <= 1]
+        threat_power = sum(combat.rough_power(e) for e in self.threats)
+        strongest = max((combat.rough_power(e) for e in self.threats), default=0.0)
 
-    cargo_risk = min(ctx.nutrinium / 50.0, 1.0)
-    health_risk = 1.0 - min(ctx.health / 100.0, 1.0)
-    risk = max(cargo_risk, health_risk)
-    overwhelm_ratio = 2.0 - 1.0 * risk  # cautious (2x) .. eager to flee (1x)
+        cargo_risk = min(ctx.nutrinium / 50.0, 1.0)
+        health_risk = 1.0 - min(ctx.health / 100.0, 1.0)
+        risk = max(cargo_risk, health_risk)
+        overwhelm_ratio = 2.0 - 1.0 * risk  # cautious (2x) .. eager to flee (1x)
 
-    self.is_overwhelmed = bool(self.threats) and (
-            threat_power >= overwhelm_ratio * max(self.my_power_eff, 1.0)
-            or strongest >= overwhelm_ratio * max(self.my_power_eff, 1.0)
-    )
-    self.dominant_threats = [
-        e for e in ctx.enemy_ships
-        if can_act(e) and combat.rough_power(e) >= overwhelm_ratio * max(self.my_power_eff, 1.0)
-    ]
-    # Drop rocks guarded by a dominant raider so we never path toward them.
-    if self.dominant_threats:
-        ctx.mineable_asteroids = [
-            a for a in ctx.mineable_asteroids if not self._rock_guarded(a)
+        self.is_overwhelmed = bool(self.threats) and (
+                threat_power >= overwhelm_ratio * max(self.my_power_eff, 1.0)
+                or strongest >= overwhelm_ratio * max(self.my_power_eff, 1.0)
+        )
+        self.dominant_threats = [
+            e for e in ctx.enemy_ships
+            if can_act(e) and combat.rough_power(e) >= overwhelm_ratio * max(self.my_power_eff, 1.0)
         ]
+        # Drop rocks guarded by a dominant raider so we never path toward them.
+        if self.dominant_threats:
+            ctx.mineable_asteroids = [
+                a for a in ctx.mineable_asteroids if not self._rock_guarded(a)
+            ]
 
     def is_unsafe(self, cell):
         for enemy in self.dominant_threats:
