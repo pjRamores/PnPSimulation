@@ -436,8 +436,8 @@ class GameSimulator:
                     print(f"Solution: Using compatibility mode - legacy action ids mapped into the new action set")
                     print(f"Note: For best results, retrain the model with the new action space\n")
                     needs_action_compat = True
-            else:
-                raise ValueError(f"Incompatible action spaces: {model_action_space} vs {env_action_space}")
+                else:
+                    raise ValueError(f"Incompatible action spaces: {model_action_space} vs {env_action_space}")
 
             # Check if model expects flat observation (Box) vs new Dict space
             model_obs_space = temp_model.observation_space
@@ -542,7 +542,7 @@ class GameSimulator:
             map_height=self.map_height,
             num_opponents=num_opponents,
             max_steps=self.max_steps,
-            render_mode="human" if render else None,
+            render_mode='human' if render else None,
             use_predefined_asteroids=self.use_predefined_asteroids,
             asteroid_config_path=self.asteroid_config_path,
             use_predefined_start=self.use_predefined_start,
@@ -588,7 +588,7 @@ class GameSimulator:
 
                 # Pause if requested (before action execution)
                 if pause_each_step and not control['skip'] and not control['quit']:
-                    rv = self.wait_for_spacebar()
+                    rv = self._wait_for_spacebar()
                     if rv == 'skip':
                         control['skip'] = True
                     elif rv == 'quit':
@@ -602,13 +602,13 @@ class GameSimulator:
             done = terminated or truncated
 
             # Track kill events from this step's action payloads.
-            player_kills, enemy_kills_by_index = self.track_step_kills(
+            player_kills, enemy_kills_by_index = self._track_step_kills(
                 env, info, player_kills, enemy_kills_by_index
             )
 
             # Show action results (after execution)
             if show_step_tables:
-                self.render_post_action_table(
+                self._render_post_action_table(
                     env, info, total_reward, step, render, predicted_action_name
                 )
 
@@ -619,7 +619,7 @@ class GameSimulator:
             env.render()
             if pause_each_step and not control['skip']:
                 print("\n[Episode Complete - Press SPACE to continue or ESC to quit...]")
-                rv = self.wait_for_spacebar()
+                rv = self._wait_for_spacebar()
                 if rv == 'skip':
                     control['skip'] = True
                 elif rv == 'quit':
@@ -660,7 +660,6 @@ class GameSimulator:
         Returns:
             List of episode statistics
         """
-
         # Set process title for Task Manager visibility
         if SETPROCTITLE_AVAILABLE:
             setproctitle("PnP Playing")
@@ -674,7 +673,7 @@ class GameSimulator:
             self._print(f"Algorithm: {self.algorithm}", to_episode=False)
             self._print(f"Episodes: {num_episodes}", to_episode=False)
             if forced_opponent_types:
-                self._print(f"Opponents: {' '.join(forced_opponent_types)}", to_episode=False)
+                self._print(f"Opponents: {', '.join(forced_opponent_types)}", to_episode=False)
             else:
                 self._print(f"Opponents: {min_opponents} to {max_opponents}", to_episode=False)
             if pause_each_step:
@@ -755,48 +754,48 @@ class GameSimulator:
         self._print(f"  Opponents: {stats['num_opponents']}")
         self._print(f"  Steps: {stats['steps']}")
 
-    # Calculate player placement and update cumulative stats
-    self.calculate_player_placement(stats)
+        # Calculate player placement and update cumulative stats
+        self.calculate_player_placement(stats)
 
-    # Print cumulative placement stats
-    self._print(f"  Player Placements (cumulative): 1st: {self.player_placements[1]}, 2nd: {self.player_placements[2]}, 3rd: {self.player_placements[3]}")
-    # Podium Chance: % of episodes where player finished top 3
-    _total_eps = len(self.episode_stats)
-    _podium_count = self.player_placements[1] + self.player_placements[2] + self.player_placements[3]
-    _podium_pct = (_podium_count / _total_eps * 100) if _total_eps > 0 else 0.0
-    self._print(f"  Podium Chance: {_podium_pct:.1f}% ({_podium_count}/{_total_eps} episodes in top 3)")
+        # Print cumulative placement stats
+        self._print(f"  Player Placements (cumulative): 1st: {self.player_placements[1]}, 2nd: {self.player_placements[2]}, 3rd: {self.player_placements[3]}")
+        # Podium Chance: % of episodes where player finished top 3
+        _total_eps = len(self.episode_stats)
+        _podium_count = self.player_placements[1] + self.player_placements[2] + self.player_placements[3]
+        _podium_pct = (_podium_count / _total_eps * 100) if _total_eps > 0 else 0.0
+        self._print(f"  Podium Chance: {_podium_pct:.1f}% ({_podium_count}/{_total_eps} episodes in top 3)")
 
-    # Print episode summary table (player + enemies)
-    try:
-        self.print_episode_table(stats)
-    except Exception:
-        # Fallback: ignore table errors and continue with existing prints
-        pass
+        # Print episode summary table (player + enemies)
+        try:
+            self.print_episode_table(stats)
+        except Exception:
+            # Fallback: ignore table errors and continue with existing prints
+            pass
 
     # Individual enemy stats
-    for i, enemy in enumerate(stats['enemy_details']):
-        # Get ship name if available (should be available from environment)
-        enemy_name = enemy.get('name', f'E{i+1}')
-        ai_type = enemy.get('ai_type', 0)
-        ai_type_name = self.get_ai_type_name(ai_type)
-
-        # For MODEL type, append model name
-        if ai_type == OpponentAIType.MODEL:
-            model_path = enemy.get('model_path', 'unknown')
-            model_name = os.path.basename(model_path) if model_path else 'unknown'
-            ai_display = f"{ai_type_name}:{model_name}"
-        else:
-            ai_display = ai_type_name
-
-        status = "DESTROYED" if enemy['destroyed'] else "ALIVE"
-        print(f"  {enemy_name} ({ai_display}): {status}, HP:{enemy['health']}, "
-              f"Credits:{enemy['credits']}, Nutrinium:{enemy['nutrinium']}")
-
-    # Print enemy abilities/skills horizontally
-    e_abilities = enemy.get('abilities', {}) or {}
-    if e_abilities:
-        e_items = ", ".join(f"{k}:{v}" for k, v in sorted(e_abilities.items()))
-        print(f"  Abilities: {e_items}")
+    # for i, enemy in enumerate(stats['enemy_details']):
+    #     # Get ship name if available (should be available from environment)
+    #     enemy_name = enemy.get('name', f'E{i+1}')
+    #     ai_type = enemy.get('ai_type', 0)
+    #     ai_type_name = self.get_ai_type_name(ai_type)
+    #
+    #     # For MODEL type, append model name
+    #     if ai_type == OpponentAIType.MODEL:
+    #         model_path = enemy.get('model_path', 'unknown')
+    #         model_name = os.path.basename(model_path) if model_path else 'unknown'
+    #         ai_display = f"{ai_type_name}:{model_name}"
+    #     else:
+    #         ai_display = ai_type_name
+    #
+    #     status = "DESTROYED" if enemy['destroyed'] else "ALIVE"
+    #     print(f"  {enemy_name} ({ai_display}): {status}, HP:{enemy['health']}, "
+    #           f"Credits:{enemy['credits']}, Nutrinium:{enemy['nutrinium']}")
+    #
+    # # Print enemy abilities/skills horizontally
+    # e_abilities = enemy.get('abilities', {}) or {}
+    # if e_abilities:
+    #     e_items = ", ".join(f"{k}:{v}" for k, v in sorted(e_abilities.items()))
+    #     print(f"  Abilities: {e_items}")
 
     def calculate_player_placement(self, stats: Dict):
         """Calculate player's placement (1st, 2nd, 3rd) for this episode and update cumulative stats."""
@@ -825,6 +824,7 @@ class GameSimulator:
             })
 
         # Rank: credits desc, then nutrinium desc, then ships destroyed (kills)
+        # desc, then energy ascending.
         participants.sort(key=lambda p: (-p['credits'], -p['nutrinium'], -p['kills'], p['energy']))
 
         # Find player's placement (1-based)
@@ -834,124 +834,126 @@ class GameSimulator:
                 # Only track top 3 placements
                 if placement <= 3:
                     self.player_placements[placement] += 1
-                    break
+                break
+
 
     def print_episode_table(self, stats: Dict):
-    """Print a compact table summarizing the episode results: player and enemies.
-    Columns: Ship, Role, Credits, Health, Nutrinium, Energy, Status, Abilities
-    Sorted by Credits descending.
-    """
-    entries = []
+        """Print a compact table summarizing the episode results: player and enemies.
 
-    # Player row
-    entries.append({
-        'name': 'PLAYER',
-        'role': 'PLAYER',
-        'credits': int(stats.get('player_credits', 0) or 0),
-        'health': int(stats.get('player_health', 0) or 0),
-        'nutr': int(stats.get('player_nutrinium', 0) or 0),
-        'energy': int(stats.get('player_energy', 0)) if stats.get('player_energy') is not None else '',
-        'kills': int(stats.get('player_kills', 0) or 0),
-        'energy_val': int(stats.get('player_energy', 0) or 0),
-        'status': 'DESTROYED' if stats.get('player_destroyed', False) else 'ALIVE',
-        'abilities': stats.get('player_abilities') or {},
-    })
+        Columns: Ship, Role, Credits, Health, Nutrinium, Energy, Status, Abilities
+        Sorted by Credits descending.
+        """
+        entries = []
 
-    # Enemies
-    for enemy in stats.get('enemy_details', []):
-        ai_type = enemy.get('ai_type', None)
-        e_role = self.get_ai_type_name(ai_type) if ai_type is not None else 'ENEMY'
-        if ai_type == OpponentAIType.MODEL:
-            model_path = enemy.get('model_path', 'unknown')
-            model_name = os.path.basename(model_path) if model_path else 'unknown'
-            e_role = f"{e_role}:{model_name}"
+        # Player row
         entries.append({
-            'name': enemy.get('name', 'ENEMY'),
-            'role': e_role,
-            'credits': int(enemy.get('credits', 0) or 0),
-            'health': int(enemy.get('health', 0) or 0),
-            'nutr': int(enemy.get('nutrinium', 0) or 0),
-            'energy': '',
-            'kills': int(enemy.get('kills', 0) or 0),
-            'energy_val': int(enemy.get('energy', 0) or 0),
-            'status': 'DESTROYED' if enemy.get('destroyed', False) else 'ALIVE',
-            'abilities': enemy.get('abilities') or {},
+            'name': 'PLAYER',
+            'role': 'PLAYER',
+            'credits': int(stats.get('player_credits', 0) or 0),
+            'health': int(stats.get('player_health', 0) or 0),
+            'nutr': int(stats.get('player_nutrinium', 0) or 0),
+            'energy': int(stats.get('player_energy', 0)) if stats.get('player_energy') is not None else '',
+            'kills': int(stats.get('player_kills', 0) or 0),
+            'energy_val': int(stats.get('player_energy', 0) or 0),
+            'status': 'DESTROYED' if stats.get('player_destroyed', False) else 'ALIVE',
+            'abilities': stats.get('player_abilities') or {},
         })
 
-    # Rank: credits desc, then nutrinium desc, then ships destroyed (kills)
-    # desc, then energy ascending.
-    entries.sort(key=lambda e: (-e['credits'], -e['nutr'], -e['kills'], e['energy_val']))
+        # Enemies
+        for enemy in stats.get('enemy_details', []):
+            ai_type = enemy.get('ai_type', None)
+            e_role = self.get_ai_type_name(ai_type) if ai_type is not None else 'ENEMY'
+            if ai_type == OpponentAIType.MODEL:
+                model_path = enemy.get('model_path', 'unknown')
+                model_name = os.path.basename(model_path) if model_path else 'unknown'
+                e_role = f"{e_role}:{model_name}"
+            entries.append({
+                'name': enemy.get('name', 'ENEMY'),
+                'role': e_role,
+                'credits': int(enemy.get('credits', 0) or 0),
+                'health': int(enemy.get('health', 0) or 0),
+                'nutr': int(enemy.get('nutrinium', 0) or 0),
+                'energy': '',
+                'kills': int(enemy.get('kills', 0) or 0),
+                'energy_val': int(enemy.get('energy', 0) or 0),
+                'status': 'DESTROYED' if enemy.get('destroyed', False) else 'ALIVE',
+                'abilities': enemy.get('abilities') or {},
+            })
 
-    # Build each ship's abilities as a comma-separated "skill=value" list,
-    # ordered by skill value descending so the strongest skills read first.
-    for e in entries:
-        e['ability_tokens'] = [
-            f"{k}={v}"
-            for k, v in sorted(e['abilities'].items(), key=lambda kv: (-kv[1], kv[0]))
-            if v and v > 0
+        # Rank: credits desc, then nutrinium desc, then ships destroyed (kills)
+        # desc, then energy ascending.
+        entries.sort(key=lambda e: (-e['credits'], -e['nutr'], -e['kills'], e['energy_val']))
+
+        # Build each ship's abilities as a comma-separated "skill=value" list,
+        # ordered by skill value descending so the strongest skills read first.
+        for e in entries:
+            e['ability_tokens'] = [
+                f"{k}={v}"
+                for k, v in sorted(e['abilities'].items(), key=lambda kv: (-kv[1], kv[0]))
+                if v and v > 0
+            ]
+
+        # Fixed (non-wrapping) columns come first; Abilities is the last column and
+        # wraps onto indented continuation lines when it would exceed the line width.
+        fixed_headers = ["Ship", "Role", "Credits", "Health", "Nutrinium", "Energy", "Status"]
+        fixed_rows = [
+            (e['name'], e['role'], e['credits'], e['health'], e['nutr'], e['energy'], e['status'])
+            for e in entries
         ]
+        cols = list(zip(*[[str(h) for h in fixed_headers]] + [[str(v) for v in row] for row in fixed_rows]))
+        widths = [max(len(cell) for cell in col) for col in cols]
 
-    # Fixed (non-wrapping) columns come first; Abilities is the last column and
-    # wraps onto indented continuation lines when it would exceed the line width.
-    fixed_headers = ["Ship", "Role", "Credits", "Health", "Nutrinium", "Energy", "Status"]
-    fixed_rows = [
-        (e['name'], e['role'], e['credits'], e['health'], e['nutr'], e['energy'], e['status'])
-        for e in entries
-    ]
-    cols = list(zip(*[[str(h) for h in fixed_headers]] + [[str(v) for v in row] for row in fixed_rows]))
-    widths = [max(len(cell) for cell in col) for col in cols]
+        # Column offset where the Abilities text begins, so continuation lines align
+        # under the Abilities header: the fixed columns joined by "  " plus the " "
+        # separator before the Abilities column == sum(widths) + 2 * len(widths).
+        indent = sum(widths) + 2 * len(widths)
 
-    # Column offset where the Abilities text begins, so continuation lines align
-    # under the Abilities header: the fixed columns joined by "  " plus the " "
-    # separator before the Abilities column == sum(widths) + 2 * len(widths).
-    indent = sum(widths) + 2 * len(widths)
+        # Wrap abilities to fit the remaining line width, breaking only at commas
+        # (never splitting a "skill=value" token).
+        import shutil
+        max_line_width = shutil.get_terminal_size((120, 20)).columns
+        available = max(20, max_line_width - indent)
 
-    # Wrap abilities to fit the remaining line width, breaking only at commas
-    # (never splitting a "skill=value" token).
-    import shutil
-    max_line_width = shutil.get_terminal_size((120, 20)).columns
-    available = max(20, max_line_width - indent)
+        def _wrap_abilities(tokens):
+            if not tokens:
+                return ['']
+            lines = []
+            current = ''
+            for tok in tokens:
+                candidate = tok if not current else f"{current}, {tok}"
+                if current and len(candidate) > available:
+                    lines.append(current)
+                    current = tok
+                else:
+                    current = candidate
+            lines.append(current)
+            return lines
 
-    def _wrap_abilities(tokens):
-        if not tokens:
-            return ['']
-        lines = []
-        current = ''
-        for tok in tokens:
-            candidate = tok if not current else f"{current}, {tok}"
-            if current and len(candidate) > available:
-                lines.append(current)
-                current = tok
-            else:
-                current = candidate
-        lines.append(current)
-        return lines
+        wrapped = [_wrap_abilities(e['ability_tokens']) for e in entries]
+        abilities_width = max(
+            [len("Abilities")] + [len(line) for lines in wrapped for line in lines]
+        )
 
-    wrapped = [_wrap_abilities(e['ability_tokens']) for e in entries]
-    abilities_width = max(
-        [len("Abilities")] + [len(line) for lines in wrapped for line in lines]
-    )
+        # Prepare header and separator
+        header_cells = [h.ljust(w) for h, w in zip(fixed_headers, widths)] + ["Abilities".ljust(abilities_width)]
+        header_line = "  ".join(header_cells)
+        sep_line = "  ".join('-' * w for w in widths + [abilities_width])
 
-    # Prepare header and separator
-    header_cells = [h.ljust(w) for h, w in zip(fixed_headers, widths)] + ["Abilities".ljust(abilities_width)]
-    header_line = "  ".join(header_cells)
-    sep_line = "  ".join('-' * w for w in widths + [abilities_width])
+        self._print("\n" + header_line)
+        self._print(sep_line)
 
-    self._print("\n" + header_line)
-    self._print(sep_line)
-
-    # Print rows; abilities wrap onto indented continuation lines aligned under
-    # the Abilities header.
-    for row, ability_lines in zip(fixed_rows, wrapped):
-        prefix = " ".join(str(cell).ljust(w) for cell, w in zip(row, widths))
-        self._print(prefix + " " + ability_lines[0].rstrip())
-        for cont in ability_lines[1:]:
-            self._print(" " * indent + cont)
+        # Print rows; abilities wrap onto indented continuation lines aligned under
+        # the Abilities header.
+        for row, ability_lines in zip(fixed_rows, wrapped):
+            prefix = " ".join(str(cell).ljust(w) for cell, w in zip(row, widths))
+            self._print(prefix + " " + ability_lines[0].rstrip())
+            for cont in ability_lines[1:]:
+                self._print(" " * indent + cont)
 
     def print_summary(self):
         """Print summary statistics across all episodes."""
         if not self.episode_stats:
-            self.print("No episodes run yet.", to_episode=False)
+            self._print("No episodes run yet.", to_episode=False)
             return
 
         # Aggregate statistics
@@ -961,24 +963,24 @@ class GameSimulator:
         destroyed = [s['player_destroyed'] for s in self.episode_stats]
         enemies_destroyed = [s['enemies_destroyed'] for s in self.episode_stats]
 
-        self.print("\n" + "=" * 70, to_episode=False)
-        self.print("SIMULATION SUMMARY", to_episode=False)
-        self.print("=" * 70, to_episode=False)
-        self.print(f"Episodes Completed: {len(self.episode_stats)}", to_episode=False)
-        self.print(f"Average Reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}", to_episode=False)
-        self.print(f"Average Credits: {np.mean(credits):.1f} +/- {np.std(credits):.1f}", to_episode=False)
-        self.print(f"Average Steps: {np.mean(steps):.1f}", to_episode=False)
-        self.print(f"Max Credits: {max(credits)}", to_episode=False)
-        self.print(f"Player Survival Rate: {(1 - np.mean(destroyed)) * 100:.1f}%", to_episode=False)
-        self.print(f"Avg Enemies Destroyed: {np.mean(enemies_destroyed):.2f}", to_episode=False)
-        self.print(f"Total Enemies Destroyed: {sum(enemies_destroyed)}", to_episode=False)
+        self._print("\n" + "=" * 70, to_episode=False)
+        self._print("SIMULATION SUMMARY", to_episode=False)
+        self._print("=" * 70, to_episode=False)
+        self._print(f"Episodes Completed: {len(self.episode_stats)}", to_episode=False)
+        self._print(f"Average Reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}", to_episode=False)
+        self._print(f"Average Credits: {np.mean(credits):.1f} +/- {np.std(credits):.1f}", to_episode=False)
+        self._print(f"Average Steps: {np.mean(steps):.1f}", to_episode=False)
+        self._print(f"Max Credits: {max(credits)}", to_episode=False)
+        self._print(f"Player Survival Rate: {(1 - np.mean(destroyed)) * 100:.1f}%", to_episode=False)
+        self._print(f"Avg Enemies Destroyed: {np.mean(enemies_destroyed):.2f}", to_episode=False)
+        self._print(f"Total Enemies Destroyed: {sum(enemies_destroyed)}", to_episode=False)
         # Print the player's model information used for the simulation
         try:
             model_display = os.path.basename(self.model_path) if self.model_path else 'unknown'
         except Exception:
             model_display = str(self.model_path)
-        self.print(f"Player Model: {model_display}", to_episode=False)
-        self.print("=" * 70, to_episode=False)
+        self._print(f"Player Model: {model_display}", to_episode=False)
+        self._print("=" * 70, to_episode=False)
 
         # Participant stats across all episodes
         self._print_participant_stats()
@@ -1220,7 +1222,7 @@ class GameSimulator:
             if render:
                 print(message)
 
-    def wait_for_spacebar(self):
+    def _wait_for_spacebar(self):
         """
         Wait for user to press spacebar to continue, Q to skip future pauses, or ESC to quit.
 
@@ -1476,7 +1478,7 @@ class GameSimulator:
     self._log_episode_detail("", render)
     return predicted_action_name
 
-    def track_step_kills(self, env, info, player_kills, enemy_kills_by_index):
+    def _track_step_kills(self, env, info, player_kills, enemy_kills_by_index):
         """Update and return (player_kills, enemy_kills_by_index) from this step.
 
         Kills are inferred from ATTACK action payloads containing destroyed=True,
@@ -1501,7 +1503,7 @@ class GameSimulator:
 
         return player_kills, enemy_kills_by_index
 
-    def render_post_action_table(self, env, info, total_reward, step, render, predicted_action_name):
+    def _render_post_action_table(self, env, info, total_reward, step, render, predicted_action_name):
         """Render the post-action 'ACTION RESULTS' table for player + opponents."""
         self._log_episode_detail(f'\n{"=" * 70}', render)
         self._log_episode_detail(f"ACTION RESULTS (Step {step})", render)
