@@ -4,6 +4,7 @@ Holds the per-ship ModelSpec plumbing and the legacy full-observation builder
 along with the top-asteroid / extreme-enemy / combat-score helpers and the
 episode info dict.
 """
+import numpy as np
 
 from env_common import *
 from utils import action_masker
@@ -379,40 +380,43 @@ class EnvObservationMixin:
         if not self.asteroids:
             return []
 
+        # Live asteroids (nutrinium > 0) in list order so equal scores resolve the
+        # same way as the legacy stable descending sort.
+        live = [a for a in self.asteroids if a.get('nutrinium', 0) > 0]
+        if not live:
+            return []
+
+        n = len(live)
+        ax = np.fromiter((a['x'] for a in live), dtype=np.float64, count=n)
+        ay = np.fromiter((a['y'] for a in live), dtype=np.float64, count=n)
+        mass = np.fromiter((max(1, a.get('mass', 1)) for a in live), dtype=np.float64, count=n)
+        nutrinium = np.fromiter((a.get('nutrinium', 1) for a in live), dtype=np.float64, count=n)
+
+        dist = np.sqrt((ax - x) ** 2 + (ay - y) ** 2)
+        # Score: concentration * nutrinium / (distance + 1), normalized to 0-1.
+        concentration = nutrinium / mass
+        raw_score = concentration * nutrinium / (dist + 1.0)
+        normalized_score = np.minimum(1.0, raw_score / 50.0)
+
+        # Sort by score descending; stable keep orginal list order for ties,
+        # matching list.sort(key=..., reverse=True).3
+        order = np.argsort(-normalized_score, kind='stable')[:count]
+
         max_dist = math.sqrt(self.map_width**2 + self.map_height**2)
         scored_asteroids = []
 
-        for asteroid in self.asteroids:
-            if asteroid.get('nutrinium', 0) <= 0:
-                continue
-
-            dist = self._calculate_distance(x, y, asteroid['x'], asteroid['y'])
-            mass = max(1, asteroid.get('mass', 1))
-            nutrinium = asteroid.get('nutrinium', 0)
-
-            # Calculate concentration (nutrinium / mass)
-            concentration = nutrinium / mass
-
-            # Score: concentration * nutrinium / (distance + 1)
-            # This prioritizes: high concentration, high nutrinium, low distance
-            raw_score = concentration * nutrinium / (dist + 1)
-
-            # Normalize score to 0-1 range (approximate max score)
-            max_score = 50.0  # Reasonable max for normalization
-            normalized_score = min(1.0, raw_score / max_score)
-
-            scored_asteroids.append({
-                'x': asteroid['x'],
-                'y': asteroid['y'],
-                'mass': asteroid['mass'],
-                'nutrinium': asteroid['nutrinium'],
-                'distance': dist,
-                'score': normalized_score,
+        result: List[dict] = []
+        for i in order:
+            a = live[int(i)]
+            result.append({
+                'x': a['x'],
+                'y': a['y'],
+                'mass': a['mass'],
+                'nutrinium': a['nutrinium'],
+                'distance': float(dist[i]),
+                'score': float(normalized_score[i]),
             })
-
-        # Sort by score descending and return top N
-        scored_asteroids.sort(key=lambda a: a['score'], reverse=True)
-        return scored_asteroids[:count]
+        return result
 
     def _get_extreme_enemies(self, x: int, y: int) -> Tuple[Optional[dict], Optional[dict]]:
         """
