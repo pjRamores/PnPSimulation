@@ -1793,7 +1793,7 @@ def main():
     parser.add_argument('--print-each-step', action='store_true',
                        help='Print detailed info for each step during simulation')
     parser.add_argument('--opponents', type=str, default=None,
-                       help='Comma-separated list of exact opponents (e.g. BOT_V2,BOT_V3,BOT_V4,BOT_V5,BOT_V6,BOT_V7,BOT_V8.models/ppo_pnp_model_v29). Each entry may carry an optional [N] repeat-count suffix, e.g. BOT_V2[1],BOT_V3[3],BOT_V4[4] is equivalent to listing each name N times. Overrides --min-opponents and --max-opponents.')
+                       help='Comma-separated list of exact opponents (e.g. BOT_V2,BOT_V3,BOT_V4,BOT_V5,BOT_V6,BOT_V7,BOT_V8.models/ppo_pnp_model_v29). Each entry may carry an optional [N] repeat-count suffix, e.g. BOT_V2[1],BOT_V3[3],BOT_V4[4],BOT_V5[3],BOT_V7[4] is equivalent to listing each name N times. Overrides --min-opponents and --max-opponents.')
 
     args = parser.parse_args()
 
