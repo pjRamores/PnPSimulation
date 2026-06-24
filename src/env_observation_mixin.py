@@ -4,7 +4,6 @@ Holds the per-ship ModelSpec plumbing and the legacy full-observation builder
 along with the top-asteroid / extreme-enemy / combat-score helpers and the
 episode info dict.
 """
-import numpy as np
 
 from env_common import *
 from utils import action_masker
@@ -390,7 +389,7 @@ class EnvObservationMixin:
         ax = np.fromiter((a['x'] for a in live), dtype=np.float64, count=n)
         ay = np.fromiter((a['y'] for a in live), dtype=np.float64, count=n)
         mass = np.fromiter((max(1, a.get('mass', 1)) for a in live), dtype=np.float64, count=n)
-        nutrinium = np.fromiter((a.get('nutrinium', 1) for a in live), dtype=np.float64, count=n)
+        nutrinium = np.fromiter((a.get('nutrinium', 0) for a in live), dtype=np.float64, count=n)
 
         dist = np.sqrt((ax - x) ** 2 + (ay - y) ** 2)
         # Score: concentration * nutrinium / (distance + 1), normalized to 0-1.
@@ -398,12 +397,9 @@ class EnvObservationMixin:
         raw_score = concentration * nutrinium / (dist + 1.0)
         normalized_score = np.minimum(1.0, raw_score / 50.0)
 
-        # Sort by score descending; stable keep orginal list order for ties,
+        # Sort by score descending; stable keeps original list order for ties,
         # matching list.sort(key=..., reverse=True).3
         order = np.argsort(-normalized_score, kind='stable')[:count]
-
-        max_dist = math.sqrt(self.map_width**2 + self.map_height**2)
-        scored_asteroids = []
 
         result: List[dict] = []
         for i in order:
