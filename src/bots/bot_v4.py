@@ -1,7 +1,7 @@
 """Prospectors & Pirates bot (v4).
 
 A standalone port of the environment's PIRATE opponent AI
-(``ProspectorsPiratesEnv.ai_pirate``) onto the same lambda contract as
+(``ProspectorsPiratesEnv._ai_pirate``) onto the same lambda contract as
 ``bot_v2`` / ``bot_v3``: a single :func:`get_action` that takes an ActionRequest
 dict and returns a response dict ``{"actionType": str, "payload"?: ...}``.
 
@@ -56,10 +56,10 @@ def _to_response(payload):
 # ----------------------------------------------------------------------------
 # Tunables (mirror the reference PIRATE thresholds)
 # ----------------------------------------------------------------------------
-RECHARGE_END_ENERGY = 70      # stop recharging once back to a workable level
-RECHARGE_LOW_ENERGY = 15      # only recharge when truly low (mining turns are precious)
-HAUL_CARGO_THRESHOLD = 12     # cargo worth carrying home before topping up
-DEFAULT_ATTACK_ENERGY = 20    # energy spent per ATTACK (matches the env default payload)
+RECHARGE_END_ENERGY = 70     # stop recharging once back to a workable level
+RECHARGE_LOW_ENERGY = 15     # only recharge when truly low (mining turns are precious)
+HAUL_CARGO_THRESHOLD = 12    # cargo worth carrying home before topping up
+DEFAULT_ATTACK_ENERGY = 20   # energy spent per ATTACK (matches the env default payload)
 
 
 # ----------------------------------------------------------------------------
@@ -195,6 +195,7 @@ class _Context:
 # ----------------------------------------------------------------------------
 def _move(direction):
     return {"actionType": "MOVE", "payload": {"direction": direction}}
+
 
 def _jump(target):
     return {"actionType": "JUMP",
@@ -485,6 +486,7 @@ def _masked_to_response(ctx, action_id, masker):
         return _jump(post) if post else {"actionType": "WAIT"}
     return {"actionType": "WAIT"}
 
+
 def _enforce(ctx, action):
     """Validate the heuristic's action via the shared masker; substitute if invalid."""
     masker = _get_masker()
@@ -499,9 +501,9 @@ def _enforce(ctx, action):
     return _masked_to_response(ctx, enforced_id, masker)
 
 
-# -----------------------------------------
+# ----------------------------------------------------------------------------
 # Public lambda contract
-# -----------------------------------------
+# ----------------------------------------------------------------------------
 def get_heuristic_action(action_request):
     """Decide a pirate action for one ActionRequest (raw dict, pre-adapter)."""
     ctx = _Context(action_request)
