@@ -1,7 +1,7 @@
 """Prospectors & Pirates bot (v5).
 
 A standalone strategy port of the 2025 ``r680329`` competition bot
-(``spaceship`.SpaceShip`` + ``action.Action``) onto the 2026 lambda contract
+(``spaceship.SpaceShip`` + ``action.Action``) onto the 2026 lambda contract
 shared by ``bot_v2`` / ``bot_v3`` / ``bot_v4``: a single :func:`get_action` that
 takes an ActionRequest dict and returns ``{"actionType": str, "payload"?: ...}``.
 
@@ -13,9 +13,9 @@ adapting to the 2026 game model:
 * The 2025 action-point budget is gone (2026 is one action per tick) -- all
   action-point bookkeeping is dropped.
 * The 2025 COMBAT sub-system (allocating energy to WEAPONS/SHIELDS/THRUSTERS) is
-  collapsed onto the 2026 single-shot ``ATTACK({target, energy})``, sizing the
+  collapsed onto the 2026 single-shot ``ATTACK{target, energy}``, sizing the
   energy from the same energy-matchup prey-selection rules.
-* The 2025 dense `long` sensor matrix is replaced by the 2026 flat ``sensors``
+* The 2025 dense ``long`` sensor matrix is replaced by the 2026 flat ``sensors``
   list (entities within sensor range); the zone-valuation formula is applied per
   visible asteroid.
 * 2026-only mobility (``JUMP``) is used to reach far targets, like bot_v3/v4.
@@ -318,7 +318,7 @@ def _navigate(ctx, tx, ty, jump_min_dist, jump_margin):
 
 
 def _move_explore(ctx):
-    """Step in a random in-bounds direction (2025 ``__move_random__``)."""
+    """Step in a random in-bounds direction (2025 ``__move_random``)."""
     options = []
     if ctx.y < ctx.map_h - 1:
         options.append("N")
@@ -337,7 +337,7 @@ def _move_explore(ctx):
 # Strategy sub-procedures
 # ----------------------------------------------------------------------------
 def _has_potential_attacker(ctx):
-    """True when a visible ship clearly outguns us (2025 ``__has_potential_attacker__``)."""
+    """True when a visible ship clearly outguns us (2025 ``__has_potential_attacker``)."""
     if any(s.get("playerId") in _ATTACKER_IDS for s in ctx.ships):
         return True
     strongest = None
@@ -423,7 +423,7 @@ def _is_selling_time(ctx):
 
 
 def _go_to_post(ctx):
-    """Navigate to the nearest visible trading post, or None if none visible"""
+    """Navigate to the nearest visible trading post, or None if none visible."""
     post = _nearest_entity(ctx.x, ctx.y, ctx.trading_posts)
     if post is None:
         return None
@@ -497,7 +497,7 @@ def _balanced_action(ctx):
 
 
 # ----------------------------------------------------------------------------
-# Action-mask safety net (shared util.action_masker)
+# Action-mask safety net (shared utils.action_masker)
 # ----------------------------------------------------------------------------
 _MASKER = "unset"  # sentinel -> the utils.action_masker module, or None on failure
 
