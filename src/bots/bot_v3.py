@@ -413,6 +413,7 @@ def _enforce(ctx, action):
     enforced_id = masker.mask_action(action_id, st)
     return _masked_to_response(ctx, enforced_id, masker)
 
+
 # ----------------------------------------------------------------------------
 # Public lambda contract
 # ----------------------------------------------------------------------------
