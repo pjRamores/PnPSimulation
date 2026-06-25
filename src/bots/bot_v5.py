@@ -414,7 +414,7 @@ MASKER = "unset"  # sentinel -> the utils.action_masker module, or None on failu
 
 def _get_masker():
     """Lazy import and cache `utils.action_masker`. Returns the module or None.
-    
+
     The `src` directory (parent of `bots`) is added to `sys.path` so the
     utility resolves both inside the simulator and when run as a standalone
     lambda. Any failure (e.g. numpy missing) degrades gracefully -- the caller
