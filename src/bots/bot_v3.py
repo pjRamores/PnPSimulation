@@ -65,6 +65,7 @@ def _distance(x1, y1, x2, y2):
     """Euclidean distance between two cells."""
     return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
 
+
 def _skill(skills, name):
     """Skill/ability level (0 when absent)."""
     try:
@@ -168,17 +169,20 @@ class _Context:
 # ----------------------------------------------------------------------------
 # Prospector decision (ported from ProspectorsPiratesEnv._ai_prospector)
 # ----------------------------------------------------------------------------
-
 def _move(direction):
     return {"actionType": "MOVE", "payload": {"direction": direction}}
+
 
 def _jump(target):
     return {"actionType": "JUMP",
             "payload": {"target_location": {"x": target["x"], "y": target["y"]}}}
 
+
 def _sell(amount):
-    # SELL requires a positive-integer `nutrinium` payload (game spec: actions.md -> Sell). Callers only reach here with cargo on board.
+    # SELL requires a positive-integer ``nutrinium`` payload (game spec:
+    # actions.md -> Sell). Callers only reach here with cargo on board.
     return {"actionType": "SELL", "payload": {"nutrinium": int(amount)}}
+
 
 def _prospector_action(ctx):
     """Optimised mining-selling loop with efficient travel (never fights)."""
@@ -254,20 +258,22 @@ def _prospector_action(ctx):
             jump_cost = ctx.jump_energy_cost(dist)
             if dist > 1 and ctx.energy >= jump_cost + 5:
                 return _jump(nearest_post)
-        return _move(_direction_towards(nearest_post["x"] - ctx.x,
-                                        nearest_post["y"] - ctx.y))
+            return _move(_direction_towards(nearest_post["x"] - ctx.x,
+                                            nearest_post["y"] - ctx.y))
 
     return {"actionType": "WAIT"}
+
 
 # ----------------------------------------------------------------------------
 # Action-mask safety net (shared utils.action_masker)
 # ----------------------------------------------------------------------------
 _MASKER = "unset"  # sentinel -> the utils.action_masker module, or None on failure
 
-def _get_masker():
-    """Lazily import and cache `utils.action_masker`. Returns the module or None.
 
-    The `src` directory (parent of `bots`) is added to `sys.path` so the
+def _get_masker():
+    """Lazily import and cache ``utils.action_masker``. Returns the module or None.
+
+    The ``src`` directory (parent of ``bots``) is added to ``sys.path`` so the
     utility resolves both inside the simulator and when run as a standalone
     lambda. Any failure (e.g. numpy missing) degrades gracefully -- the caller
     keeps the heuristic's action unmasked.
@@ -288,8 +294,12 @@ def _get_masker():
     _MASKER = result
     return result
 
+
 def _build_mask_state(ctx, masker):
-    """Adapt the parsed prospector context into a `MaskState`.
+    """Adapt the parsed prospector context into a ``MaskState``.
+
+    A prospector never fights or uses shields/modules, so combat/shield/module
+    fields default to harmless empty values (those actions stay masked out).
     """
     energy_costs = {
         "mine": ctx.mine_cost,
@@ -330,6 +340,7 @@ def _build_mask_state(ctx, masker):
         action_restrictions=ctx.action_restrictions,
     )
 
+
 def _action_name_to_id(masker, action, ctx):
     """Map a response dict back to the env action id the masker validates."""
     at = action.get("actionType")
@@ -352,12 +363,13 @@ def _action_name_to_id(masker, action, ctx):
             "W": masker.MOVE_WEST,
         }.get(payload.get("direction"), masker.WAIT)
     if at == "JUMP":
-        tgt = payload.get("target_location", {} or {}
+        tgt = payload.get("target_location", {}) or {}
         tx, ty = int(tgt.get("x", ctx.x)), int(tgt.get("y", ctx.y))
         if _entity_at(tx, ty, ctx.trading_posts):
             return masker.JUMP_TO_TRADING_POST
         return masker.JUMP_TO_ASTEROID
     return masker.WAIT
+
 
 def _masked_to_response(ctx, action_id, masker):
     """Rebuild a response dict for an enforced (valid) prospector action id."""
@@ -401,13 +413,14 @@ def _enforce(ctx, action):
     enforced_id = masker.mask_action(action_id, st)
     return _masked_to_response(ctx, enforced_id, masker)
 
-# ---------------------------------
+# ----------------------------------------------------------------------------
 # Public lambda contract
-# ---------------------------------
+# ----------------------------------------------------------------------------
 def get_heuristic_action(action_request):
     """Decide a prospector action for one ActionRequest (raw dict, pre-adapter)."""
     ctx = _Context(action_request)
     return _enforce(ctx, _prospector_action(ctx))
+
 
 def get_action(action_request):
     """Public entry point: returns a normalised response dict."""
