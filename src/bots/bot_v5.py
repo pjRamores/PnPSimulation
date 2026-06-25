@@ -1,9 +1,9 @@
 """Prospectors & Pirates bot (v5).
 
 A standalone strategy port of the 2025 ``r680329`` competition bot
-(``spaceship`.SpaceShip` + ``action.Action``) onto the 2026 lambda contract
+(``spaceship`.SpaceShip`` + ``action.Action``) onto the 2026 lambda contract
 shared by ``bot_v2`` / ``bot_v3`` / ``bot_v4``: a single :func:`get_action` that
-takes an ActionRequest dict and returns ``{"actionType": str, "payload": ...}``.
+takes an ActionRequest dict and returns ``{"actionType": str, "payload"?: ...}``.
 
 The 2025 bot is a BALANCED MINER-TRADER with opportunistic raiding and -- its
 signature -- market-timing on sells (bank cargo when the price is high relative
@@ -13,7 +13,7 @@ adapting to the 2026 game model:
 * The 2025 action-point budget is gone (2026 is one action per tick) -- all
   action-point bookkeeping is dropped.
 * The 2025 COMBAT sub-system (allocating energy to WEAPONS/SHIELDS/THRUSTERS) is
-  collapsed onto the 2026 single-shot `ATTACK(target, energy)`, sizing the
+  collapsed onto the 2026 single-shot ``ATTACK({target, energy})``, sizing the
   energy from the same energy-matchup prey-selection rules.
 * The 2025 dense `long` sensor matrix is replaced by the 2026 flat ``sensors``
   list (entities within sensor range); the zone-valuation formula is applied per
@@ -70,9 +70,9 @@ def _to_response(payload):
     return action
 
 
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Tunables (ported from the 2025 bot, adapted to the 2026 energy economy)
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 RECHARGE_LOW_FRAC = 0.10      # recharge when energy drops below 10% of max
 RECHARGE_END_FRAC = 0.60      # stop recharging once back to ~60% of max
 NUTRINIUM_MIN_RATIO = 0.7     # mine in place when concentration (nutr/mass) > 0.7
@@ -84,22 +84,22 @@ DEFAULT_ATTACK_ENERGY = 20    # baseline ATTACK payload
 ATTACK_CRITICAL_MARGIN = 5    # extra energy committed to ensure an overpower
 
 
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Optional id hooks (extensible; empty by default). The 2025 bot kept hardcoded
 # "friend"/"attacker" player-id lists; they are irrelevant to the 2026 simulator
 # and lambda, so threat/prey decisions here are purely energy-based.
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 _FRIEND_IDS = set()
 _ATTACKER_IDS = set()
 
 
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Module-level market history (the 2025 buy-low / sell-high memory).
 # Keyed on gameId so interleaved opponents in the simulator don't clobber each
 # other; reset when the round changes (matches the 2025 per-round reset).
-# ---------------------------------------------------------------------------
-_market_high = {}  # gameId -> highest sell price seen this round
-_market_low = {}   # gameId -> lowest sell price seen this round
+# ----------------------------------------------------------------------------
+_market_high = {}   # gameId -> highest sell price seen this round
+_market_low = {}    # gameId -> lowest sell price seen this round
 _market_round = {}  # gameId -> round the history above belongs to
 
 
@@ -125,12 +125,13 @@ def _update_market_history(game_id, game_round, price):
         _market_low[game_id] = price
 
 
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Geometry / parsing helpers (stateless)
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 def _distance(x1, y1, x2, y2):
     """Euclidean distance between two cells."""
     return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+
 
 def _manhattan(x1, y1, x2, y2):
     """Manhattan distance between two cells (zone-valuation tick proxy)."""
@@ -200,9 +201,9 @@ def _zone_value(nutrinium, mass, ship_count, dist):
         return 0.0
 
 
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Parsed request
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 class _Context:
     """Parses one ActionRequest into the fields the balanced loop needs."""
 
@@ -255,9 +256,9 @@ class _Context:
         self.game_id = game_state.get("gameId")
         self.game_round = game_state.get("round", 0)
         self.tick = int(game_state.get("tick", 0) or 0)
-        metadata = game_state.get("metadata", {} or {})
-        ship_cfg = metadata.get("shipConfig", {} or {})
-        costs = ship_cfg.get("energyCosts", {} or {})
+        metadata = game_state.get("metadata", {}) or {}
+        ship_cfg = metadata.get("shipConfig", {}) or {}
+        costs = ship_cfg.get("energyCosts", {}) or {}
         self.mine_cost = int(costs.get("mine", 10))
         self.attack_cost = int(costs.get("attack", 1))
         self.jump_unit_cost = int(costs.get("jump", 1))
@@ -271,15 +272,15 @@ class _Context:
         self.negotiate_cost = int(costs.get("negotiate", 5))
         self.max_health = int(ship_cfg.get("maxHealth", 100))
         self.credits = int(me.get("credits", 0))
-        map_cfg = metadata.get("mapConfig", {} or {})
+        map_cfg = metadata.get("mapConfig", {}) or {}
         self.map_w = int(map_cfg.get("width", 10))
         self.map_h = int(map_cfg.get("height", 10))
-        market = metadata.get("market", {} or {})
-        sell_cfg = market.get("sell", {} or {})
+        market = metadata.get("market", {}) or {}
+        sell_cfg = market.get("sell", {}) or {}
         price = sell_cfg.get("nutrinium")
         self.market_price = float(price) if price is not None else 0.0
         # Per-state action restrictions (allowedWhileRecharging / allowedWithShieldsUp).
-        self.action_restrictions = metadata.get("actionRestrictions", {} or {})
+        self.action_restrictions = metadata.get("actionRestrictions", {}) or {}
 
     def jump_energy_cost(self, distance):
         """Energy cost of a jump of the given distance (skill lowers the floor)."""
@@ -287,11 +288,12 @@ class _Context:
         return int(max(adj_min_cost, round(self.jump_unit_cost * distance)))
 
 
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Action builders
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 def _move(direction):
     return {"actionType": "MOVE", "payload": {"direction": direction}}
+
 
 def _jump(target):
     return {"actionType": "JUMP",
@@ -316,7 +318,7 @@ def _navigate(ctx, tx, ty, jump_min_dist, jump_margin):
 
 
 def _move_explore(ctx):
-    """Step in a random in-bounds direction (2025 '`__move_random__`')."""
+    """Step in a random in-bounds direction (2025 ``__move_random__``)."""
     options = []
     if ctx.y < ctx.map_h - 1:
         options.append("N")
@@ -331,11 +333,11 @@ def _move_explore(ctx):
     return _move(random.choice(options))
 
 
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Strategy sub-procedures
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 def _has_potential_attacker(ctx):
-    """True when a visible ship clearly outguns us (2025 '`__has_potential_attacker__`')."""
+    """True when a visible ship clearly outguns us (2025 ``__has_potential_attacker__``)."""
     if any(s.get("playerId") in _ATTACKER_IDS for s in ctx.ships):
         return True
     strongest = None
@@ -398,10 +400,10 @@ def _find_prey(ctx):
             commit = min(ctx.energy,
                          max(DEFAULT_ATTACK_ENERGY, prey["energy"] + ATTACK_CRITICAL_MARGIN))
             return prey, commit
-        return None, 0
+    return None, 0
 
 
-def _is_sellling_time(ctx):
+def _is_selling_time(ctx):
     """2025 market-timing sell decision (price vs round high/low)."""
     if ctx.nutrinium < MIN_SELL_QUANTITY:
         return False
@@ -415,7 +417,7 @@ def _is_sellling_time(ctx):
     low = _market_low.get(ctx.game_id, price)
     if ctx.nutrinium > MIN_SELL_QUANTITY and price >= high:
         return True
-    if price >= low * 1.3
+    if price >= low * 1.3:
         return True
     return False
 
@@ -428,9 +430,9 @@ def _go_to_post(ctx):
     return _navigate(ctx, post["x"], post["y"], jump_min_dist=1, jump_margin=5)
 
 
-# ---------------------------------------------------------------------------
-# Balanced miner-trainer decision (ported from spaceship.generate_action_response)
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# Balanced miner-trader decision (ported from spaceship.generate_action_response)
+# ----------------------------------------------------------------------------
 def _balanced_action(ctx):
     # === 1. RESPAWN if destroyed ===
     if ctx.state == "DESTROYED":
@@ -494,11 +496,11 @@ def _balanced_action(ctx):
     return _move_explore(ctx)
 
 
-
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Action-mask safety net (shared util.action_masker)
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 _MASKER = "unset"  # sentinel -> the utils.action_masker module, or None on failure
+
 
 def _get_masker():
     """Lazily import and cache ``utils.action_masker``. Returns the module or None.
@@ -662,9 +664,9 @@ def _enforce(ctx, action):
     return _masked_to_response(ctx, enforced_id, masker)
 
 
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Public lambda contract
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 def get_heuristic_action(action_request):
     """Decide a balanced miner-trader action for one ActionRequest (raw dict)."""
     ctx = _Context(action_request)
