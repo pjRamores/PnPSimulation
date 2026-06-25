@@ -1,10 +1,9 @@
-"""
-Prospectors & Pirates bot (v3).
+"""Prospectors & Pirates bot (v3).
 
 A standalone port of the environment's PROSPECTOR opponent AI
-(``ProspectorsPiratesEnv_ai_prospector``) onto the same lambda contract as
+(``ProspectorsPiratesEnv._ai_prospector``) onto the same lambda contract as
 ``bot_v2``: a single :func:`get_action` that takes an ActionRequest dict and
-returns a response dict ``{"actionType": str, "payload"??: ...}``.
+returns a response dict ``{"actionType": str, "payload"?: ...}``.
 
 The strategy is a pure mining/selling economy loop -- never fights:
 
@@ -25,7 +24,8 @@ necessarily local. Directions are emitted in the live server frame
 import os
 import sys
 
-def to_response(payload):
+
+def _to_response(payload):
     """Lightweight lambda response adapter (mirrors bot_v2)."""
     if isinstance(payload, dict):
         action = payload
@@ -50,18 +50,22 @@ def to_response(payload):
     return action
 
 
+# ----------------------------------------------------------------------------
 # Tunables (mirror the reference PROSPECTOR thresholds)
-RECHARGE_END_ENERGY = 60      # stop recharging once back to a workable level
-RECHARGE_LOW_ENERGY = 15      # only recharge when truly low (mining turns are precious)
-HAUL_CARGO_THRESHOLD = 12     # cargo worth carrying home before topping up
+# ----------------------------------------------------------------------------
+RECHARGE_END_ENERGY = 60     # stop recharging once back to a workable level
+RECHARGE_LOW_ENERGY = 15     # only recharge when truly low (mining turns are precious)
+HAUL_CARGO_THRESHOLD = 12    # cargo worth carrying home before topping up
 
 
+# ----------------------------------------------------------------------------
 # Geometry / parsing helpers (stateless)
-def distance(x1, y1, x2, y2):
+# ----------------------------------------------------------------------------
+def _distance(x1, y1, x2, y2):
     """Euclidean distance between two cells."""
     return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
 
-def skill(skills, name):
+def _skill(skills, name):
     """Skill/ability level (0 when absent)."""
     try:
         return int(skills.get(name, 0) or 0)
@@ -69,33 +73,36 @@ def skill(skills, name):
         return 0
 
 
-def entity_at(x, y, entities):
+def _entity_at(x, y, entities):
     """First entity exactly at (x, y), or None."""
     for e in entities:
         if e["x"] == x and e["y"] == y:
             return e
     return None
 
-def nearest_entity(x, y, entities):
+
+def _nearest_entity(x, y, entities):
     """Nearest entity to (x, y) by Euclidean distance, or None."""
     best = None
     best_dist = None
     for e in entities:
-        d = distance(x, y, e["x"], e["y"])
+        d = _distance(x, y, e["x"], e["y"])
         if best_dist is None or d < best_dist:
             best_dist = d
             best = e
     return best
 
-def direction_towards(dx, dy):
+
+def _direction_towards(dx, dy):
     """Compass direction to step along the dominant axis (server frame)."""
     if abs(dx) > abs(dy):
         return "E" if dx > 0 else "W"
-return "N" if dy > 0 else "S"
+    return "N" if dy > 0 else "S"
 
+
+# ----------------------------------------------------------------------------
 # Parsed request
-# --------------------------------------------------------
-
+# ----------------------------------------------------------------------------
 class _Context:
     """Parses one ActionRequest into the fields the prospector loop needs."""
 
@@ -110,7 +117,7 @@ class _Context:
         self.recharging = bool(me.get("recharging", False))
         self.skills = me.get("skills", {}) or {}
         # Installed modules (e.g. JUMP) gate module-locked actions in the masker.
-        self.modules = {str(m).upper() for m in me.get("modules", []) or []}
+        self.modules = {str(m).upper() for m in (me.get("modules", []) or [])}
 
         # Split sensor contacts by type into flat {x, y, ...} dicts.
         self.asteroids = []
@@ -157,105 +164,107 @@ class _Context:
         adj_min_cost = max(0, self.jump_min_cost - _skill(self.skills, "jump_cost") * 5)
         return int(max(adj_min_cost, round(self.jump_unit_cost * distance)))
 
-    # --------------------------------------------------------
-    # Prospector decision (ported from ProspectorsPiratesEnv._ai_prospector)
 
-    def _move(direction):
-        return {"actionType": "MOVE", "payload": {"direction": direction}}
+# ----------------------------------------------------------------------------
+# Prospector decision (ported from ProspectorsPiratesEnv._ai_prospector)
+# ----------------------------------------------------------------------------
 
-    def _jump(target):
-        return {"actionType": "JUMP",
-                "payload": {"target_location": {"x": target["x"], "y": target["y"]}}}
+def _move(direction):
+    return {"actionType": "MOVE", "payload": {"direction": direction}}
 
-    def _sell(amount):
-        # SELL requires a positive-integer `nutrinium` payload (game spec: actions.md -> Sell). Callers only reach here with cargo on board.
-        return {"actionType": "SELL", "payload": {"nutrinium": int(amount)}}
+def _jump(target):
+    return {"actionType": "JUMP",
+            "payload": {"target_location": {"x": target["x"], "y": target["y"]}}}
 
-    def _prospector_action(ctx):
-        """Optimised mining-selling loop with efficient travel (never fights)."""
-        # === 1. ENERGY MANAGEMENT ===
-        if ctx.recharging:
-            # Short recharge: get back to work quickly.
-            if ctx.energy >= RECHARGE_END_ENERGY:
-                return {"actionType": "RECHARGE_END"}
-            return {"actionType": "WAIT"}
+def _sell(amount):
+    # SELL requires a positive-integer `nutrinium` payload (game spec: actions.md -> Sell). Callers only reach here with cargo on board.
+    return {"actionType": "SELL", "payload": {"nutrinium": int(amount)}}
 
-        # Recharge only when truly low -- every recharge turn is a lost mining turn.
-        if ctx.energy < RECHARGE_LOW_ENERGY:
-            return {"actionType": "RECHARGE"}
+def _prospector_action(ctx):
+    """Optimised mining-selling loop with efficient travel (never fights)."""
+    # === 1. ENERGY MANAGEMENT ===
+    if ctx.recharging:
+        # Short recharge: get back to work quickly.
+        if ctx.energy >= RECHARGE_END_ENERGY:
+            return {"actionType": "RECHARGE_END"}
+        return {"actionType": "WAIT"}
 
-        # === 2. SELL at trading post -- always, any amount ===
-if ctx.nutrinium > 0 and _entity_at(ctx.x, ctx.y, ctx.trading_posts):
-    return _sell(ctx.nutrinium)
+    # Recharge only when truly low -- every recharge turn is a lost mining turn.
+    if ctx.energy < RECHARGE_LOW_ENERGY:
+        return {"actionType": "RECHARGE"}
 
-# === 3. HEAD TO TRADING POST when carrying cargo ===
-if ctx.nutrinium >= HAUL_CARGO_THRESHOLD:
-    nearest_post = _nearest_entity(ctx.x, ctx.y, ctx.trading_posts)
-    if nearest_post:
-        dist = _distance(ctx.x, ctx.y, nearest_post["x"], nearest_post["y"])
+    # === 2. SELL at trading post -- always, any amount ===
+    if ctx.nutrinium > 0 and _entity_at(ctx.x, ctx.y, ctx.trading_posts):
+        return _sell(ctx.nutrinium)
+
+    # === 3. HEAD TO TRADING POST when carrying cargo ===
+    if ctx.nutrinium >= HAUL_CARGO_THRESHOLD:
+        nearest_post = _nearest_entity(ctx.x, ctx.y, ctx.trading_posts)
+        if nearest_post:
+            dist = _distance(ctx.x, ctx.y, nearest_post["x"], nearest_post["y"])
+            jump_cost = ctx.jump_energy_cost(dist)
+            # Jump to trading post aggressively (even short distances).
+            if dist > 1 and ctx.energy >= jump_cost + 5:
+                return _jump(nearest_post)
+            # Walk to trading post.
+            return _move(_direction_towards(nearest_post["x"] - ctx.x,
+                                            nearest_post["y"] - ctx.y))
+
+    # === 4. MINE current asteroid ===
+    asteroid = _entity_at(ctx.x, ctx.y, ctx.asteroids)
+    if asteroid and asteroid["nutrinium"] > 0 and ctx.energy >= ctx.mine_cost:
+        return {"actionType": "MINE"}
+
+    # === 5. FIND BEST ASTEROID (optimised for round-trip efficiency) ===
+    best_asteroid = None
+    best_score = -1.0
+    for ast in ctx.asteroids:
+        if ast["nutrinium"] <= 0:
+            continue
+        dist_to_ast = _distance(ctx.x, ctx.y, ast["x"], ast["y"])
+        # Factor in distance from asteroid to nearest trading post.
+        nearest_post = _nearest_entity(ast["x"], ast["y"], ctx.trading_posts)
+        dist_to_post = 10.0
+        if nearest_post:
+            dist_to_post = _distance(ast["x"], ast["y"],
+                                     nearest_post["x"], nearest_post["y"])
+        # Round-trip cost: getting there + getting to a trading post after.
+        round_trip = dist_to_ast + dist_to_post * 0.6
+        # Favour rich asteroids (nutrinium^1.3), penalise by round-trip distance.
+        score = (ast["nutrinium"] ** 1.3) / (round_trip + 1)
+        if score > best_score:
+            best_score = score
+            best_asteroid = ast
+
+    if best_asteroid:
+        dist = _distance(ctx.x, ctx.y, best_asteroid["x"], best_asteroid["y"])
         jump_cost = ctx.jump_energy_cost(dist)
-        # Jump to trading post aggressively (even short distances).
-        if dist > 1 and ctx.energy >= jump_cost + 5:
-            return _jump(nearest_post)
-        # Walk to trading post.
+        # Jump aggressively -- walking wastes turns.
+        if dist > 2 and ctx.energy >= jump_cost + 10:
+            return _jump(best_asteroid)
+        # Walk towards asteroid.
+        return _move(_direction_towards(best_asteroid["x"] - ctx.x,
+                                        best_asteroid["y"] - ctx.y))
+
+    # === 6. SELL remaining cargo if nothing to mine ===
+    if ctx.nutrinium > 0:
+        nearest_post = _nearest_entity(ctx.x, ctx.y, ctx.trading_posts)
+        if nearest_post:
+            dist = _distance(ctx.x, ctx.y, nearest_post["x"], nearest_post["y"])
+            jump_cost = ctx.jump_energy_cost(dist)
+            if dist > 1 and ctx.energy >= jump_cost + 5:
+                return _jump(nearest_post)
         return _move(_direction_towards(nearest_post["x"] - ctx.x,
-                                       nearest_post["y"] - ctx.y))
+                                        nearest_post["y"] - ctx.y))
 
-# === 4. MINE current asteroid ===
-asteroid = _entity_at(ctx.x, ctx.y, ctx.asteroids)
-if asteroid and asteroid["nutrinium"] > 0 and ctx.energy >= ctx.mine_cost:
-    return {"actionType": "MINE"}
+    return {"actionType": "WAIT"}
 
-# === 5. FIND BEST ASTEROID (optimised for round-trip efficiency) ===
-best_asteroid = None
-best_score = -1.0
-for ast in ctx.asteroids:
-    if ast["nutrinium"] <= 0:
-        continue
-    dist_to_ast = _distance(ctx.x, ctx.y, ast["x"], ast["y"])
-    # Factor in distance from asteroid to nearest trading post.
-    nearest_post = _nearest_entity(ast["x"], ast["y"], ctx.trading_posts)
-    dist_to_post = 10.0
-    if nearest_post:
-        dist_to_post = _distance(ast["x"], ast["y"],
-                                 nearest_post["x"], nearest_post["y"])
-    # Round-trip cost: getting there + getting to a trading post after.
-    round_trip = dist_to_ast + dist_to_post * 0.6
-    # Favour rich asteroids (nutrinium^1.3), penalise by round-trip distance.
-    score = (ast["nutrinium"] ** 1.3) / (round_trip + 1)
-    if score > best_score:
-        best_score = score
-        best_asteroid = ast
-
-if best_asteroid:
-    dist = _distance(ctx.x, ctx.y, best_asteroid["x"], best_asteroid["y"])
-    jump_cost = ctx.jump_energy_cost(dist)
-    # Jump aggressively -- walking wastes turns.
-    if dist > 2 and ctx.energy >= jump_cost + 10:
-        return _jump(best_asteroid)
-    # Walk towards asteroid.
-    return _move(_direction_towards(best_asteroid["x"] - ctx.x,
-                                   best_asteroid["y"] - ctx.y))
-
-# === 6. SELL remaining cargo if nothing to mine ===
-if ctx.nutrinium > 0:
-    nearest_post = _nearest_entity(ctx.x, ctx.y, ctx.trading_posts)
-    if nearest_post:
-        dist = _distance(ctx.x, ctx.y, nearest_post["x"], nearest_post["y"])
-        jump_cost = ctx.jump_energy_cost(dist)
-        if dist > 1 and ctx.energy >= jump_cost + 5:
-            return _jump(nearest_post)
-    return _move(_direction_towards(nearest_post["x"] - ctx.x,
-                                   nearest_post["y"] - ctx.y))
-
-return {"actionType": "WAIT"}
-
-# ------------------------------------------------
+# ----------------------------------------------------------------------------
 # Action-mask safety net (shared utils.action_masker)
-# ------------------------------------------------
+# ----------------------------------------------------------------------------
 _MASKER = "unset"  # sentinel -> the utils.action_masker module, or None on failure
 
-def get_masker():
+def _get_masker():
     """Lazily import and cache `utils.action_masker`. Returns the module or None.
 
     The `src` directory (parent of `bots`) is added to `sys.path` so the
@@ -269,7 +278,7 @@ def get_masker():
     result = None
     try:
         here = os.path.dirname(os.path.abspath(__file__))
-        src_dir = os.path.dirname(here)  # ../src
+        src_dir = os.path.dirname(here)  # .../src
         if src_dir not in sys.path:
             sys.path.insert(0, src_dir)
         from utils import action_masker
@@ -279,48 +288,49 @@ def get_masker():
     _MASKER = result
     return result
 
-def build_mask_state(ctx, masker):
+def _build_mask_state(ctx, masker):
     """Adapt the parsed prospector context into a `MaskState`.
-energy_costs = {
-    "mine": ctx.mine_cost,
-    "move": ctx.move_cost,
-    "attack": ctx.attack_cost,
-    "shields": ctx.shields_cost,
-    "jump": ctx.jump_unit_cost,
-    "plunder": ctx.plunder_cost,
-    "negotiate": ctx.negotiate_cost,
-}
-return masker.MaskState(
-    x=ctx.x,
-    y=ctx.y,
-    energy=ctx.energy,
-    health=ctx.health,
-    nutrinium=ctx.nutrinium,
-    credits=ctx.credits,
-    destroyed=(ctx.state == "DESTROYED"),
-    recharging=ctx.recharging,
-    just_recharged=False,
-    shield_state="DOWN",
-    shield_value=0,
-    shield_capacity=0,
-    shields_up=False,
-    modules=ctx.modules,
-    negotiate_post_id=None,
-    enemies=[],
-    asteroids=ctx.asteroids,
-    trading_posts=ctx.trading_posts,
-    wreckage=[],
-    map_width=ctx.map_w,
-    map_height=ctx.map_h,
-    max_energy=ctx.max_energy,
-    max_health=ctx.max_health,
-    energy_costs=energy_costs,
-    salvage_energy_cost=999,
-    repair_cost=0,
-    action_restrictions=ctx.action_restrictions,
-)
+    """
+    energy_costs = {
+        "mine": ctx.mine_cost,
+        "move": ctx.move_cost,
+        "attack": ctx.attack_cost,
+        "shields": ctx.shields_cost,
+        "jump": ctx.jump_unit_cost,
+        "plunder": ctx.plunder_cost,
+        "negotiate": ctx.negotiate_cost,
+    }
+    return masker.MaskState(
+        x=ctx.x,
+        y=ctx.y,
+        energy=ctx.energy,
+        health=ctx.health,
+        nutrinium=ctx.nutrinium,
+        credits=ctx.credits,
+        destroyed=(ctx.state == "DESTROYED"),
+        recharging=ctx.recharging,
+        just_recharged=False,
+        shield_state="DOWN",
+        shield_value=0,
+        shield_capacity=0,
+        shields_up=False,
+        modules=ctx.modules,
+        negotiate_post_id=None,
+        enemies=[],
+        asteroids=ctx.asteroids,
+        trading_posts=ctx.trading_posts,
+        wreckage=[],
+        map_width=ctx.map_w,
+        map_height=ctx.map_h,
+        max_energy=ctx.max_energy,
+        max_health=ctx.max_health,
+        energy_costs=energy_costs,
+        salvage_energy_cost=999,
+        repair_cost=0,
+        action_restrictions=ctx.action_restrictions,
+    )
 
-def action_name_to_id(masker, action, ctx):
+def _action_name_to_id(masker, action, ctx):
     """Map a response dict back to the env action id the masker validates."""
     at = action.get("actionType")
     payload = action.get("payload", {}) or {}
@@ -360,22 +370,24 @@ def _masked_to_response(ctx, action_id, masker):
     if action_id == masker.RESPAWN:
         return {"actionType": "RESPAWN"}
     if action_id == masker.MOVE_NORTH:
-        return move("N")
+        return _move("N")
     if action_id == masker.MOVE_SOUTH:
-        return move("S")
+        return _move("S")
     if action_id == masker.MOVE_EAST:
-        return move("E")
+        return _move("E")
     if action_id == masker.MOVE_WEST:
-        return move("W")
+        return _move("W")
     if action_id == masker.SELL:
-        return sell(ctx.nutrinium)
+        return _sell(ctx.nutrinium)
     if action_id == masker.JUMP_TO_ASTEROID:
         ast = _nearest_entity(ctx.x, ctx.y, [a for a in ctx.asteroids if a["nutrinium"] > 0])
-        return jump(ast) if ast else {"actionType": "WAIT"}
+        return _jump(ast) if ast else {"actionType": "WAIT"}
     if action_id == masker.JUMP_TO_TRADING_POST:
         post = _nearest_entity(ctx.x, ctx.y, ctx.trading_posts)
-        return jump(post) if post else {"actionType": "WAIT"}
+        return _jump(post) if post else {"actionType": "WAIT"}
     return {"actionType": "WAIT"}
+
+
 def _enforce(ctx, action):
     """Validate the heuristic's action via the shared masker; substitute if invalid."""
     masker = _get_masker()
