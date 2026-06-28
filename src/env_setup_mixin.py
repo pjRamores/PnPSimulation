@@ -10,7 +10,7 @@ and enemy-model loading/availability bookkeeping.
 from env_common import *
 
 
-# --- Archetype-biased skill distribution ------------------------------
+# --- Archetype-biased skill distribution -------------------------------------
 # The 19 spec skills grouped into 6 functional roles (covers every skill once).
 _SKILL_GROUPS = {
     'mining': ('mine_accuracy', 'mine_yield_multiplier', 'mine_cost', 'salvage_yield'),
@@ -490,14 +490,17 @@ class EnvSetupMixin:
 
         All ships share the same module set (a level playing field). Default mode
         'all' installs every module so jump/repair/salvage-heavy training is
-        unaffected; mode 'random' installs each module with 50% probability to
-        train module-gated behaviour; 'none' installs nothing. Controlled by
-        self.module_grant_mode.
+        unaffected; mode 'random' first picks the COUNT uniformly from
+        {0, 1, 2, 3} and then samples that may distinct modules at random (so
+        every count -- including name and all -- is equally likely, instead of the
+        binomial bias of independent per-module coin flips); 'none' installs
+        nothing. Controlled by self.module_grant_mode.
         """
         all_modules = ['JUMP', 'REPAIR', 'SALVAGE']
         mode = getattr(self, 'module_grant_mode', 'all')
         if mode == 'random':
-            return [m for m in all_modules if random.random() < 0.5]
+            count = random.randint(0, len(all_modules))
+            return random.sample(all_modules, count)
         if mode == 'none':
             return []
         return list(all_modules)
