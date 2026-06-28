@@ -218,7 +218,7 @@ class ProspectorsPiratesEnv(
                 'guaranteed_miss_chance': 0.05,
                 'guaranteed_hit_chance': 0.05,
                 'attack_shield_damage': 1.5,  # attackShieldDamage: shieldDmg = round(dmg*1.5)
-                'base_shield_resistance': 0.75,  # combat.baseShieldResistance (prod 0.25-0.82); + shield_strength*0.05
+                'base_shield_resistance': 0.75,  # combat.baseShieldResistance (prod 0.25-0.82); +shield_strength*0.05
                 'shield_resistance_cap': 0.9, # ceiling for base+shield_strength resistance (skill still adds value)
                 'recharge_penalty': 0.2,      # target recharging -> easier to hit
                 'shield_recharge_rate': 5,    # combat.shieldRechargeRate: DRAINING decay/tick + RAISE_SHIELDS cost divisor
@@ -347,7 +347,7 @@ class ProspectorsPiratesEnv(
         # BEFORE the base-config snapshot and the obs_size formula so that a spec
         # carrying an explicit sensor_range (e.g. WIDE_SENSOR_SPEC) drives BOTH the
         # observation_space sizing AND the game-mechanic config['sensor_range']
-        # (poopnent visibility + bot metadata) consistently. None -> DEFAULT_FULL_SPEC.
+        # (opponent visibility + bot metadata) consistently. None -> DEFAULT_FULL_SPEC.
         self.player_model_spec = player_model_spec or DEFAULT_FULL_SPEC
         _spec_sensor_range = self.player_model_spec.observation_spec.sensor_range
         if _spec_sensor_range is not None:
@@ -371,13 +371,13 @@ class ProspectorsPiratesEnv(
         #   ('uniform', lo, hi)  -> random.uniform(lo, hi)
         #   ('int', lo, hi)      -> random.randint(lo, hi)
         #   ('choice', [vals])   -> random.choice(vals)
-        #   ('group', [dicts])   -> pick one dict; appy all its dotted keys together
-        # Observation/action-shape-defining keys (map_width/height, sensor_range.
+        #   ('group', [dicts])   -> pick one dict; apply all its dotted keys together
+        # Observation/action-shape-defining keys (map_width/height, sensor_range,
         # top_asteroids_count, skill_point_budget) are intentionally excluded, as are
         # the values production keeps constant across rounds (jumpMinCost, plunder,
         # negotiate cost, shieldMaintenance, attackShieldDamage, rechargePenalty,
         # shieldRechargeRate, teamInsurance, salvage energyCost).
-        self._game_config_ranges= {
+        self._game_config_ranges = {
             'asteroid_density': ('uniform', 0.02, 0.12),
             'mining.payout_modifier': ('uniform', 0.01, 0.10),
             'max_energy': ('choice', [90, 100]),
@@ -392,10 +392,10 @@ class ProspectorsPiratesEnv(
             # Correlated asteroid mass/nutrinium regime: production pairs the small-mass
             # map (1-100) with minNutriniumPercent 0.01, and the large-mass map (50-500)
             # with 0.08. Sampling them together preserves that coupling.
-            '_mass_regine': ('group', [
+            '_mass_regime': ('group', [
                 {'asteroid_mass_min': 1, 'asteroid_mass_max': 100, 'nutrinium_min_percent': 0.01},
-                {'asteroid_mass_min': 50, 'asteroid_mass_max': 500, 'nutrinium_min_percent': 0.08}
-            ])
+                {'asteroid_mass_min': 50, 'asteroid_mass_max': 500, 'nutrinium_min_percent': 0.08},
+            ]),
         }
         if game_config_ranges:
             self._game_config_ranges.update(game_config_ranges)
@@ -550,13 +550,18 @@ class ProspectorsPiratesEnv(
         # + Top 5 asteroids (x, y, mass, nutrinium, distance, score) = 6 values each = 30 total
         # + Nearest trading post (x, y, distance) = 3 values
         # + Two enemy types at player location:
-        #   - Strongest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
-        #   - Weakest enemy (x, y, energy, health, nutrinium, credits, combat_score) = 7 values
-        # Total enemy info: 14 values
+        #   - Strongest enemy (x, y, energy, health, nutrinium, credits, combat_score, same_team) = 7 values
+        #   - Weakest enemy (x, y, energy, health, nutrinium, credits, combat_score, same_team) = 7 values
+        # Total enemy info: 16 values
 
         ship_state_size = 24  # Complete ship state (including action counter)
         strategic_context_size = 8  # High-signal strategic features
         sensor_grid_size = (2 * self.config['sensor_range'] + 1) ** 2
+        # FULL_NO_GRID layout: identical to FULL but the local sensor-grid block is
+        # dropped entirely, so the observation_space Box must exclude it. Detected via
+        # the player spec's observation_type (the generator omits the grid to match).
+        if self.player_model_spec.observation_spec.observation_type == 'full_no_grid':
+            sensor_grid_size = 0
         top_asteroids_size = self.config['top_asteroids_count'] * 6  # 5 asteroids * 6 features each
         # Spec-fidelity features (appended so legacy offsets stay stable):
         #   7 new skills + 5 shield-state + 3 modules + 3 team/economy
@@ -564,12 +569,24 @@ class ProspectorsPiratesEnv(
         spec_fidelity_size = 24
 
         trading_post_size = 3   # Nearest trading post (x, y, distance)
-        enemy_info_size = 14    # Strongest + weakest enemy at player location (7 each)
+        enemy_info_size = 16    # Strongest + weakest enemy at player location (8 each, incl. same_team)
 
         # Action-restriction matrix (appended last): 2 flags per action id
         # (allowedWhileRecharging, allowedWithShieldsUp) so the policy can adapt to
         # dynamic/randomized restrictions instead of treating them as constant.
         action_restriction_size = 2 * self.num_action_types
+
+        # Temporal/spatial features (appended at the very end so legacy offsets stay
+        # stable): remaining_time_fraction (game time left, 1.0 -> 0.0) and
+        # quadrant_norm (player's cell in a 3x3 map grid as a single normalized index).
+        temporal_spatial_size = 2
+
+        # Prey enemies (appended after temporal/spatial so legacy offsets stay stable):
+        # the top 3 weakest huntable enemies -- non-teammate, weaker attack AND defense
+        # than the player, sensor-visible, and holding nutrinium -- each as
+        # (x, y, nutrinium) = 3 values. Lets the policy chase prey when no mineable
+        # nutrinium is available. 3 prey * 3 = 9 values (zero-padded if fewer).
+        prey_info_size = 9
 
         obs_size = (
             ship_state_size +
@@ -579,8 +596,26 @@ class ProspectorsPiratesEnv(
             trading_post_size +
             enemy_info_size +
             spec_fidelity_size +
-            action_restriction_size
+            action_restriction_size +
+            temporal_spatial_size +
+            prey_info_size
         )
+
+        # The block sum above describes the FULL observation family (FULL,
+        # WIDE_SENSOR via a wider sensor_grid_size, and FULL_NO_GRID via
+        # sensor_grid_size=0). The COMPACT and SENSOR_ONLY generators emit a
+        # layout instead -- otherwise reset() would return an observation whose
+        # shape disagrees with observation_space. Both reuse the same config-driven
+        # block sizes already computed above (top_asteroids_count, sensor_range), so
+        # there are no magic numbers and the sensor-window coupling is preserved.
+        _player_obs_type = self.player_model_spec.observation_spec.observation_type
+        if _player_obs_type == 'compact':
+            # CompactObservationGenerator: 8 ship essentials + top-asteroids block
+            # + nearest trading post (3) + strongest/weakest enemy block.
+            obs_size = 8 + top_asteroids_size + trading_post_size + enemy_info_size
+        elif _player_obs_type == 'sensor_only':
+            # SensorOnlyObservationGenerator: 6 ship essentials + local sensor grid.
+            obs_size = 6 + (2 * self.config['sensor_range'] + 1) ** 2
 
         # Use Dict observation space to support action masking
         self.observation_space = spaces.Dict({
