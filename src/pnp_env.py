@@ -697,10 +697,10 @@ class ProspectorsPiratesEnv(
         return restrictions
 
     def _set_config_value(self, dotted_key: str, value) -> None:
-        """Set a (possible nested) config value addressed by a dotted key.
+        """Set a (possibly nested) config value addressed by a dotted key.
 
-        e.t. ``_set_config_value('combat.base_shield_resistance', 0.8)`` writes
-        ``self.cofig['combat']['base_shield_resistance'] = 0.8``. Missing
+        e.g. ``_set_config_value('combat.base_shield_resistance', 0.8)`` writes
+        ``self.config['combat']['base_shield_resistance'] = 0.8``. Missing
         intermediate keys are skipped silently so unknown overrides are no-ops.
         """
         parts = dotted_key.split('.')
@@ -721,7 +721,7 @@ class ProspectorsPiratesEnv(
         1. Restore from the immutable production baseline (``_base_game_config``).
         2. If ``randomize_game_config``: sample each ranged key via the env's seeded
            ``random`` module (deterministic given the reset seed).
-        3. If ``gamme_config_overrides``: apply explicit pins last sothey always win
+        3. If ``game_config_overrides``: apply explicit pins last so they always win
            (used to replay a real production metadata block during evaluation).
 
         Observation/action-shape-defining keys (map size, sensor_range,
@@ -738,6 +738,8 @@ class ProspectorsPiratesEnv(
                     self._set_config_value(key, random.uniform(spec[1], spec[2]))
                 elif kind == 'int':
                     self._set_config_value(key, random.randint(spec[1], spec[2]))
+                elif kind == 'choice':
+                    self._set_config_value(key, random.choice(spec[1]))
                 elif kind == 'group':
                     chosen = random.choice(spec[1])
                     for group_key, group_val in chosen.items():
@@ -755,9 +757,7 @@ class ProspectorsPiratesEnv(
             random.seed(seed)
             np.random.seed(seed)
 
-        self.current_step = 0
-
-        # Sample this episode's SQUAre map size (width == height) when randomization is
+        # Sample this episode's SQUARE map size (width == height) when randomization is
         # enabled. Must run before _sample_episode_config() and any asteroid/trading-
         # post/ship generation so the whole episode is self-consistent; asteroid and
         # trading-post counts scale automatically with map area. Uses the env-seeded
@@ -771,6 +771,8 @@ class ProspectorsPiratesEnv(
         # and pins). Must run before any asteroid/trading-post/ship generation so the
         # whole episode is self-consistent. action_restrictions are (re)set just below.
         self._sample_episode_config()
+
+        self.current_step = 0
 
         # Reset action tracking
         self.action_counter = 0  # Reset action counter for new episode
