@@ -848,23 +848,23 @@ class EnvActionsMixin:
             'def_energy': target_energy_before,
         }
 
-        # Teammate-attack penalty: the attack is not blocked (friend/foe enforcement is
+        # Teammate-attack penalty: the attack is NOT blocked (friend/foe enforcement is
         # left to the acting logic), but when the PLAYER strikes a ship on its own team
         # a configurable penalty is folded into the action reward to discourage it.
-        team_penalty = 0.0
+        teammate_penalty = 0.0
         if is_player:
             target_team = target.get('team_id')
             player_team = self.player_ship.get('team_id', 0)
             player_team = int(player_team) if player_team is not None else 0
             if target_team is not None and int(target_team) == player_team:
-                teammate_penalty = getattr(self.reward_config, 'attack_teammate_penalty', 0.5)
+                teammate_penalty = getattr(self.reward_config, 'attack_teammate_penalty', -0.5)
                 combat_details['attacked_teammate'] = True
 
         if not hit:
             combat_details['hit'] = False
             combat_details['def_health'] = f"{target_health_before}->{target['health']}"
             # Missing still cost the payload; small penalty to discourage spray-and-pray.
-            return -0.05 + team_penalty, False, combat_details
+            return -0.05 + teammate_penalty, False, combat_details
 
         # --- Damage: payload scaled by attack_power (+10%/pt) and a random spread.
         avg_multiplier = 1.0 + self._skill(ship, 'attack_power') * 0.1
@@ -929,13 +929,13 @@ class EnvActionsMixin:
             combat_details['destroyed'] = True
             combat_details['wreckage_nutrinium'] = wreckage_nutr
 
-            return reward + team_penalty, True, combat_details
+            return reward + teammate_penalty, True, combat_details
         else:
             # Successful hit but target survived. Small reward; combat is a means to an end.
             combat_details['destroyed'] = False
             combat_details['target_health'] = target['health']
 
-            return 0.02 + team_penalty, True, combat_details
+            return 0.02 + teammate_penalty, True, combat_details
 
     def _update_combat_states(self):
         """
