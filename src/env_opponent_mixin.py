@@ -337,13 +337,20 @@ class EnvOpponentMixin:
         shape matches production while the bots' consumed fields stay intact.
         """
         sensor_range = self.config['sensor_range']
+        # The sensor_range ability widens the entity-DETECTION window only (more
+        # candidates feed the fixed-size obs summary segments). The size-defining
+        # local grid and metadata.sensors.range stay at the BASE range so the
+        # reconstructed observation dimension never changes. Mirrors production,
+        # where effective detection range = base sensors.range + sensor_range skill.
+        _sensor_skill = int((ship.get('abilities') or {}).get('sensor_range', 0) or 0)
+        effective_range = sensor_range + max(0, _sensor_skill)
         sx, sy = ship['x'], ship['y']
         game_id = id(ship)
         tick = getattr(self, 'current_step', 0)
         round_no = getattr(self, 'current_round', 0)
 
         def in_range(ex, ey):
-            return max(abs(ex - sx), abs(ey - sy)) <= sensor_range
+            return max(abs(ex - sx), abs(ey - sy)) <= effective_range
 
         def ship_view(s: dict) -> dict:
             """Server-shaped view of a ship (used for ``me`` and ship sensors)."""
@@ -378,7 +385,7 @@ class EnvOpponentMixin:
         # cells inside the sensor window (O(window)) instead of scanning every
         # entity (O(all)). _entities_in_window returns them in original list order
         # so the emitted sensors list is identical to the legacy full scan.
-        for a in self._entities_in_window('asteroids', sx, sy, sensor_range):
+        for a in self._entities_in_window('asteroids', sx, sy, effective_range):
             sensors.append({
                 'gameId': game_id,
                 'location': {'x': a['x'], 'y': a['y']},
@@ -388,7 +395,7 @@ class EnvOpponentMixin:
                 'round': round_no,
                 'type': 'asteroid',
             })
-        for tp in self._entities_in_window('trading_posts', sx, sy, sensor_range):
+        for tp in self._entities_in_window('trading_posts', sx, sy, effective_range):
             sensors.append({
                 'gameId': game_id,
                 'id': tp.get('id'),
