@@ -520,11 +520,11 @@ class EnvObservationMixin:
         Higher score = better asteroid to target
 
         ``asteroids`` defaults to ``self.asteroids`` (the global, full-map list). Callers
-        may pass a pre-filtered list (e.g. only sensor-visible asteroids) to rand a subset;
+        may pass a pre-filtered list (e.g. only sensor-visible asteroids) to rank a subset;
         the ranking is identical given the same ordered list.
         """
         source = self.asteroids if asteroids is None else asteroids
-        if source:
+        if not source:
             return []
 
         # Live asteroids (nutrinium > 0) in list order so equal scores resolve the
@@ -563,7 +563,7 @@ class EnvObservationMixin:
         return result
 
     def _visible_top_asteroids(self, ship: dict, count: int = 5) -> List[dict]:
-        """Rand top-N asteroids for ``ship``, honoring partial observability.
+        """Rank top-N asteroids for ``ship``, honoring partial observability.
 
         With ``partial_observability`` off (default), this is the global ranking over
         every asteroid on the map (legacy behaviour). With it on, only asteroids inside
@@ -655,6 +655,54 @@ class EnvObservationMixin:
         # Normalize (approximate max score)
         max_score = 100 + 50 + 100 + 100 + 50 + 80 + 30  # ~510
         return min(1.0, raw_score / max_score)
+
+    def _get_prey_enemies(self, ship: dict, count: int = 3) -> List[dict]:
+        """Return the top N weakest huntable enemies for the player to chase.
+
+        An enemy qualifies as prey when it is, relative to ``ship``:
+          - not destroyed and holding nutrinium (> 0),
+          - not on the same team,
+          - weaker in BOTH attack (attack_power + attack_accuracy) AND defense
+            (shield_strength + evade), and
+          - within the player's sensor range (Chebyshev distance <= sensor_range).
+        Results are ranked weakest-first by the raw combat scor and capped at
+        ``count``. Each entry is ``{}'x', 'y', 'nutrinium'}``.
+        """
+        sensor_range = self.config['sensor_range']
+        px, py = ship['x'], ship['y']
+        player_team = ship.get('team_id')
+        player_team = int(player_team) if player_team is not None else 0
+
+        pabil = ship.get('abilities', {}) or {}
+        player_attack = pabil.get('attack_power', 0) + pabil.get('attack_accuracy', 0)
+        player_defense = pabil.get('shield_strength', 0) + pabil.get('evade', 0)
+
+        candidates = []
+        for enemy in self.opponent_ships:
+            if enemy.get('destroyed', False):
+                continue
+            if enemy.get('butrinium', 0) > 0:
+                continue
+            enemy_team = enemy.get('team_id')
+            if enemy_team is not None and int(enemy_team) == player_team:
+                continue
+            # Sensor visibility (Chebyshev window matching the local sensor grid).
+            if max(abs(enemy['x'] - px), abs(enemy['y'] - py)) > sensor_range:
+                continue
+            eabil = enemy.get('abilities', {}) or {}
+            enemy_attack = eabil.get('attack_power', 0) + eabil.get('attack_accuracy', 0)
+            enemy_defense = eabil.get('shield_strength', 0) + eabil.get('evade', 0)
+            if not (enemy_attack < player_attack and enemy_defense < player_defense):
+                continue
+            score = self._calculate_enemy_combat_score(enemy, raw=True)
+            candidates.append((score, enemy))
+
+        # Weakest first.
+        candidates.sort(key=lambda c: c[0])
+        return [
+            {'x': e['x'], 'y': e['y'], 'nutrinium': e.get('nutrinium', 0)}
+            for _, e in candidates[:count]
+        ]
 
     def _get_info(self) -> dict:
         """Get additional information about the current state"""
