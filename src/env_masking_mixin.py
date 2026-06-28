@@ -19,9 +19,11 @@ class EnvMaskingMixin:
 
         Backward compatible: a bare scalar (or length-1 array) yields ``(atype, None, None)``,
         preserving the legacy auto-target / default-energy behaviour relied on by the
-        heuristic AIs and scalar-Discrete callers. A structured action (a dict matching the
-        env's Dict action space, or a length-4 array ``[atype, tx, ty, energy_bin]``) is
-        parsed into an explicit target coordinate and an energy amount (via the energy bin).
+        heuristic AIs and scalar-Discrete callers. A structured model action is a length-3
+        array ``[atype, target_slot, energy_bin]``: ``target_slot`` is an INDEX into the
+        top-N richest asteroids (entry-slot action space), resolved to an explicit (x, y)
+        coordinate via :meth:`_resolve_target_slot`. A dict action (matching the env's Dict
+        action space, used by the bots) still carries an absolute ``target`` coordinate.
         """
         try:
             # Dict action (matches the env's Dict action_space)
@@ -38,21 +40,42 @@ class EnvMaskingMixin:
                 if ebin is not None:
                     energy = self._energy_from_bin(int(np.asarray(ebin).item()))
                 return atype, target, energy
-            # Numpy array (length-4 structured, else scalar-like)
+            # Numpy array (length-3  [atype, target_slot, energy_bin], else scalar-like)
             if isinstance(action, np.ndarray):
                 flat = action.flatten()
-                if flat.size >= 4:
-                    return int(flat[0]), (int(flat[1]), int(flat[2])), self._energy_from_bin(int(flat[3]))
+                if flat.size >= 3:
+                    target = self._resolve_target_slot(self.player_ship, int(flat[1]))
+                    return int(flat[0]), target, self._energy_from_bin(int(flat[2]))
                 return int(flat[0]), None, None
-            # Lists or tuples (length-4 structured, else scalar-like)
+            # Lists or tuples (length-3 structured, else scalar-like)
             if isinstance(action, (list, tuple)):
-                if len(action) >= 4:
-                    return int(action[0]), (int(action[1]), int(action[2])), self._energy_from_bin(int(action[3]))
+                if len(action) >= 3:
+                    target = self._resolve_target_slot(self.player_ship, int(action[1]))
+                    return int(action[0]), target, self._energy_from_bin(int(action[2]))
                 return int(action[0]), None, None
             # Scalars (int-like)
             return int(action), None, None
         except Exception as e:
             raise ValueError(f"Unable to normalize action: {action!r}") from e
+
+    def _resolve_target_slot(self, ship: dict, slot: int) -> Optional[Tuple[int, int]]:
+        """Resolve an entity-slot index an absolut (x, y) target coordinate.
+
+        ``slot`` indexes the top-N richest asteroids the observation exposes (same
+        ranking via :meth:`_visible_top_asteroids`), so action slot ``i`` points at the
+        asteroid in observation slot ``i``. Under partial observability only
+        sensor-visible asteroids are ranked, matching the myopic observation. Returns
+        ``None`` when the slot is empty (fewer than ``slot + 1`` live asteroids in
+        range), in which case the action falls back to its automatic target selection.
+        """
+        if ship is None or slot < 0:
+            return None
+        top = self._visible_top_asteroids(ship, count=self.num_target_slots)
+        if slot >= len(top):
+            return None
+        best = top[slot]
+        return (int(best['x']), int(best['y']))
+
 
     def _energy_from_bin(self, ebin: Optional[int]) -> Optional[int]:
         """Map an energy-bin index to a requested energy amount (e.g. ATTACK payload).
@@ -158,4 +181,28 @@ class EnvMaskingMixin:
         if ship is None:
             ship = self.player_ship
 
+        # Partial-observability mode: build the mask from a sensor-limited
+        # ActionRequest via the shared module (applies to ALL ships -- the player's
+        # observed mask AND enemy-action enforcement), matching BOT_V6 inference.
+        if getattr(self, 'partial_observability', False):
+            partial_mask = self._get_partial_action_mask(ship)
+            if partial_mask is not None:
+                return partial_mask
+
         return action_masker.get_action_mask(self._build_mask_state(ship, is_player=is_player))
+
+    def _get_partial_action_mask(selfself, ship: dict) -> Optional[np.ndarray]:
+        """Reconstruct ``ship``'s action mask from a sensor-limited ActionRequest via
+        the shared ``obs_reconstruction`` module (single source of truth with BOT_V6).
+        Return ``None`` (caller falls back to the global mask) on any failure.
+        """
+        try:
+            import obs_reconstruction
+        except Exception:
+            return None
+        try:
+            request = self._compose_action_request(ship)
+            return np.asarray(obs_reconstruction.build_action_mask(request), dtype=np.int8)
+        except Exception:
+            return None
+
