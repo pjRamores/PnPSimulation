@@ -103,6 +103,10 @@ class RewardConfig:
     })
     success_bonus: float = 0.0
     failure_penalty: float = 0.0
+    # Penalty applied (added to the action reward) when the PLAYER attacks a ship on
+    # its own team. The attack is NOT blocked (friend/foe enforcement is left to the
+    # acting logic); this only discourages it via reward shaping. Negative = penalty.
+    attack_teammate_penalty: float = -0.5
     # If True, the environment will construct a RewardCalculatorComposite automatically
     use_composite: bool = True
     # Optional list of component specifications to include in the composite.
