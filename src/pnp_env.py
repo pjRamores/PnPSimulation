@@ -83,46 +83,60 @@ class ProspectorsPiratesEnv(
             start_position_config_path: Path to starting position configuration file (default: 'start_positions.config')
             enemy_models_config_path: Path to enemy models configuration file (default: 'enemy_models.config')
             terminate_on_player_death: If True, episode terminates when player is destroyed (default: True for training, False for full simulation)
-            map_size_range: Optional (min, max) typle. When set, reset() samples a fresh
+            map_size_range: Optional (min, max) tuple. When set, reset() samples a fresh
                 SQUARE map side length (map_width == map_height) uniformly in [min, max]
                 every episode, so the policy is robust to per-round map-size variation.
                 Asteroid and trading-post counts scale automatically with map area, and
-                the observation/action shpares are unchanged. Default None keeps the fixed
+                the observation/action shapes are unchanged. Default None keeps the fixed
                 map_width/map_height passed to the constructor.
             randomize_game_config: If True, sample the per-round-varying game-mechanic config
-               (asteroid density, mass regine, payout modifier, energy/jump/shield costs,
-               shield resistance, hit chance, sell price, ...) within production-derived
-               ranges every reset() so the policy is robust to the real config distribution.
-               Observation/action-shapre-defining keys (map size, sensor_range) are never
-               randomized. Default False keeps a deterministic, fixed config.
+                (asteroid density, mass regime, payout modifier, energy/jump/shield costs,
+                shield resistance, hit chance, sell price, ...) within production-derived
+                ranges every reset() so the policy is robust to the real config distribution.
+                Observation/action-shape-defining keys (map size, sensor_range) are never
+                randomized. Default False keeps a deterministic, fixed config.
             game_config_overrides: Optional dict of dotted config keys -> values that are
-               pinned every episode AFTER any randomization (e.g. to replay a real
-               production metadata block during evaluation). Example:
-               {'asteroid_density': 0.22, 'combat.base_shield_resistance': 0.75}.
+                pinned every episode AFTER any randomization (e.g. to replay a real
+                production metadata block during evaluation). Example:
+                {'asteroid_density': 0.11, 'combat.base_shield_resistance': 0.75}.
             game_config_ranges: Optional dict merged into the default randomization ranges
-               (some dotted-key format) to override/extend sampled ranges.
+                (same dotted-key format) to override/extend sampled ranges.
             player_model_spec: Optional ModelSpec selecting the PLAYER's observation
-               encoding. Defaults to DEFAULT_FULL_SPEC (275-dim, sensor window 5). When
-               the spec's observation_spec.sensor_range is set, the env sizes ites
-               observation_space from it AND (per game-mechanic coupling) overrides
-               config['sensor_range'] to match (e.g. WIDE_SENSOR_SPEC -> window 10,
-               595-dim, bots ses range 10).
+                encoding. Defaults to DEFAULT_FULL_SPEC (275-dim, sensor window 5). When
+                the spec's observation_spec.sensor_range is set, the env sizes its
+                observation_space from it AND (per game-mechanic coupling) overrides
+                config['sensor_range'] to match (e.g. WIDE_SENSOR_SPEC -> window 10,
+                595-dim, bots see range 10).
             partial_observability: When True, the PLAYER's observation and action mask
-               are reconstructed from a sensor-limited ActionRequest (shared with
-               BOT_V6 inference via obs_reconstruction), giving exact train/inference
-               parity. Default False keeps the legacy global-visibility encoding.
+                are reconstructed from a sensor-limited ActionRequest (shared with
+                BOT_V6 inference via obs_reconstruction), giving exact train/inference
+                parity. Default False keeps the legacy global-visibility encoding.
             module_grant_mode: Policy for which module-locked actions (JUMP, REPAIR,
-               SALVAGE) are installed each episode. 'all' (default) installs every
-               module so jump/repair/salvage training is unaffected; 'random' picks the
-               count uniformly from {0, 1, 2, 3} then samples that many modules (every
-               count equally likely) to train module-gated behaviour;
-               'none' install nothing. All ships share the same set (level playing
-               field). Does not change the observation layout.
+                SALVAGE) are installed each episode. 'all' (default) installs every
+                module so jump/repair/salvage training is unaffected; 'random' picks the
+                count uniformly from {0, 1, 2, 3} then samples that many modules (every
+                count equally likely) to train module-gated behaviour;
+                'none' installs nothing. All ships share the same set (level playing
+                field). Does not change the observation layout.
         """
         super().__init__()
 
         self.map_width = map_width
         self.map_height = map_height
+        # Optional per-episodes SQUAre map-size randomization (width == height). When
+        # set to (min, max), reset() samples a fresh side length each episode so the
+        # policy is robust to the per-round map-size variation seen in real games.
+        # The observation/action shapes are unchanged (only normalized obs *values*
+        # depend on map size, and the spatial deltas/distances are scale-free).
+        if map_size_range is not None:
+            lo, hi = int(map_size_range[0]), int(map_size_range[1])
+            if lo < 1 or hi < lo:
+                raise ValueError(
+                    f"map_size_range must be (min, max) with 1 <= min <= max, got {map_size_range}"
+                )
+            self.map_size_range = (lo, hi)
+        else:
+            self.map_size_range = None
         self.num_opponents = num_opponents
         self.forced_opponent_types = forced_opponent_types
         if forced_opponent_types:
@@ -131,6 +145,8 @@ class ProspectorsPiratesEnv(
         self.render_mode = render_mode
         self.terminate_on_player_death = terminate_on_player_death
         self.randomize_action_restrictions = bool(randomize_action_restrictions)
+        self.randomize_game_config = bool(randomize_game_config)
+        self.game_config_overrides = dict(game_config_overrides) if game_config_overrides else None
         # Rendering overrides
         self.cell_width = cell_width
         self.minimap_mode = bool(minimap_mode)
@@ -159,7 +175,12 @@ class ProspectorsPiratesEnv(
         self._observation_generators = {}  # Cache of generators {spec_type: generator}
 
         # Module grant policy for module-locked actions ('all' | 'random' | 'none').
-        self.module_grant_mode = 'all'
+        if module_grant_mode not in ('all', 'random', 'none'):
+            raise ValueError(
+                "module_grant_mode must be one of 'all', 'random', 'none';"
+                f"got {module_grant_mode!r}"
+            )
+        self.module_grant_mode = module_grant_mode
 
         # Game configuration (spec-accurate; mirrors live metadata.* structure).
         # See docs_game/game_concepts.md and docs_game/actions.md for the source of
@@ -197,9 +218,10 @@ class ProspectorsPiratesEnv(
                 'guaranteed_miss_chance': 0.05,
                 'guaranteed_hit_chance': 0.05,
                 'attack_shield_damage': 1.5,  # attackShieldDamage: shieldDmg = round(dmg*1.5)
-                'base_shield_resistance': 0.25,  # +shield_strength/20, max 0.75
+                'base_shield_resistance': 0.75,  # combat.baseShieldResistance (prod 0.25-0.82); + shield_strength+0.05
+                'shield_resistance_cap': 0.9, # ceiling for base+shield_strength resistance (skill still adds value)
                 'recharge_penalty': 0.2,      # target recharging -> easier to hit
-                'shield_recharge_rate': 10,   # DRAINING decay/tick + RAISE_SHIELDS cost divisor
+                'shield_recharge_rate': 5,    # combat.shieldRechargeRate: DRAINING decay/tick + RAISE_SHIELDS cost divisor
                 'base_shield_capacity': 100,  # +shield_capacity*10
                 'damage_variance': 0.5,       # +-50% damage spread (energy*0.5..1.5)
                 'default_attack_payload': 20, # energy committed per ATTACK when no bin chosen (scalar action space)
@@ -215,7 +237,7 @@ class ProspectorsPiratesEnv(
             },
             'market': {
                 'sell_nutrinium': 98,         # metadata.market.sell.nutrinium (base; fluctuates)
-                'repair': 50,                 # metadata.market.buy.repair (REPAIR credit cost)
+                'repair': 100,                 # metadata.market.buy.repair (REPAIR credit cost)
                 'nutrinium_price': 98,         # legacy alias of sell_nutrinium
                 'ship_cost': 100,             # legacy alias (old respawn path; removed in P8)
                 # Dynamic market: price drifts toward base, dips on simultaneous sells.
@@ -225,20 +247,21 @@ class ProspectorsPiratesEnv(
             },
             'team_insurance': {
                 # metadata.teamInsurance: respawn cost per member = base*(1+escalation*N)
-                'base_cost_per_member': 10,
-                'cost_escalation': 1.0,
+                'base_cost_per_member': 5,
+                'cost_escalation': 5.0,
             },
             'negotiate': {
-                'base_success_chance': 0.4,   # negotiate_skill shifts succ up / fail down
-                'base_fail_chance': 0.2,
-                'min_fail_chance': 0.05,      # fail can never reach 0
+                'base_success_chance': 0.3,   # negotiate.baseSuccessChance; negotiate_skill shifts succ up / fail down
+                'base_fail_chance': 0.25,     # negotiate.baseFailChance
+                'min_fail_chance': 0.02,      # negotiate.minFailChance: fail can never reach 0
+                'skill_modifier_per_point': 0.02,  # negotiate.skillModifierPerPoint: succ/fail shift per negotiate_skill
                 'bonus_gain': 0.05,           # team bonus increase on SUCCESS (+negotiate_ambition*10%)
-                'bonus_penalty': 0.05,        # team bonus decrease on FAIL (-negotiate_caution*8%)
+                'bonus_penalty': 0.02,        # team bonus decrease on FAIL (-negotiate_caution*8%)
                 'max_team_bonus': 1.0,        # diminishing-returns ceiling
             },
             'salvage': {
                 'wreckage_percent': 0.5,      # portion of destroyed nutrinium left as wreckage
-                'energy_cost': 5,             # metadata.salvage.energyCost
+                'energy_cost': 3,             # metadata.salvage.energyCost
             },
             'asteroid_density': 0.11,      # production mapConfig.asteroidDensity
             # Trading posts scale with map area. ``trading_post_density`` is derived
@@ -249,7 +272,7 @@ class ProspectorsPiratesEnv(
             'trading_post_count': None,         # explicit override; None -> derive from density
             'trading_post_density': 0.0015360,  # posts per cell (production: 24/15625)
             'trading_post_min': 4,              # floor for small maps
-            'sensor_range': 5,              # base; extended by sensor_range skill
+            'sensor_range': 5,              # metadata.sensors.range (prod 5-14); default obs window (WIDE_SENSOr_SPEC widens to 10)
             # Nutrinium distribution (production concentration model).
             # Each asteroid's nutrinium = round(concentration * mass), where
             #   concentration = nutrinium_min_percent
