@@ -8,6 +8,32 @@ episode info dict.
 from env_common import *
 from utils import action_masker
 
+# Map-size-invariant spatial encoding. Direction deltas and distances are
+# normalized by a FIXED reference length (in cells) instead of the map
+# dimensions, so identical relative geometry yields identical observation
+# values on any map size. ~50 cells ≅ one default jump radius ("is the target
+# within a jump?"). Absolute positions stay map-fration (x / map_width) by
+# design - "where am I on the map" is genuinely map-relative.
+_SPATIAL_REF = 50.0
+
+
+def _scaled_delta(d: float) -> float:
+    """Scale a signed coordinate delta to [-1, 1] by a fixed reference length.
+
+    Preserves direction (sign) and near-field magnitude; saturates for targets
+    farther than ``_SPATIAL_REF`` cells. Map-size invariant.
+    """
+    return max(-1.0, min(1.0, d / _SPATIAL_REF))
+
+
+def _scaled_distance(dist: float) -> float:
+    """Scale a non-negative distance to [0, 1) via dist / (dist _ ref).
+
+    Smooth and monotonic (no hard clip), 0 at distance 0 and approaching 1 for
+    large distances. Map-size invariant.
+    """
+    return dist / (dist + _SPATIAL_REF)
+
 
 class EnvObservationMixin:
     """Observation construction and per-ship spec plumbing."""
@@ -65,6 +91,28 @@ class EnvObservationMixin:
         gen = self._get_observation_generator(spec.observation_spec)
         return gen.generate(ship)
 
+    def _get_partial_observation(self) -> Optional[Dict[str, np.ndarray]]:
+        """Reconstruct the PLAYER's observation + action mask from a sensor-limited
+        ActionRequest, using the same ``obs_reconstruction`` module BOT_V6 uses at
+        inference. This gives byte-identical train/inference parity under partial
+        observability. Returns ``None`` (caller falls back to the legacy/spec path)
+        if the shared module is unavailable or reconstruction fails.
+        """
+        try:
+            import obs_reconstruction
+        except Exception:
+            return None
+        try:
+            request = self._compose_action_request(self.player_ship)
+            obs_vec = obs_reconstruction.build_observation(request, self.player_model_spec)
+            mask = obs_reconstruction.build_action_mask(request)
+            return {
+                'observation': np.asarray(obs_vec, dtype=np.float32),
+                'action_mask': np.asarray(mask, dtype=np.int8)
+            }
+        except Exception:
+            return None
+
     def _get_observation(self, skip_mask: bool = False, use_spec: bool = True) -> Dict[str, np.ndarray]:
         """Get the current observation with enhanced ship state and entity info.
 
@@ -73,7 +121,19 @@ class EnvObservationMixin:
                        Used for enemy observations where the mask is not needed.
             use_spec: If True, use the ship's assigned ModelSpec for observation generation.
                       If False, use the legacy full observation method.
+            include_sensor_grid: If True (default), include the local sensor grid block
+                        ((2*sensor_range+1)^2 values). If False, omit it entirely, producing
+                        the FULL_NO_GRID layout (full observation minus the local sensor grid).
         """
+        # Partial-observability mode: reconstruct the PLAYER observation + mask from
+        # a sensor-limited ActionRequest via the shared module, byte-identical to what
+        # a delegating BOV_V6 sees at inference. The recursion guard ensures inner
+        # generators (which may call _get_observation) still use the legacy path.
+        if getattr(self, 'partial_observability', False) and not getattr(self, '_generating_observation', False):
+            partial = self._get_partial_observation()
+            if partial is not None:
+                return partial
+
         # If using model spec system, delegate to generator (but only if not already generating)
         if use_spec and not getattr(self, '_generating_observation', False):
             return self._generate_observation_for_ship(self.player_ship)
@@ -149,20 +209,20 @@ class EnvObservationMixin:
         )
         obs.append(1.0 if enemy_here else 0.0)
 
-        # 5-6. Direction to best asteroid (dx, dy normalized to [-1, 1])
+        # 5-6. Direction to best asteroid (dx, dy, scale-free / map-size invariant)
         top_ast = self._get_top_asteroids(ship['x'], ship['y'], count=1)
         if top_ast:
-            dx_ast = (top_ast[0]['x'] - ship['x']) / max(1, self.map_width)
-            dy_ast = (top_ast[0]['y'] - ship['y']) / max(1, self.map_height)
+            dx_ast = _scaled_delta(top_ast[0]['x'] - ship['x'])
+            dy_ast = _scaled_delta(top_ast[0]['y'] - ship['y'])
         else:
             dx_ast, dy_ast = 0.0, 0.0
         obs.extend([dx_ast, dy_ast])
 
-        # 7-8. Direction to nearest trading post (dx, dy normalized to [-1, 1])
+        # 7-8. Direction to nearest trading post (dx, dy, scale-free)
         nearest_tp = self._get_nearest_entity(ship['x'], ship['y'], self.trading_posts)
         if nearest_tp:
-            dx_tp = (nearest_tp['x'] - ship['x']) / max(1, self.map_width)
-            dy_tp = (nearest_tp['y'] - ship['y']) / max(1, self.map_height)
+            dx_tp = _scaled_delta(nearest_tp['x'] - ship['x'])
+            dy_tp = _scaled_delta(nearest_tp['y'] - ship['y'])
         else:
             dx_tp, dy_tp = 0.0, 0.0
         obs.extend([dx_tp, dy_tp])
