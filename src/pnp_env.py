@@ -550,8 +550,8 @@ class ProspectorsPiratesEnv(
         # + Top 5 asteroids (x, y, mass, nutrinium, distance, score) = 6 values each = 30 total
         # + Nearest trading post (x, y, distance) = 3 values
         # + Two enemy types at player location:
-        #   - Strongest enemy (x, y, energy, health, nutrinium, credits, combat_score, same_team) = 7 values
-        #   - Weakest enemy (x, y, energy, health, nutrinium, credits, combat_score, same_team) = 7 values
+        #   - Strongest enemy (x, y, energy, health, nutrinium, credits, combat_score, same_team) = 8 values
+        #   - Weakest enemy (x, y, energy, health, nutrinium, credits, combat_score, same_team) = 8 values
         # Total enemy info: 16 values
 
         ship_state_size = 24  # Complete ship state (including action counter)
@@ -604,6 +604,7 @@ class ProspectorsPiratesEnv(
         # The block sum above describes the FULL observation family (FULL,
         # WIDE_SENSOR via a wider sensor_grid_size, and FULL_NO_GRID via
         # sensor_grid_size=0). The COMPACT and SENSOR_ONLY generators emit a
+        # different, smaller layout, so size the observation_space Box from THEIR
         # layout instead -- otherwise reset() would return an observation whose
         # shape disagrees with observation_space. Both reuse the same config-driven
         # block sizes already computed above (top_asteroids_count, sensor_range), so
@@ -695,6 +696,57 @@ class ProspectorsPiratesEnv(
                     rule[flag] = bool(random.getrandbits(1))
         return restrictions
 
+    def _set_config_value(self, dotted_key: str, value) -> None:
+        """Set a (possible nested) config value addressed by a dotted key.
+
+        e.t. ``_set_config_value('combat.base_shield_resistance', 0.8)`` writes
+        ``self.cofig['combat']['base_shield_resistance'] = 0.8``. Missing
+        intermediate keys are skipped silently so unknown overrides are no-ops.
+        """
+        parts = dotted_key.split('.')
+        node = self.config
+        for part in parts[:-1]:
+            if not isinstance(node, dict) or part not in node:
+                return
+            node = node[part]
+        if isinstance(node, dict):
+            node[parts[-1]] = value
+
+    def _sample_episode_config(self) -> None:
+        """Restore the baseline game config, then (optionally) randomize and/or pin it.
+
+        Called at the top of reset() before asteroids/posts/ships are generated so the
+        whole episode runs against one self-consistent config. Order of precedence:
+
+        1. Restore from the immutable production baseline (``_base_game_config``).
+        2. If ``randomize_game_config``: sample each ranged key via the env's seeded
+           ``random`` module (deterministic given the reset seed).
+        3. If ``gamme_config_overrides``: apply explicit pins last sothey always win
+           (used to replay a real production metadata block during evaluation).
+
+        Observation/action-shape-defining keys (map size, sensor_range,
+        top_asteroids_count) are never sampled, so the spaces stay fixed.
+        """
+        # Always start each episode from the immutable production baseline. Reassigning
+        # self.config is safe because every consumer reads it live (no cached copies).
+        self.config = copy.deepcopy(self._base_game_config)
+
+        if self.randomize_game_config:
+            for key, spec in self._game_config_ranges.items():
+                kind = spec[0]
+                if kind == 'uniform':
+                    self._set_config_value(key, random.uniform(spec[1], spec[2]))
+                elif kind == 'int':
+                    self._set_config_value(key, random.randint(spec[1], spec[2]))
+                elif kind == 'group':
+                    chosen = random.choice(spec[1])
+                    for group_key, group_val in chosen.items():
+                        self._set_config_value(group_key, group_val)
+
+        if self.game_config_overrides:
+            for key, value in self.game_config_overrides.items():
+                self._set_config_value(key, value)
+
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, dict]:
         """Reset the environment to initial state"""
         super().reset(seed=seed)
@@ -704,6 +756,21 @@ class ProspectorsPiratesEnv(
             np.random.seed(seed)
 
         self.current_step = 0
+
+        # Sample this episode's SQUAre map size (width == height) when randomization is
+        # enabled. Must run before _sample_episode_config() and any asteroid/trading-
+        # post/ship generation so the whole episode is self-consistent; asteroid and
+        # trading-post counts scale automatically with map area. Uses the env-seeded
+        # random module so the size is deterministic given the reset seed.
+        if self.map_size_range is not None:
+            side = random.randint(self.map_size_range[0], self.map_size_range[1])
+            self.map_width = side
+            self.map_height = side
+
+        # Sample this episode's game config (restore baseline + optional randomization
+        # and pins). Must run before any asteroid/trading-post/ship generation so the
+        # whole episode is self-consistent. action_restrictions are (re)set just below.
+        self._sample_episode_config()
 
         # Reset action tracking
         self.action_counter = 0  # Reset action counter for new episode
