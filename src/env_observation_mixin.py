@@ -12,7 +12,7 @@ from utils import action_masker
 # normalized by a FIXED reference length (in cells) instead of the map
 # dimensions, so identical relative geometry yields identical observation
 # values on any map size. ~50 cells ≅ one default jump radius ("is the target
-# within a jump?"). Absolute positions stay map-fration (x / map_width) by
+# within a jump?"). Absolute positions stay map-fraction (x / map_width) by
 # design - "where am I on the map" is genuinely map-relative.
 _SPATIAL_REF = 50.0
 
@@ -27,7 +27,7 @@ def _scaled_delta(d: float) -> float:
 
 
 def _scaled_distance(dist: float) -> float:
-    """Scale a non-negative distance to [0, 1) via dist / (dist _ ref).
+    """Scale a non-negative distance to [0, 1) via dist / (dist * ref).
 
     Smooth and monotonic (no hard clip), 0 at distance 0 and approaching 1 for
     large distances. Map-size invariant.
@@ -108,12 +108,13 @@ class EnvObservationMixin:
             mask = obs_reconstruction.build_action_mask(request)
             return {
                 'observation': np.asarray(obs_vec, dtype=np.float32),
-                'action_mask': np.asarray(mask, dtype=np.int8)
+                'action_mask': np.asarray(mask, dtype=np.int8),
             }
         except Exception:
             return None
 
-    def _get_observation(self, skip_mask: bool = False, use_spec: bool = True) -> Dict[str, np.ndarray]:
+    def _get_observation(self, skip_mask: bool = False, use_spec: bool = True,
+                         include_sensor_grid: bool = True) -> Dict[str, np.ndarray]:
         """Get the current observation with enhanced ship state and entity info.
 
         Args:
@@ -122,12 +123,12 @@ class EnvObservationMixin:
             use_spec: If True, use the ship's assigned ModelSpec for observation generation.
                       If False, use the legacy full observation method.
             include_sensor_grid: If True (default), include the local sensor grid block
-                        ((2*sensor_range+1)^2 values). If False, omit it entirely, producing
-                        the FULL_NO_GRID layout (full observation minus the local sensor grid).
+                       ((2*sensor_range+1)^2 values). If False, omit it entirely, producing
+                       the FULL_NO_GRID layout (full observation minus the local sensor grid).
         """
         # Partial-observability mode: reconstruct the PLAYER observation + mask from
         # a sensor-limited ActionRequest via the shared module, byte-identical to what
-        # a delegating BOV_V6 sees at inference. The recursion guard ensures inner
+        # a delegating BOT_V6 sees at inference. The recursion guard ensures inner
         # generators (which may call _get_observation) still use the legacy path.
         if getattr(self, 'partial_observability', False) and not getattr(self, '_generating_observation', False):
             partial = self._get_partial_observation()
@@ -228,44 +229,85 @@ class EnvObservationMixin:
         obs.extend([dx_tp, dy_tp])
 
         # === LOCAL SENSOR GRID (with clamped/shifted window to maximize valid cells) ===
-        sensor_range = self.config['sensor_range']
-        side = 2 * sensor_range + 1  # Grid dimension (e.g., 11 for sensor_range=5)
+        # Omitted entirely for the FULL_NO_GRID layout (include_sensor_grid=False).
+        if include_sensor_grid:
+            sensor_range = self.config['sensor_range']
+            side = 2 * sensor_range + 1  # Grid dimension (e.g., 11 for sensor_range=5)
 
-        # Calculate top-left corner of a centered window
-        x_min = ship['x'] - sensor_range
-        y_min = ship['y'] - sensor_range
+            # Calculate top-left corner of a centered window
+            x_min = ship['x'] - sensor_range
+            y_min = ship['y'] - sensor_range
 
-        # Clamp window to stay within map bounds (shifts window when near edges)
-        # This maximizes the number of valid cells in the observation
-        x_min = max(0, min(x_min, self.map_width - side)) if self.map_width >= side else 0
-        y_min = max(0, min(y_min, self.map_height - side)) if self.map_height >= side else 0
+            # Clamp window to stay within map bounds (shifts window when near edges)
+            # This maximizes the number of valid cells in the observation
+            x_min = max(0, min(x_min, self.map_width - side)) if self.map_width >= side else 0
+            y_min = max(0, min(y_min, self.map_height - side)) if self.map_height >= side else 0
 
-        # Fill the sensor grid in row-major order (same as before for consistency)
-        for row in range(side):
-            for col in range(side):
-                x = x_min + col
-                y = y_min + row
-
-                # Check if coordinate is valid (should almost always be true with clamping)
-                if 0 <= x < self.map_width and 0 <= y < self.map_height:
-                    # Default: empty cell
-                    entity_type = 0.0
-
-                    # Player's own cell remains 0.0 (empty)
-                    if x == ship['x'] and y == ship['y']:
-                        entity_type = 0.0
-                    # Check for entities (priority: enemy > trading_post > asteroid)
-                    elif self._get_entity_at_location(x, y, self.opponent_ships):
-                        entity_type = 1.0
-                    elif self._get_entity_at_location(x, y, self.trading_posts):
-                        entity_type = 0.66
-                    elif self._get_entity_at_location(x, y, self.asteroids):
-                        entity_type = 0.33
-
-                    obs.append(entity_type)
+            if self.map_width >= side and self.map_height >= side:
+                # Fast path: the clamped window is fully in bounds, so every cell is
+                # valid (no -1.0 padding). Rather than scanning all side*side cells
+                # (e.g. 441 lookup at sensor_range=10, almost all empty), start from
+                # al all-empty grid and scatter only the occupied cells. Cost scales
+                # with the number of nearby entities, not the grid area.
+                grid = [0.0] * (side * side)
+                cx = x_min + sensor_range  # window center matching [x_min, x_min+side-1]
+                cy = y_min + sensor_range
+                # Scatter in ascending priority so higher-priority entities overwrite
+                # lower ones, matching the dense loop's enemy > post > asteroid elif.
+                for a in self._entities_in_window('asteroids', cx, cy, sensor_range):
+                    gx, gy = a['x'] - x_min, a['y'] - y_min
+                    if 0 <= gx < side and 0 <= gy < side:
+                        grid[gy * side + gx] = 0.33
+                for p in self._entities_in_window('trading_posts', cx, cy, sensor_range):
+                    gx, gy = p['x'] - x_min, p['y'] - y_min
+                    if 0 <= gx < side and 0 <= gy < side:
+                        grid[gy * side + gx] = 0.66
+                cache = getattr(self, '_entity_location_cache', None)
+                opp_map = cache.get('opponents') if cache is not None else None
+                if opp_map is not None:
+                    for (ex, ey), o in opp_map.items():
+                        gx, gy = ex - x_min, ey - y_min
+                        if 0 <= gx < side and 0 <= gy < side:
+                            grid[gy * side + gx] = 1.0
                 else:
-                    # Out of bounds (should be rare with clamping, only when map < sensor grid)
-                    obs.append(-1.0)
+                    for o in self.opponent_ships:
+                        if o.get('destroyed', False):
+                            continue
+                        gx, gy = o['x'] - x_min, o['y'] - y_min
+                        if 0 <= gx < side and 0 <= gy < side:
+                            grid[gy * side + gx] = 1.0
+                # Player's own cell is always reported empty.
+                pgx, pgy = ship['x'] - x_min, ship['y'] - y_min
+                if 0 <= pgx < side and 0 <= pgy < side:
+                    grid[pgy * side + pgx] = 0.0
+                obs.extend(grid)
+            else:
+                # Fill the sensor grid in row-major order (same as before for consistency)
+                for row in range(side):
+                    for col in range(side):
+                        x = x_min + col
+                        y = y_min + row
+
+                        # Check if coordinate is valid (should almost always be true with clamping)
+                        if 0 <= x < self.map_width and 0 <= y < self.map_height:
+                            # Default: empty cell
+                            entity_type = 0.0
+
+                            # Player's own cell remains 0.0 (empty)
+                            if x == ship['x'] and y == ship['y']:
+                                entity_type = 0.0
+                            # Check for entities (priority: enemy > trading_post > asteroid)
+                            elif self._get_entity_at_location(x, y, self.opponent_ships):
+                                entity_type = 1.0
+                            elif self._get_entity_at_location(x, y, self.trading_posts):
+                                entity_type = 0.66
+                            elif self._get_entity_at_location(x, y, self.asteroids):
+                                entity_type = 0.33
+
+                            obs.append(entity_type)
+                        else:
+                            # Out of bounds (should be rare with clamping, only when map < sensor grid)
+                            obs.append(-1.0)
 
         # === TOP 5 ASTEROIDS (30 values: 5 asteroids * 6 features) ===
         top_asteroids = self._get_top_asteroids(ship['x'], ship['y'], count=self.config['top_asteroids_count'])
