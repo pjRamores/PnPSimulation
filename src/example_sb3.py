@@ -671,7 +671,8 @@ def _print_performance_participant_stats(stats_list, opponents):
 
 
 def _test_model_performance(model_path, algorithm, num_episodes=100,
-                            map_width=10, map_height=10, max_steps=300):
+                            map_width=10, map_height=10, max_steps=300,
+                            player_model_spec=None):
     """
     Test the newly trained model's performance against existing models.
 
@@ -686,6 +687,9 @@ def _test_model_performance(model_path, algorithm, num_episodes=100,
             simulation env's MultiDiscrete action space matches the model)
         map_height: Height of the game map (see ``map_width``)
         max_steps: Maximum steps per simulated episode
+        player_model_spec: Optional ModelSpec the model was trained with. Forwarded to
+            GameSimulator so the eval env sizes its observation_space to match (e.g. a
+            COMPACT/57-dim model). None -> simulator default (DEFAULT_FULL_SPEC).
 
     Returns:
         dict with keys: 'first_place', 'second_place', 'third_place' (counts)
@@ -755,7 +759,12 @@ def _test_model_performance(model_path, algorithm, num_episodes=100,
             algorithm=algorithm,
             map_width=map_width,
             map_height=map_height,
-            max_steps=max_steps
+            max_steps=max_steps,
+            # Size the eval env's observation_space to the SAME spec the model was
+            # trained on (e.g. COMPACT/57-dim). Without this the simulator defaults to
+            # DEFAULT_FULL_SPEC (275-dim) and falls back to the obs-truncation wrapper,
+            # feeding the policy a mismatched observation layout.
+            player_model_spec=player_model_spec,
         )
 
         # Run simulation
@@ -1005,11 +1014,14 @@ def _save_model_attributes_to_csv(model, algorithm, model_path, callback, is_tra
 
 def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                    transfer_from=None, freeze_layers=False, fine_tune_lr=None,
-                   map_width=10, map_height=10, min_opponents=2, max_opponents=2, max_steps=300,
+                   map_width=10, map_height=10, map_size_range=None,
+                   min_opponents=2, max_opponents=2, max_steps=300,
                    use_predefined_asteroids=False, asteroid_config_path='asteroids.config',
                    use_predefined_start=False, start_position_config_path='start_positions.config',
                    use_composite=True, composite_components: Optional[List[object]] = None,
-                   efficiency_mode=False, num_threads=None, n_envs=1):
+                   efficiency_mode=False, num_threads=None, n_envs=1,
+                   randomize_game_config=False, player_model_spec=None,
+                   partial_observability=False, module_grant_mode='all'):
     """
     Train agent using Stable Baselines3 with optional transfer learning
 
@@ -1022,6 +1034,10 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         fine_tune_lr: Custom learning rate for fine-tuning (default: lower than normal)
         map_width: Width of the game map
         map_height: Height of the game map
+        map_size_range: Optional (min, max) tuple enabling per-episode SQUARE
+            map-size randomization (map_width == map_height sampled each reset).
+            When set, overrides the fixed map_width/map_height. Flows verbatim into
+            every (sub)process emv via env_kwargs.
         min_opponents: Minimum number of opponent ships
         max_opponents: Maximum number of opponent ships
         max_steps: Maximum steps per episode
@@ -1036,6 +1052,23 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         n_envs: Number of parallel environments. When >1 (PPO only), training runs on a
             SubprocVecEnv of n_envs worker processes for higher throughput. n_envs=1 keeps the
             original single-process env path unchanged.
+        randomize_game_config: If True, each episode samples the per-round-varying game config
+            (asteroid density, mass regine, payout modifier, energy/jump/shield costs, shield
+            resistance, hit chance, sell price_ within production-derived ranges so the policy
+            generalizes across the real per-round config distribution. Default False.
+        player_model_spec: Optional ModelSpec selecting the PLAYER's observation encoding for
+            every training env. Default None -> DEFAULT_FULL_SPEC (262-dim, sensor window 5).
+            Pass WIDE_SENSOR_SPEC for the 582-dim wide-sensor observation (window 10).
+        partial_observability: If True, every training env reconstructs the PLAYER's observation
+            and action mask from a sensor-limited ActionRequest (shared with BOT_V6 inference via
+            obs_reconstruction), giving exact train/inference parity. Default False keeps the
+            legacy global-visibility encoding.
+        module_grant_mode: Policy for which module-locked actions (JUMP, REPAIR, SALVAGE) are
+        installed each episode. 'all' (default) installs every module; 'random' picks the
+        count uniformly from {0, 1, 2, 3} then samples that many modules (every count equally
+        likely) to train module-gated behaviour; 'none' installs nothing. All
+        ships share the same set. Does not change the observation layout, so existing models
+        stay loadable (but training with 'random' is needed to actually learn gated behaviour).
     """
 
     if not SB3_AVAILABLE:
@@ -1103,14 +1136,20 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
     env_kwargs = dict(
         map_width=map_width,
         map_height=map_height,
+        map_size_range=map_size_range,
         num_opponents=initial_num_opponents,
         max_steps=max_steps,
         use_predefined_asteroids=use_predefined_asteroids,
         asteroid_config_path=asteroid_config_path,
         use_predefined_start=use_predefined_start,
         start_position_config_path=start_position_config_path,
-        reward_config=reward_cfg
+        reward_config=reward_cfg,
+        randomize_game_config=randomize_game_config,
+        partial_observability=partial_observability,
+        module_grant_mode=module_grant_mode,
     )
+    if player_model_spec is not None:
+        env_kwargs['player_model_spec'] = player_model_spec
 
     if use_vec_env:
         from stable_baselines3.common.vec_env import SubprocVecEnv
@@ -1421,7 +1460,8 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         num_episodes=10,
         map_width=map_width,
         map_height=map_height,
-        max_steps=max_steps
+        max_steps=max_steps,
+        player_model_spec=player_model_spec,
     )
 
     # Save model attributes to CSV for tracking (including performance results)
@@ -1486,7 +1526,7 @@ def _parse_model_path_with_spec(raw_model_path: str):
     return model_path.strip(), (spec_name.strip() or None)
 
 
-def evaluate_model(model, num_episodes=10, render=False, min_opponents=2, max_opponents=2, player_model_spec=None):
+def evaluate_model(model, num_episodes=10, render=False, min_opponents=2, max_opponents=2, player_model_spec=None, partial_observability=False):
     """Evaluate trained model"""
 
     if not SB3_AVAILABLE:
@@ -1517,11 +1557,10 @@ def evaluate_model(model, num_episodes=10, render=False, min_opponents=2, max_op
         map_height=10,
         num_opponents=initial_num_opponents,
         max_steps=300,
-        render_mode='human' if render else None
+        render_mode='human' if render else None,
+        player_model_spec=player_model_spec,
+        partial_observability=partial_observability,
     )
-
-    if player_model_spec is not None:
-        env.player_model_spec = player_model_spec
 
     # Apply dynamic opponents wrapper if using variable opponent counts
     if use_dynamic_opponents:
@@ -1769,6 +1808,13 @@ Examples:
                         help='Width of the game map (default: 10)')
     parser.add_argument('--map-height', type=int, default=10,
                         help='Height of the game map (default: 10)')
+    parser.add_argument('--map-size-min', type=int, default=None,
+                        help='Minimum SQUARE map side length for per-episode map-size '
+                             'randomization (width == height). Requires --map-size-max. '
+                             'When set, overrides --map-width/--map-height (default: None)')
+    parser.add_argument('--map-size-max', type=int, default=None,
+                        help='Maximum SQUARE map side length for per-episode map-size '
+                             'randomization (default: None)')
     parser.add_argument('--min-opponents', type=int, default=2,
                         help='Minimum number of opponent ships (default: 2)')
     parser.add_argument('--max-opponents', type=int, default=2,
@@ -1793,8 +1839,44 @@ Examples:
                         help='Number of parallel environments for training (PPO only). '
                              '>1 uses SubprocVecEnv worker processes for higher throughput; '
                              '1 (default) keeps the single-process path (default: 1)')
+    parser.add_argument('--randomize-config', action='store_true',
+                        help='Randomize the per-round-varying game config (asteroid density, '
+                             'mass regime, payout modifier, energy/jump/shield costs, shield '
+                             'resistance, hig chance, sell price) within production-derived '
+                             'ranges each episode for robustness (default: off)')
+    parser.add_argument('--model-spec', type=str, default=None,
+                        help='Select the PLAYER observation spec by name (case-insensitive) for '
+                             'any registered preset: FULL (default, 275-dim), WIDE_SENSOR (alis '
+                             'WIDE, sensor window 10 -> 595-dim), FULL_NO_GRID (alias NO_GRID, '
+                             'FULL minus the local sensor grid -> 154-dim), COMPACT (57-dim), '
+                             'SENSOR_ONLY. Each spec is a distinct observation layout -> train '
+                             'fresh; models trained on a different spec are incompatible. '
+                             'Default None -> DEFAULT_FULL_SPEC.')
+    parser.add_argument('--partial-observability', action='store_true',
+                        help='Reconstruct the PLAYER observation and action mask from a '
+                             'sensor-limited ActionRequest (shared with BOT_V6 inference), giving '
+                             'exact train/inference parity. Default off keeps the legacy '
+                             'global-visibility encoding.')
+    parser.add_argument('--module-grant-mode', type=str, default='all',
+                        help='Which module-locked actions (JUMP, REPAIR, SALVAGE) are installed '
+                             'each episode. all (default) installs every module; random picks the '
+                             'count uniformly from {0,1,2,3} then samples that many modules (every '
+                             'count equally likely) to train module-gated behaviour; none '
+                             'installs nothing. Dies not change the observation layout.')
 
     args = parser.parse_args()
+
+    # Resolve the PLAYER observation spec selected via --model-spec. Returns a
+    # ModelSpec, or None to mean "use the env default full spec". Unknown names
+    # ward and fall back to the default.
+    def _resolve_cli_model_spec():
+        if getattr(args, 'model_spec', None):
+            resolved = get_named_model_spec(args.model_spec)
+            if resolved is not None:
+                return resolved
+            print(f"WARNING: Unknown --model-spec '{args.model_spec}'. "
+                  f"Falling back to DEFAULT_FULL_SPEC.")
+        return None
 
     if args.evaluate:
         if args.model_path:
@@ -1806,6 +1888,11 @@ Examples:
                     player_model_spec = resolved_spec
                 else:
                     print(f"WARNING: Unknown player MODEL_SPEC '{eval_spec_name}' in --model-path. Falling back to DEFAULT_FULL_SPEC.")
+            else:
+                # No explicit ::SPEC in --model-path: fall back to --model-spec.
+                cli_spec = _resolve_cli_model_spec()
+                if cli_spec is not None:
+                    player_model_spec = cli_spec
 
             if args.algorithm == 'PPO':
                 model = PPO.load(eval_model_path)
@@ -1821,7 +1908,8 @@ Examples:
             else:
                 model.verbose = 0  # Disable verbose output during evaluation
                 evaluate_model(model, num_episodes=10, render=args.render, min_opponents=args.min_opponents,
-                               max_opponents=args.max_opponents, player_model_spec=player_model_spec)
+                               max_opponents=args.max_opponents, player_model_spec=player_model_spec,
+                               partial_observability=args.partial_observability)
         else:
             print("Please specify --model-path for evaluation")
     elif args.algorithm == 'compare':
@@ -1848,6 +1936,19 @@ Examples:
                 print(f"Warning: Could not parse --reward-components JSON: {e}")
                 composite_specs = None
 
+        train_player_spec = _resolve_cli_model_spec()
+
+        # Resolve optional per-episode square map-size randomization. When both
+        # bounds are given, reset() samples a fresh side length each episode and
+        # the fixed --map-width/--map-height are ignored.
+        cli_map_size_range = None
+        if args.map_size_min is not None or args.map_size_max is not None:
+            if args.map_size_min is None or args.map_size_max is None:
+                parser.error('--map-size-min and --map-size-max must be provided together')
+            if args.map_size_min < 1 or args.map_size_max < args.map_size_min:
+                parser.error('require 1 <= --map-size-min <= --map-size-max')
+            cli_map_size_range = (args.map_size_min, args.map_size_max)
+
         model = train_with_sb3(
             algorithm=args.algorithm,
             total_timesteps=args.timesteps,
@@ -1856,6 +1957,7 @@ Examples:
             fine_tune_lr=args.learning_rate,
             map_width=args.map_width,
             map_height=args.map_height,
+            map_size_range=cli_map_size_range,
             min_opponents=args.min_opponents,
             max_opponents=args.max_opponents,
             max_steps=args.max_steps,
@@ -1867,11 +1969,16 @@ Examples:
             composite_components=composite_specs,
             efficiency_mode=args.efficiency_mode,
             num_threads=args.num_threads,
-            n_envs=args.n_envs
+            n_envs=args.n_envs,
+            randomize_game_config=args.randomize_config,
+            player_model_spec=train_player_spec,
+            partial_observability=args.partial_observability,
+            module_grant_mode=args.module_grant_mode,
         )
         if model:
             # After training and saving the model, ask the user whether to proceed to evaluation
             cont = _ask_to_evaluate()
             if cont:
                 evaluate_model(model, num_episodes=5, render=True, min_opponents=args.min_opponents,
-                               max_opponents=args.max_opponents)
+                               max_opponents=args.max_opponents, player_model_spec=train_player_spec,
+                               partial_observability=args.partial_observability)
