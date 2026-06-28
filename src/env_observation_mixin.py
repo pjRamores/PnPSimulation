@@ -27,7 +27,7 @@ def _scaled_delta(d: float) -> float:
 
 
 def _scaled_distance(dist: float) -> float:
-    """Scale a non-negative distance to [0, 1) via dist / (dist * ref).
+    """Scale a non-negative distance to [0, 1) via dist / (dist + ref).
 
     Smooth and monotonic (no hard clip), 0 at distance 0 and approaching 1 for
     large distances. Map-size invariant.
@@ -246,8 +246,8 @@ class EnvObservationMixin:
             if self.map_width >= side and self.map_height >= side:
                 # Fast path: the clamped window is fully in bounds, so every cell is
                 # valid (no -1.0 padding). Rather than scanning all side*side cells
-                # (e.g. 441 lookup at sensor_range=10, almost all empty), start from
-                # al all-empty grid and scatter only the occupied cells. Cost scales
+                # (e.g. 441 lookups at sensor_range=10, almost all empty), start from
+                # an all-empty grid and scatter only the occupied cells. Cost scales
                 # with the number of nearby entities, not the grid area.
                 grid = [0.0] * (side * side)
                 cx = x_min + sensor_range  # window center matching [x_min, x_min+side-1]
@@ -262,6 +262,9 @@ class EnvObservationMixin:
                     gx, gy = p['x'] - x_min, p['y'] - y_min
                     if 0 <= gx < side and 0 <= gy < side:
                         grid[gy * side + gx] = 0.66
+                # Enemies must come from the SAME per-step spatial cache the dense
+                # path reads via _get_entity_at_location, so a stale cache yields
+                # identical output (live opponent_ships could differ mid-step).
                 cache = getattr(self, '_entity_location_cache', None)
                 opp_map = cache.get('opponents') if cache is not None else None
                 if opp_map is not None:
@@ -282,7 +285,8 @@ class EnvObservationMixin:
                     grid[pgy * side + pgx] = 0.0
                 obs.extend(grid)
             else:
-                # Fill the sensor grid in row-major order (same as before for consistency)
+                # Slow path: map smaller than the sensor grid, so some cells fall out
+                # of bounds and must be padded with -1.0. Fill in row-major order.
                 for row in range(side):
                     for col in range(side):
                         x = x_min + col
@@ -311,7 +315,6 @@ class EnvObservationMixin:
 
         # === TOP 5 ASTEROIDS (30 values: 5 asteroids * 6 features) ===
         top_asteroids = self._get_top_asteroids(ship['x'], ship['y'], count=self.config['top_asteroids_count'])
-        max_dist = math.sqrt(self.map_width**2 + self.map_height**2)
         max_mass = float(self.config.get('asteroid_mass_max', 80))
 
         for asteroid in top_asteroids:
@@ -320,7 +323,7 @@ class EnvObservationMixin:
                 asteroid['y'] / max(1, self.map_height),
                 asteroid['mass'] / max(1.0, max_mass),
                 asteroid['nutrinium'] / max(1.0, max_mass),
-                asteroid['distance'] / max(1.0, max_dist),
+                _scaled_distance(asteroid['distance']),
                 asteroid['score'],  # Already normalized 0-1
             ])
 
@@ -335,18 +338,22 @@ class EnvObservationMixin:
             obs.extend([
                 nearest_post['x'] / max(1, self.map_width),
                 nearest_post['y'] / max(1, self.map_height),
-                dist / max(1, max_dist),
+                _scaled_distance(dist),
             ])
         else:
             obs.extend([0.0, 0.0, 0.0])
 
-        # === TWO ENEMY TYPES (14 values: 2 enemies * 7 features) ===
+        # === TWO ENEMY TYPES (16 values: 2 enemies * 8 features) ===
         # Get strongest and weakest enemies at same coordinates as player
         strongest, weakest = self._get_extreme_enemies(ship['x'], ship['y'])
 
+        player_team = ship.get('team_id')
+        player_team = int(player_team) if player_team is not None else 0
         for enemy in [strongest, weakest]:
             if enemy:
                 combat_score = self._calculate_enemy_combat_score(enemy)
+                enemy_team = enemy.get('team_id')
+                same_team = 1.0 if (enemy_team is not None and int(enemy_team) == player_team) else 0.0
                 obs.extend([
                     enemy['x'] / max(1, self.map_width),
                     enemy['y'] / max(1, self.map_height),
@@ -355,9 +362,10 @@ class EnvObservationMixin:
                     min(enemy['nutrinium'], 100) / 100.0,
                     min(enemy['credits'], 1000) / 1000.0,
                     combat_score,  # Already normalized 0-1
+                    same_team,     # 1.0 if this enemy shares the player's team
                 ])
             else:
-                obs.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                obs.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
         # === SPEC-FIDELITY FEATURES (24 values; appended to keep legacy offsets stable) ===
         max_abil = self.config.get('abilities', {})
@@ -413,8 +421,8 @@ class EnvObservationMixin:
         if obj_post:
             obs.extend([
                 1.0,
-                (obj_post['x'] - ship['x']) / max(1, self.map_width),
-                (obj_post['y'] - ship['y']) / max(1, self.map_height),
+                _scaled_delta(obj_post['x'] - ship['x']),
+                _scaled_delta(obj_post['y'] - ship['y']),
             ])
         else:
             obs.extend([0.0, 0.0, 0.0])
@@ -429,8 +437,8 @@ class EnvObservationMixin:
         if nearest_wreck:
             obs.extend([
                 1.0,
-                (nearest_wreck['x'] - ship['x']) / max(1, self.map_width),
-                (nearest_wreck['y'] - ship['y']) / max(1, self.map_height),
+                _scaled_delta(nearest_wreck['x'] - ship['x']),
+                _scaled_delta(nearest_wreck['y'] - ship['y']),
             ])
         else:
             obs.extend([0.0, 0.0, 0.0])
@@ -440,6 +448,38 @@ class EnvObservationMixin:
         # adapt when restrictions change (e.g. randomized per-episode). Aligned to
         # the 19-action mask order: [allowedWhileRecharging, allowedWithShieldsUp].
         obs.extend(self._action_restriction_features())
+
+        # === TEMPORAL/SPATIAL (2 values, appended last) ===
+        # remaining_time_fraction: fraction of the game still left (1.0 at start ->
+        #   0.0 at the end). Trains the policy to sell nutrinium before time runs
+        #   out. Mirrors the action-counter normalization (self.action_counter /
+        #   self.max_steps) so it stays byte-identical to the obs_reconstruction
+        #   tick branch under partial-observability training.
+        # quadrant_norm: the player's cell in a 3x3 map grid as a single normalized
+        #   index q/8 (q = row*3 + col, 0..8). Encourages exploring other regions.
+        remaining_time_fraction = max(
+            0.0, min(1.0, (self.max_steps - self.action_counter) / max(1, self.max_steps))
+        )
+        col = min(2, (ship['x'] * 3) // max(1, self.map_width))
+        row = min(2, (ship['y'] * 3) // max(1, self.map_height))
+        quadrant_norm = (row * 3 + col) / 8.0
+        obs.extend([remaining_time_fraction, quadrant_norm])
+
+        # === PREY ENEMIES (9 values: 3 weakest huntable enemies * 3 features) ===
+        # Appended after temporal/spatial so legacy offsets stay stable (old models
+        # truncate this block). The top 3 weakest enemies that are NOT teammates,
+        # have weaker attack AND defense than the player, are sensor-visible, and
+        # hold nutrinium -- letting the policy hunt prey when no asteroid nutrinium
+        # is available. Each prey: (x/W, y/H, nutrinium). Zero-padded if fewer.
+        prey = self._get_prey_enemies(ship, count=3)
+        for p in prey:
+            obs.extend([
+                p['x'] / max(1, self.map_width),
+                p['y'] / max(1, self.map_height),
+                min(p['nutrinium'], 100) / 100.0,
+            ])
+        for _ in range(3 - len(prey)):
+            obs.extend([0.0, 0.0, 0.0])
 
         # Return Dict observation with action mask
         obs_array = np.array(obs, dtype=np.float32)
@@ -471,19 +511,25 @@ class EnvObservationMixin:
         return feats
 
 
-    def _get_top_asteroids(self, x: int, y: int, count: int = 5) -> List[dict]:
+    def _get_top_asteroids(self, x: int, y: int, count: int = 5,
+                           asteroids: Optional[List[dict]] = None) -> List[dict]:
         """
         Get top N asteroids ranked by a score combining mass, nutrinium concentration, and distance.
 
         Score formula: (nutrinium / mass) * nutrinium / (distance + 1)
         Higher score = better asteroid to target
+
+        ``asteroids`` defaults to ``self.asteroids`` (the global, full-map list). Callers
+        may pass a pre-filtered list (e.g. only sensor-visible asteroids) to rand a subset;
+        the ranking is identical given the same ordered list.
         """
-        if not self.asteroids:
+        source = self.asteroids if asteroids is None else asteroids
+        if source:
             return []
 
         # Live asteroids (nutrinium > 0) in list order so equal scores resolve the
         # same way as the legacy stable descending sort.
-        live = [a for a in self.asteroids if a.get('nutrinium', 0) > 0]
+        live = [a for a in source if a.get('nutrinium', 0) > 0]
         if not live:
             return []
 
@@ -515,6 +561,31 @@ class EnvObservationMixin:
                 'score': float(normalized_score[i]),
             })
         return result
+
+    def _visible_top_asteroids(self, ship: dict, count: int = 5) -> List[dict]:
+        """Rand top-N asteroids for ``ship``, honoring partial observability.
+
+        With ``partial_observability`` off (default), this is the global ranking over
+        every asteroid on the map (legacy behaviour). With it on, only asteroids inside
+        ``ship``'s sensor window are considered -- the same Chebyshev window
+        (``config['sensor_range']`` widened by the ship's ``sensor_range`` skill) that
+        :meth:`_compose_action_request` uses to build the sensor-limited ActionRequest.
+        This keeps JUMP target resolution consistent with what the ship's (myopic)
+        observation actually exposes, so action slot ``i`` points at obs asteroid ``i``.
+        """
+        if not getattr(self, 'partial_observability', False):
+            return self._get_top_asteroids(ship['x'], ship['y'], count)
+
+        sx, sy = ship['x'], ship['y']
+        sensor_range = self.config['sensor_range']
+        sensor_skill = int((ship.get('abilities') or {}).get('sensor_range', 0) or 0)
+        effective_range = sensor_range + max(0, sensor_skill)
+        # Filter preserving list order so the stable ranking matches the obs builder.
+        visible = [
+            a for a in self.asteroids
+            if max(abs(a['x'] - sx), abs(a['y'] - sy)) <= effective_range
+        ]
+        return self._get_top_asteroids(sx, sy, count, asteroids=visible)
 
     def _get_extreme_enemies(self, x: int, y: int) -> Tuple[Optional[dict], Optional[dict]]:
         """
