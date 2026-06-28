@@ -54,7 +54,14 @@ class ProspectorsPiratesEnv(
                  enemy_models_config_path: str = 'enemy_models.config',
                  terminate_on_player_death: bool = True,
                  forced_opponent_types: Optional[list] = None,
+                 map_size_range: Optional[Tuple[int, int]] = None,
                  randomize_action_restrictions: bool = False,
+                 randomize_game_config: bool = False,
+                 game_config_overrides: Optional[dict] = None,
+                 game_config_ranges: Optional[dict] = None,
+                 player_model_spec: Optional['ModelSpec'] = None,
+                 partial_observability: bool = False,
+                 module_grant_mode: str = 'all',
                  # Rendering options
                  cell_width: Optional[int] = None,
                  minimap_mode: bool = False,
@@ -76,6 +83,41 @@ class ProspectorsPiratesEnv(
             start_position_config_path: Path to starting position configuration file (default: 'start_positions.config')
             enemy_models_config_path: Path to enemy models configuration file (default: 'enemy_models.config')
             terminate_on_player_death: If True, episode terminates when player is destroyed (default: True for training, False for full simulation)
+            map_size_range: Optional (min, max) typle. When set, reset() samples a fresh
+                SQUARE map side length (map_width == map_height) uniformly in [min, max]
+                every episode, so the policy is robust to per-round map-size variation.
+                Asteroid and trading-post counts scale automatically with map area, and
+                the observation/action shpares are unchanged. Default None keeps the fixed
+                map_width/map_height passed to the constructor.
+            randomize_game_config: If True, sample the per-round-varying game-mechanic config
+               (asteroid density, mass regine, payout modifier, energy/jump/shield costs,
+               shield resistance, hit chance, sell price, ...) within production-derived
+               ranges every reset() so the policy is robust to the real config distribution.
+               Observation/action-shapre-defining keys (map size, sensor_range) are never
+               randomized. Default False keeps a deterministic, fixed config.
+            game_config_overrides: Optional dict of dotted config keys -> values that are
+               pinned every episode AFTER any randomization (e.g. to replay a real
+               production metadata block during evaluation). Example:
+               {'asteroid_density': 0.22, 'combat.base_shield_resistance': 0.75}.
+            game_config_ranges: Optional dict merged into the default randomization ranges
+               (some dotted-key format) to override/extend sampled ranges.
+            player_model_spec: Optional ModelSpec selecting the PLAYER's observation
+               encoding. Defaults to DEFAULT_FULL_SPEC (275-dim, sensor window 5). When
+               the spec's observation_spec.sensor_range is set, the env sizes ites
+               observation_space from it AND (per game-mechanic coupling) overrides
+               config['sensor_range'] to match (e.g. WIDE_SENSOR_SPEC -> window 10,
+               595-dim, bots ses range 10).
+            partial_observability: When True, the PLAYER's observation and action mask
+               are reconstructed from a sensor-limited ActionRequest (shared with
+               BOT_V6 inference via obs_reconstruction), giving exact train/inference
+               parity. Default False keeps the legacy global-visibility encoding.
+            module_grant_mode: Policy for which module-locked actions (JUMP, REPAIR,
+               SALVAGE) are installed each episode. 'all' (default) installs every
+               module so jump/repair/salvage training is unaffected; 'random' picks the
+               count uniformly from {0, 1, 2, 3} then samples that many modules (every
+               count equally likely) to train module-gated behaviour;
+               'none' install nothing. All ships share the same set (level playing
+               field). Does not change the observation layout.
         """
         super().__init__()
 

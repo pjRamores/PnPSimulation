@@ -491,8 +491,8 @@ class EnvSetupMixin:
         All ships share the same module set (a level playing field). Default mode
         'all' installs every module so jump/repair/salvage-heavy training is
         unaffected; mode 'random' first picks the COUNT uniformly from
-        {0, 1, 2, 3} and then samples that may distinct modules at random (so
-        every count -- including name and all -- is equally likely, instead of the
+        {0, 1, 2, 3} and then samples that many distinct modules at random (so
+        every count -- including none and all -- is equally likely, instead of the
         binomial bias of independent per-module coin flips); 'none' installs
         nothing. Controlled by self.module_grant_mode.
         """
