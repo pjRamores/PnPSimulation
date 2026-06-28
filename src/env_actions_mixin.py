@@ -363,7 +363,9 @@ class EnvActionsMixin:
             ty = int(max(0, min(self.map_height - 1, target[1])))
         else:
             # Auto-target: best asteroid by score (nutrinium value vs distance), not just nearest.
-            top = self._get_top_asteroids(ship['x'], ship['y'], count=1)
+            # Under partial observability this ranks only the acting ship's sensor-visible
+            # asteroids, so the auto-target stays consistent with its myopic observation.
+            top = self._visible_top_asteroids(ship, count=1)
             if not top:
                 return -0.1, False, None
             best = top[0]
@@ -645,8 +647,9 @@ class EnvActionsMixin:
         ship['energy'] -= cost
         ncfg = self.config['negotiate']
         skill = self._skill(ship, 'negotiate_skill')
-        succ = max(0.0, min(1.0, ncfg['base_success_chance'] + skill * 0.05))
-        fail = max(ncfg['min_fail_chance'], ncfg['base_fail_chance'] - skill * 0.05)
+        skill_mod = ncfg.get('skill_modifier_per_point', 0.02)
+        succ = max(0.0, min(1.0, ncfg['base_success_chance'] + skill * skill_mod))
+        fail = max(ncfg['min_fail_chance'], ncfg['base_fail_chance'] - skill * skill_mod)
         if succ + fail > 1.0:
             fail = max(0.0, 1.0 - succ)
 
@@ -845,19 +848,32 @@ class EnvActionsMixin:
             'def_energy': target_energy_before,
         }
 
+        # Teammate-attack penalty: the attack is not blocked (friend/foe enforcement is
+        # left to the acting logic), but when the PLAYER strikes a ship on its own team
+        # a configurable penalty is folded into the action reward to discourage it.
+        team_penalty = 0.0
+        if is_player:
+            target_team = target.get('team_id')
+            player_team = self.player_ship.get('team_id', 0)
+            player_team = int(player_team) if player_team is not None else 0
+            if target_team is not None and int(target_team) == player_team:
+                teammate_penalty = getattr(self.reward_config, 'attack_teammate_penalty', 0.5)
+                combat_details['attacked_teammate'] = True
+
         if not hit:
             combat_details['hit'] = False
             combat_details['def_health'] = f"{target_health_before}->{target['health']}"
             # Missing still cost the payload; small penalty to discourage spray-and-pray.
-            return -0.05, False, combat_details
+            return -0.05 + team_penalty, False, combat_details
 
         # --- Damage: payload scaled by attack_power (+10%/pt) and a random spread.
         avg_multiplier = 1.0 + self._skill(ship, 'attack_power') * 0.1
         variance = random.uniform(1.0 - cfg['damage_variance'], 1.0 + cfg['damage_variance'])
         damage = max(1, int(round(payload * avg_multiplier * variance)))
 
-        # --- Shield resistance: base + shield_strength/20, capped at 0.75.
-        resistance = min(0.75, cfg['base_shield_resistance']
+        # --- Shield resistance: base + shield_strength*0.05, capped at shield_resistance_cap.
+        resistance = min(cfg.get('shield_resistance_cap', 0.9),
+                         cfg['base_shield_resistance']
                          + self._skill(target, 'shield_strength') * 0.05)
         shield_dmg = int(round(damage * cfg['attack_shield_damage']))
 
@@ -913,13 +929,13 @@ class EnvActionsMixin:
             combat_details['destroyed'] = True
             combat_details['wreckage_nutrinium'] = wreckage_nutr
 
-            return reward, True, combat_details
+            return reward + team_penalty, True, combat_details
         else:
             # Successful hit but target survived. Small reward; combat is a means to an end.
             combat_details['destroyed'] = False
             combat_details['target_health'] = target['health']
 
-            return 0.02, True, combat_details
+            return 0.02 + team_penalty, True, combat_details
 
     def _update_combat_states(self):
         """
