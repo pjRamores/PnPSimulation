@@ -21,7 +21,7 @@ class EnvMaskingMixin:
         preserving the legacy auto-target / default-energy behaviour relied on by the
         heuristic AIs and scalar-Discrete callers. A structured model action is a length-3
         array ``[atype, target_slot, energy_bin]``: ``target_slot`` is an INDEX into the
-        top-N richest asteroids (entry-slot action space), resolved to an explicit (x, y)
+        top-N richest asteroids (entity-slot action space), resolved to an explicit (x, y)
         coordinate via :meth:`_resolve_target_slot`. A dict action (matching the env's Dict
         action space, used by the bots) still carries an absolute ``target`` coordinate.
         """
@@ -40,7 +40,7 @@ class EnvMaskingMixin:
                 if ebin is not None:
                     energy = self._energy_from_bin(int(np.asarray(ebin).item()))
                 return atype, target, energy
-            # Numpy array (length-3  [atype, target_slot, energy_bin], else scalar-like)
+            # Numpy array (length-3 structured [atype, target_slot, energy_bin], else scalar-like)
             if isinstance(action, np.ndarray):
                 flat = action.flatten()
                 if flat.size >= 3:
@@ -59,7 +59,7 @@ class EnvMaskingMixin:
             raise ValueError(f"Unable to normalize action: {action!r}") from e
 
     def _resolve_target_slot(self, ship: dict, slot: int) -> Optional[Tuple[int, int]]:
-        """Resolve an entity-slot index an absolut (x, y) target coordinate.
+        """Resolve an entity-slot index into an absolute (x, y) target coordinate.
 
         ``slot`` indexes the top-N richest asteroids the observation exposes (same
         ranking via :meth:`_visible_top_asteroids`), so action slot ``i`` points at the
@@ -191,10 +191,10 @@ class EnvMaskingMixin:
 
         return action_masker.get_action_mask(self._build_mask_state(ship, is_player=is_player))
 
-    def _get_partial_action_mask(selfself, ship: dict) -> Optional[np.ndarray]:
+    def _get_partial_action_mask(self, ship: dict) -> Optional[np.ndarray]:
         """Reconstruct ``ship``'s action mask from a sensor-limited ActionRequest via
         the shared ``obs_reconstruction`` module (single source of truth with BOT_V6).
-        Return ``None`` (caller falls back to the global mask) on any failure.
+        Returns ``None`` (caller falls back to the global mask) on any failure.
         """
         try:
             import obs_reconstruction
