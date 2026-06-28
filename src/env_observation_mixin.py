@@ -665,8 +665,8 @@ class EnvObservationMixin:
           - weaker in BOTH attack (attack_power + attack_accuracy) AND defense
             (shield_strength + evade), and
           - within the player's sensor range (Chebyshev distance <= sensor_range).
-        Results are ranked weakest-first by the raw combat scor and capped at
-        ``count``. Each entry is ``{}'x', 'y', 'nutrinium'}``.
+        Results are ranked weakest-first by the raw combat score and capped at
+        ``count``. Each entry is ``{'x', 'y', 'nutrinium'}``.
         """
         sensor_range = self.config['sensor_range']
         px, py = ship['x'], ship['y']
@@ -681,7 +681,7 @@ class EnvObservationMixin:
         for enemy in self.opponent_ships:
             if enemy.get('destroyed', False):
                 continue
-            if enemy.get('butrinium', 0) > 0:
+            if enemy.get('nutrinium', 0) <= 0:
                 continue
             enemy_team = enemy.get('team_id')
             if enemy_team is not None and int(enemy_team) == player_team:
