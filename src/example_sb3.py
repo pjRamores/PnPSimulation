@@ -150,7 +150,7 @@ class ActionMaskWrapper(gym.Wrapper):
             action_type = int(action_arr.flat[0]) if action_arr.size else int(action_arr)
 
             if 0 <= action_type < len(mask) and mask[action_type] == 0:
-                # Action type is masked -- pick a random valid action type instead
+                # Action type is masked - pick a random valid action type instead
                 valid_actions = [i for i in range(len(mask)) if mask[i] == 1]
                 if valid_actions:
                     new_type = int(np.random.choice(valid_actions))
@@ -1037,7 +1037,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         map_size_range: Optional (min, max) tuple enabling per-episode SQUARE
             map-size randomization (map_width == map_height sampled each reset).
             When set, overrides the fixed map_width/map_height. Flows verbatim into
-            every (sub)process emv via env_kwargs.
+            every (sub)process env via env_kwargs.
         min_opponents: Minimum number of opponent ships
         max_opponents: Maximum number of opponent ships
         max_steps: Maximum steps per episode
@@ -1053,8 +1053,8 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
             SubprocVecEnv of n_envs worker processes for higher throughput. n_envs=1 keeps the
             original single-process env path unchanged.
         randomize_game_config: If True, each episode samples the per-round-varying game config
-            (asteroid density, mass regine, payout modifier, energy/jump/shield costs, shield
-            resistance, hit chance, sell price_ within production-derived ranges so the policy
+            (asteroid density, mass regime, payout modifier, energy/jump/shield costs, shield
+            resistance, hit chance, sell price) within production-derived ranges so the policy
             generalizes across the real per-round config distribution. Default False.
         player_model_spec: Optional ModelSpec selecting the PLAYER's observation encoding for
             every training env. Default None -> DEFAULT_FULL_SPEC (262-dim, sensor window 5).
@@ -1064,11 +1064,11 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
             obs_reconstruction), giving exact train/inference parity. Default False keeps the
             legacy global-visibility encoding.
         module_grant_mode: Policy for which module-locked actions (JUMP, REPAIR, SALVAGE) are
-        installed each episode. 'all' (default) installs every module; 'random' picks the
-        count uniformly from {0, 1, 2, 3} then samples that many modules (every count equally
-        likely) to train module-gated behaviour; 'none' installs nothing. All
-        ships share the same set. Does not change the observation layout, so existing models
-        stay loadable (but training with 'random' is needed to actually learn gated behaviour).
+            installed each episode. 'all' (default) installs every module; 'random' picks the
+            count uniformly from {0, 1, 2, 3} then samples that many modules (every count equally
+            likely) to train module-gated behaviour; 'none' installs nothing. All
+            ships share the same set. Does not change the observation layout, so existing models
+            stay loadable (but training with 'random' is needed to actually learn gated behaviour).
     """
 
     if not SB3_AVAILABLE:
@@ -1842,11 +1842,11 @@ Examples:
     parser.add_argument('--randomize-config', action='store_true',
                         help='Randomize the per-round-varying game config (asteroid density, '
                              'mass regime, payout modifier, energy/jump/shield costs, shield '
-                             'resistance, hig chance, sell price) within production-derived '
+                             'resistance, hit chance, sell price) within production-derived '
                              'ranges each episode for robustness (default: off)')
     parser.add_argument('--model-spec', type=str, default=None,
                         help='Select the PLAYER observation spec by name (case-insensitive) for '
-                             'any registered preset: FULL (default, 275-dim), WIDE_SENSOR (alis '
+                             'any registered preset: FULL (default, 275-dim), WIDE_SENSOR (alias '
                              'WIDE, sensor window 10 -> 595-dim), FULL_NO_GRID (alias NO_GRID, '
                              'FULL minus the local sensor grid -> 154-dim), COMPACT (57-dim), '
                              'SENSOR_ONLY. Each spec is a distinct observation layout -> train '
@@ -1858,17 +1858,18 @@ Examples:
                              'exact train/inference parity. Default off keeps the legacy '
                              'global-visibility encoding.')
     parser.add_argument('--module-grant-mode', type=str, default='all',
+                        choices=['all', 'random', 'none'],
                         help='Which module-locked actions (JUMP, REPAIR, SALVAGE) are installed '
                              'each episode. all (default) installs every module; random picks the '
                              'count uniformly from {0,1,2,3} then samples that many modules (every '
                              'count equally likely) to train module-gated behaviour; none '
-                             'installs nothing. Dies not change the observation layout.')
+                             'installs nothing. Does not change the observation layout.')
 
     args = parser.parse_args()
 
     # Resolve the PLAYER observation spec selected via --model-spec. Returns a
     # ModelSpec, or None to mean "use the env default full spec". Unknown names
-    # ward and fall back to the default.
+    # warn and fall back to the default.
     def _resolve_cli_model_spec():
         if getattr(args, 'model_spec', None):
             resolved = get_named_model_spec(args.model_spec)
