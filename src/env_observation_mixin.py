@@ -11,7 +11,7 @@ from utils import action_masker
 # Map-size-invariant spatial encoding. Direction deltas and distances are
 # normalized by a FIXED reference length (in cells) instead of the map
 # dimensions, so identical relative geometry yields identical observation
-# values on any map size. ~50 cells ≅ one default jump radius ("is the target
+# values on any map size. ~50 cells  ≈ one default jump radius ("is the target
 # within a jump?"). Absolute positions stay map-fraction (x / map_width) by
 # design - "where am I on the map" is genuinely map-relative.
 _SPATIAL_REF = 50.0
