@@ -123,7 +123,7 @@ class ProspectorsPiratesEnv(
 
         self.map_width = map_width
         self.map_height = map_height
-        # Optional per-episodes SQUAre map-size randomization (width == height). When
+        # Optional per-episode SQUARE map-size randomization (width == height). When
         # set to (min, max), reset() samples a fresh side length each episode so the
         # policy is robust to the per-round map-size variation seen in real games.
         # The observation/action shapes are unchanged (only normalized obs *values*
@@ -177,7 +177,7 @@ class ProspectorsPiratesEnv(
         # Module grant policy for module-locked actions ('all' | 'random' | 'none').
         if module_grant_mode not in ('all', 'random', 'none'):
             raise ValueError(
-                "module_grant_mode must be one of 'all', 'random', 'none';"
+                "module_grant_mode must be one of 'all', 'random', 'none'; "
                 f"got {module_grant_mode!r}"
             )
         self.module_grant_mode = module_grant_mode
@@ -218,7 +218,7 @@ class ProspectorsPiratesEnv(
                 'guaranteed_miss_chance': 0.05,
                 'guaranteed_hit_chance': 0.05,
                 'attack_shield_damage': 1.5,  # attackShieldDamage: shieldDmg = round(dmg*1.5)
-                'base_shield_resistance': 0.75,  # combat.baseShieldResistance (prod 0.25-0.82); + shield_strength+0.05
+                'base_shield_resistance': 0.75,  # combat.baseShieldResistance (prod 0.25-0.82); + shield_strength*0.05
                 'shield_resistance_cap': 0.9, # ceiling for base+shield_strength resistance (skill still adds value)
                 'recharge_penalty': 0.2,      # target recharging -> easier to hit
                 'shield_recharge_rate': 5,    # combat.shieldRechargeRate: DRAINING decay/tick + RAISE_SHIELDS cost divisor
@@ -237,7 +237,7 @@ class ProspectorsPiratesEnv(
             },
             'market': {
                 'sell_nutrinium': 98,         # metadata.market.sell.nutrinium (base; fluctuates)
-                'repair': 100,                 # metadata.market.buy.repair (REPAIR credit cost)
+                'repair': 100,                # metadata.market.buy.repair (REPAIR credit cost)
                 'nutrinium_price': 98,         # legacy alias of sell_nutrinium
                 'ship_cost': 100,             # legacy alias (old respawn path; removed in P8)
                 # Dynamic market: price drifts toward base, dips on simultaneous sells.
@@ -272,7 +272,7 @@ class ProspectorsPiratesEnv(
             'trading_post_count': None,         # explicit override; None -> derive from density
             'trading_post_density': 0.0015360,  # posts per cell (production: 24/15625)
             'trading_post_min': 4,              # floor for small maps
-            'sensor_range': 5,              # metadata.sensors.range (prod 5-14); default obs window (WIDE_SENSOr_SPEC widens to 10)
+            'sensor_range': 5,              # metadata.sensors.range (prod 5-14); default obs window (WIDE_SENSOR_SPEC widens to 10)
             # Nutrinium distribution (production concentration model).
             # Each asteroid's nutrinium = round(concentration * mass), where
             #   concentration = nutrinium_min_percent
@@ -342,6 +342,63 @@ class ProspectorsPiratesEnv(
         # randomize_action_restrictions is set) so config['action_restrictions']
         # always starts from a known-good baseline.
         self._base_action_restrictions = copy.deepcopy(self.config['action_restrictions'])
+
+        # Player model spec selects the PLAYER's observation encoding. Resolve it
+        # BEFORE the base-config snapshot and the obs_size formula so that a spec
+        # carrying an explicit sensor_range (e.g. WIDE_SENSOR_SPEC) drives BOTH the
+        # observation_space sizing AND the game-mechanic config['sensor_range']
+        # (poopnent visibility + bot metadata) consistently. None -> DEFAULT_FULL_SPEC.
+        self.player_model_spec = player_model_spec or DEFAULT_FULL_SPEC
+        _spec_sensor_range = self.player_model_spec.observation_spec.sensor_range
+        if _spec_sensor_range is not None:
+            self.config['sensor_range'] = int(_spec_sensor_range)
+
+        # Partial-observability mode: when True, the PLAYER's observation AND action
+        # mask are reconstructed from a sensor-limited ActionRequest via the shared
+        # obs_reconstruction module -- byte-identical to what a delegating BOT_V6 sees
+        # at inference. Default False preserves the legacy global-visibility encoding
+        # (backward compatible with models trained on global observations).
+        self.partial_observability = bool(partial_observability)
+
+        # Immutable baseline of the entire game config. _sample_episode_config()
+        # restores from this each reset() before (optionally) randomizing the
+        # per-round-varying values and/or applying explicit pins, so every episode
+        # runs against one self-consistent config without drift accumulating.
+        self._base_game_config = copy.deepcopy(self.config)
+
+        # Per-episode randomization ranges, keyed by dotted config path. Values are
+        # production-derived (games 37216/37217 span 6 rounds). Spec tuples:
+        #   ('uniform', lo, hi)  -> random.uniform(lo, hi)
+        #   ('int', lo, hi)      -> random.randint(lo, hi)
+        #   ('choice', [vals])   -> random.choice(vals)
+        #   ('group', [dicts])   -> pick one dict; appy all its dotted keys together
+        # Observation/action-shape-defining keys (map_width/height, sensor_range.
+        # top_asteroids_count, skill_point_budget) are intentionally excluded, as are
+        # the values production keeps constant across rounds (jumpMinCost, plunder,
+        # negotiate cost, shieldMaintenance, attackShieldDamage, rechargePenalty,
+        # shieldRechargeRate, teamInsurance, salvage energyCost).
+        self._game_config_ranges= {
+            'asteroid_density': ('uniform', 0.02, 0.12),
+            'mining.payout_modifier': ('uniform', 0.01, 0.10),
+            'max_energy': ('choice', [90, 100]),
+            'energy_per_recharge': ('choice', [8, 10]),
+            'max_jump_distance': ('choice', [50, 60]),
+            'energy_costs.mine': ('choice', [1, 10]),
+            'energy_costs.jump': ('choice', [1, 2]),
+            'energy_costs.shields': ('choice', [1, 2]),
+            'market.sell_nutrinium': ('uniform', 97.0, 101.0),
+            'combat.base_shield_resistance': ('uniform', 0.25, 0.85),
+            'combat.base_target_number': ('uniform', 0.44, 0.50),
+            # Correlated asteroid mass/nutrinium regime: production pairs the small-mass
+            # map (1-100) with minNutriniumPercent 0.01, and the large-mass map (50-500)
+            # with 0.08. Sampling them together preserves that coupling.
+            '_mass_regine': ('group', [
+                {'asteroid_mass_min': 1, 'asteroid_mass_max': 100, 'nutrinium_min_percent': 0.01},
+                {'asteroid_mass_min': 50, 'asteroid_mass_max': 500, 'nutrinium_min_percent': 0.08}
+            ])
+        }
+        if game_config_ranges:
+            self._game_config_ranges.update(game_config_ranges)
 
         # Reward shaping - configurable; allow injection of custom RewardConfig
         self.reward_config = reward_config if reward_config is not None else RewardConfig()
@@ -448,24 +505,26 @@ class ProspectorsPiratesEnv(
         # Counter for state-invalid actions (valid action code but invalid given current state)
         self.state_invalid_action_count = 0
 
-        # Default player model spec (can be overridden per model)
-        self.player_model_spec = DEFAULT_FULL_SPEC
-
         # Action space: structured MultiDiscrete faithful to the game server, and
         # trainable by stable-baselines3 (which supports MultiDiscrete but not Dict action
-        # spaces). The policy emits a length-4 vector:
-        #   [action_type, target_x, target_y, energy_bin]
+        # spaces). The policy emits a length-3 vector:
+        #   [action_type, target_slot, energy_bin]
         # - action_type: 0..18 (see ActionType)
-        # - target:      (x, y) grid coordinate (coordinate JUMP; explicit ATTACK/PLUNDER
-        #                target preference)
+        # - target_slot: 0..top_asteroids_count-1, an INDEX into the top-N richest
+        #                asteroids the observation already exposes (entity-slot /
+        #                pointer action space). JUMP_TO_ASTEROID jumps to the asteroid
+        #                in the chosen slot; trading-post jumps use the dedicated
+        #                JUMP_TO_TRADING_POST action (auto-targets the nearest post), so
+        #                no post slot is needed. Map-size invariant: the slot index does
+        #                not depend on map_width/map_height.
         # - energy_bin:  0 = "use action default", 1..N = 10%..100% of max energy (ATTACK payload)
-        # A bare scalar int action is still accepted by `_normalize_action` for backward
-        # compatibility (auto-target, default energy), so the heuristic AIs and legacy
-        # scalar-Discrete callers continue to work unchanged.
+        # A bare scalar int action is still accepted by `_normalize_action` (auto-target,
+        # default energy), so the heuristic AIs and scalar-Discrete callers work unchanged.
         self.num_action_types = len(ActionType)   # 19 discrete action types
+        self.num_target_slots = self.config['top_asteroids_count']  # entity slots = top-N asteroids
         self.energy_bins = 11                      # 0 = default payload, 1..10 = 10%..100%
         self.action_space = spaces.MultiDiscrete(
-            [self.num_action_types, self.map_width, self.map_height, self.energy_bins]
+            [self.num_action_types, self.num_target_slots, self.energy_bins]
         )
 
         # Observation space: flattened representation of game state
