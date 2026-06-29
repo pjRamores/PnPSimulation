@@ -223,7 +223,7 @@ class CompactObservationGenerator(ObservationGenerator):
             1.0 if ship.get('shields_up', False) else 0.0,
         ])
 
-        # Top 5 asteroids (30 values: 5 asteroids + 6 features) -- mirrors the
+        # Top 5 asteroids (30 values: 5 asteroids * 6 features) -- mirrors the
         # FULL spec's top-asteroid block.
         top_asteroids = self.env._get_top_asteroids(
             ship['x'], ship['y'], count=self.env.config['top_asteroids_count'])
@@ -241,19 +241,6 @@ class CompactObservationGenerator(ObservationGenerator):
         for _ in range(self.env.config['top_asteroids_count'] - len(top_asteroids)):
             features.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
-        # Nearest asteroid (4 values)
-        nearest_ast = self.env._get_nearest_entity(ship['x'], ship['y'], self.env.asteroids)
-        if nearest_ast:
-            dist = self.env._calculate_distance(ship['x'], ship['y'], nearest_ast['x'], nearest_ast['y'])
-            features.extend([
-                nearest_ast['x'] / self.env.map_width,
-                nearest_ast['y'] / self.env.map_height,
-                nearest_ast['nutrinium'] / max(nearest_ast['mass'], 1),
-                dist / (self.env.map_width + self.env.map_height),
-            ])
-        else:
-            features.extend([0.0, 0.0, 0.0, 1.0])
-
         # Nearest trading post (3 values)
         nearest_post = self.env._get_nearest_entity(ship['x'], ship['y'], self.env.trading_posts)
         if nearest_post:
@@ -265,6 +252,29 @@ class CompactObservationGenerator(ObservationGenerator):
             ])
         else:
             features.extend([0.0, 0.0, 1.0])
+
+        # Two enemy types (16 values: 2 enemies * 8 features) -- mirrors the FULL
+        # spec's strongest/weakest enemy block (incl. same_team flag).
+        strongest, weakest = self.env_get_extreme_enemies(ship['x'], ship['y'])
+        player_team = ship.get('team_id')
+        player_team = int(player_team) if player_team is not None else 0
+        for enemy in [strongest, weakest]:
+            if enemy:
+                combat_score = self.env._calculate_enemy_combat_score(enemy)
+                enemy_team = enemy.get('team_id')
+                same_team = 1.0 if (enemy_team is not None and int(enemy_team) == player_team) else 0.0
+                features.extend([
+                    enemy['x'] / max(1, self.env.map_width),
+                    enemy['y'] / max(1, self.env.map_height),
+                    enemy['energy'] / max(1, self.env.config['max_energy']),
+                    enemy['health'] / max(1, self.env.config['max_health']),
+                    min(enemy['nutrinium'], 100) / 100.0,
+                    min(enemy['credits'], 1000) / 1000.0,
+                    combat_score,   # Already normalized 0-1
+                    same_team,      # 1.0 if this enemy shares the player's team
+                ])
+            else:
+                features.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
         # Nearest enemy (5 values)
         nearest_enemy = None
