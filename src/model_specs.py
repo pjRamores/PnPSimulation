@@ -12,6 +12,7 @@ from enum import IntEnum
 import numpy as np
 from abc import ABC, abstractmethod
 import copy
+import math
 
 
 class ActionSpec:
@@ -57,7 +58,8 @@ class ObservationSpec:
                  feature_names: Optional[List[str]] = None,
                  observation_size: Optional[int] = None,
                  include_action_mask: bool = True,
-                 description: str = "Standard observation"):
+                 description: str = "Standard observation",
+                 sensor_range: Optional[int] = None):
         """
         Args:
             observation_type: Type of observation ('full', 'compact', 'sensor_only', 'custom')
@@ -65,12 +67,17 @@ class ObservationSpec:
             observation_size: Expected size of flattened observation (None = auto-calculated)
             include_action_mask: Whether to include action mask in observation
             description: Human-readable description
+            sensor_range: Per-spec sensor window radius. None = leave the env's
+                config['sensor_range'] unchanged. When set, the env sizes its
+                observation_space (and grid encoding) from this value, and (per the
+                game-mechanic coupling) overrides config['sensor_range'] to match.
         """
         self.observation_type = observation_type
         self.feature_names = feature_names or []
         self.observation_size = observation_size
         self.include_action_mask = include_action_mask
         self.description = description
+        self.sensor_range = sensor_range
 
     def to_dict(self) -> dict:
         return {
@@ -79,6 +86,7 @@ class ObservationSpec:
             'observation_size': self.observation_size,
             'include_action_mask': self.include_action_mask,
             'description': self.description,
+            'sensor_range': self.sensor_range,
         }
 
     @classmethod
@@ -167,6 +175,10 @@ class ObservationGenerator(ABC):
 class FullObservationGenerator(ObservationGenerator):
     """Generates the full standard observation (current default behavior)."""
 
+    # Whether the local sensor grid block is included. Subclasses (e.g.
+    # FullNoGridObservationGenerator) flip this to False to drop the grid.
+    _include_sensor_grid = True
+
     def generate(self, ship: dict) -> Dict[str, np.ndarray]:
         """Generate full observation format using the legacy implementation."""
         # Set a flag to prevent infinite recursion when using use_spec=True
@@ -177,12 +189,19 @@ class FullObservationGenerator(ObservationGenerator):
             obs = self.env._get_observation(
                 skip_mask=(not self.spec.include_action_mask),
                 use_spec=False,
+                include_sensor_grid=self._include_sensor_grid,
             )
             if not self.spec.include_action_mask and isinstance(obs, dict) and 'action_mask' in obs:
                 obs = {'observation': obs['observation']}
             return obs
         finally:
             self.env._generating_observation = original_flag
+
+
+class FullNoGridObservationGenerator(FullObservationGenerator):
+    """FULL observation minus the local sensor grid block (FULL_NO_GRID layout)."""
+
+    _include_sensor_grid = False
 
 
 class CompactObservationGenerator(ObservationGenerator):
@@ -203,6 +222,24 @@ class CompactObservationGenerator(ObservationGenerator):
             1.0 if ship.get('recharging', False) else 0.0,
             1.0 if ship.get('shields_up', False) else 0.0,
         ])
+
+        # Top 5 asteroids (30 values: 5 asteroids + 6 features) -- mirrors the
+        # FULL spec's top-asteroid block.
+        top_asteroids = self.env._get_top_asteroids(
+            ship['x'], ship['y'], count=self.env.config['top_asteroids_count'])
+        max_dist = math.sqrt(self.env.map_width ** 2 + self.env.map_height ** 2)
+        max_mass = float(self.env.config.get('asteroid_mass_max', 80))
+        for asteroid in top_asteroids:
+            features.extend([
+                asteroid['x'] / max(1, self.env.map_width),
+                asteroid['y'] / max(1, self.env.map_height),
+                asteroid['mass'] / max(1.0, max_mass),
+                asteroid['nutrinium'] / max(1.0, max_mass),
+                asteroid['distance'] / max(1.0, max_dist),
+                asteroid['score'],  # Already normalized 0-1
+            ])
+        for _ in range(self.env.config['top_asteroids_count'] - len(top_asteroids)):
+            features.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
         # Nearest asteroid (4 values)
         nearest_ast = self.env._get_nearest_entity(ship['x'], ship['y'], self.env.asteroids)
