@@ -382,7 +382,7 @@ WIDE_SENSOR_SPEC = ModelSpec(
     observation_spec=ObservationSpec(
         'full',
         sensor_range=10,
-        description="Full observation with wide sensor window 10 -> 595-dim"
+        description="Full observation with wide sensor window 10 -> 595-dim",
     ),
     action_spec=ActionSpec(19, description="Standard 19 actions"),
 )
@@ -398,7 +398,7 @@ FULL_NO_GRID_SPEC = ModelSpec(
     observation_spec=ObservationSpec(
         'full_no_grid',
         sensor_range=5,
-        description="Full observation minus local sensor grid (154-dim)"
+        description="Full observation minus local sensor grid (154-dim)",
     ),
     action_spec=ActionSpec(19, description="Standard 19 actions"),
 )
@@ -418,7 +418,7 @@ DEFAULT_SENSOR_SPEC = ModelSpec(
 
 PRESET_MODEL_SPECS = {
     'DEFAULT_FULL_SPEC': DEFAULT_FULL_SPEC,
-    'WIDE_SENSOr_SPEC': WIDE_SENSOR_SPEC,
+    'WIDE_SENSOR_SPEC': WIDE_SENSOR_SPEC,
     'FULL_NO_GRID_SPEC': FULL_NO_GRID_SPEC,
     'DEFAULT_COMPACT_SPEC': DEFAULT_COMPACT_SPEC,
     'DEFAULT_SENSOR_SPEC': DEFAULT_SENSOR_SPEC,
