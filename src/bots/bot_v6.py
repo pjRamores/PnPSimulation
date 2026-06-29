@@ -249,10 +249,10 @@ def _load_spec():
 def _predict(model, is_md, obs, model_mask, env_mask, st, spec):
     """Run the model and return ``(action_type, target_slot, energy_bin)``.
 
-    The model receives `model_mask` (sized to its own action space). Its raw
+    The model receives ``model_mask`` (sized to its own action space). Its raw
     predicted action is mapped back to an env action id via the spec's
-    `ActionSpec` (identity for the 19-action specs) and then run through the
-    shared `action_masker` utility with the full 19-action ``env_mask`` so the
+    ``ActionSpec`` (identity for the 19-action specs) and then run through the
+    shared ``action_masker`` utility with the full 19-action ``env_mask`` so the
     bot only ever commits to a state-valid action. For the structured
     MultiDiscrete model the vector is ``[action_type, target_slot, energy_bin]``
     where ``target_slot`` indexes the top-N richest asteroids (entity-slot space).
@@ -301,7 +301,7 @@ def _energy_from_bin(ebin, max_energy):
 # ----------------------------------------------------------------------------
 # Action -> lambda response (inverse of env _translate_bot_action)
 # ----------------------------------------------------------------------------
-def _action_to_response(ctx, action_type, tx, ty, ebin):
+def _action_to_response(ctx, action_type, slot, ebin):
     """Convert a chosen env action id into a lambda response dict."""
     if action_type is None or not (0 <= action_type < _NUM_ACTIONS):
         return {"actionType": "WAIT"}
@@ -352,18 +352,18 @@ def _action_to_response(ctx, action_type, tx, ty, ebin):
 
     if name == "JUMP_TO_TRADING_POST":
         post = _nearest_entity(ctx.x, ctx.y, ctx.trading_posts)
-    if post is None:
-        return {"actionType": "WAIT"}
-    return {
-        "actionType": "JUMP",
-        "payload": {"target_location": {"x": post["x"], "y": post["y"]}},
-    }
+        if post is None:
+            return {"actionType": "WAIT"}
+        return {
+            "actionType": "JUMP",
+            "payload": {"target_location": {"x": post["x"], "y": post["y"]}},
+        }
 
     return {"actionType": "WAIT"}
 
-# --------------------------------
+# ----------------------------------------------------------------------------
 # Public lambda contract
-# --------------------------------
+# ----------------------------------------------------------------------------
 def get_model_action(action_request):
     """Decide an action for one ActionRequest via the trained model (raw dict)."""
     if not _NUMPY_OK:
@@ -378,10 +378,13 @@ def get_model_action(action_request):
     ctx = _Context(action_request)
     obs = _build_observation(ctx, spec)
 
-    # The builder now appends the 38-value action-restriction block (total 262 for
-    # the full layout). Models trained before that block expect the shorter vector,
-    # so truncate the reconstructed observation to the loaded model's own size. A
-    # future model retrained on the extended layout consumes the full vector.
+    # The builder now appends the 38-value action-restriction block plus 2 temporal/
+    # spatial features (remaining_time_fraction, quadrant_norm), the two enemy
+    # types each carry a same_team flag, and a 9-value prey-enemies block is
+    # appended at the end -> total 275 for the full layout. Models
+    # trained before those block expect a shorter vector, so
+    # truncate the reconstructed observation to the loaded model's own size. A future
+    # model retrained on the extended layout consumes the full vector.
     try:
         model_obs_space = model.observation_space
         model_obs_size = None
@@ -426,8 +429,9 @@ def get_model_action(action_request):
         model_mask = np.ones(num_actions, dtype=np.int8)
         model_mask[:_NUM_ACTIONS] = env_mask
 
-    action_type, tx, ty, ebin = _predict(model, is_md, obs, model_mask, env_mask, st, spec)
-    return _action_to_response(ctx, action_type, tx, ty, ebin)
+    action_type, slot, ebin = _predict(model, is_md, obs, model_mask, env_mask, st, spec)
+    return _action_to_response(ctx, action_type, slot, ebin)
+
 
 def get_action(action_request):
     """Public entry point: returns a normalised response dict."""
