@@ -361,6 +361,7 @@ def _action_to_response(ctx, action_type, slot, ebin):
 
     return {"actionType": "WAIT"}
 
+
 # ----------------------------------------------------------------------------
 # Public lambda contract
 # ----------------------------------------------------------------------------
@@ -378,11 +379,11 @@ def get_model_action(action_request):
     ctx = _Context(action_request)
     obs = _build_observation(ctx, spec)
 
-    # The builder now appends the 38-value action-restriction block plus 2 temporal/
+    # The builder appends the 38-value action-restriction block plus 2 temporal/
     # spatial features (remaining_time_fraction, quadrant_norm), the two enemy
     # types each carry a same_team flag, and a 9-value prey-enemies block is
     # appended at the end -> total 275 for the full layout. Models
-    # trained before those block expect a shorter vector, so
+    # trained before those blocks expect a shorter vector, so
     # truncate the reconstructed observation to the loaded model's own size. A future
     # model retrained on the extended layout consumes the full vector.
     try:
