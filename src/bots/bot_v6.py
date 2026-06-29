@@ -98,9 +98,8 @@ except Exception:  # pragma: no cover - degrade gracefully if the module is unav
 # stable_baselines3 appends it). Point this at any current full-spec model
 # (224-dim Dict observation, 19 action types). ``ppo_pnp_model_v9`` is a native
 # MultiDiscrete([19, map_w, map_h, energy_bins]) model that matches the env.
-# MODEL_NAME = "ppo_pnp_model_v5"
-MODEL_NAME = "ppo_pnp_model_v7"
-# MODEL_NAME = "ppo_checkpoint_13M_v5"
+# MODEL_NAME = "ppo_pnp_model_v2"
+MODEL_NAME = "ppo_checkpoint_1M_v3"
 
 # Observation / action format the loaded model expects, resolved via
 # ``model_specs.get_named_model_spec``. Supported names: ``"FULL"`` (224-dim,
@@ -108,7 +107,8 @@ MODEL_NAME = "ppo_pnp_model_v7"
 # (6 + (2*sensor_range+1)^2 local grid). The matching observation is
 # reconstructed from sensor-visible entities. Unknown names fall back to FULL.
 # MODEL_SPEC = "FULL"
-MODEL_SPEC = "COMPACT"
+# MODEL_SPEC = "COMPACT"
+MODEL_SPEC = "NO_GRID"
 
 _OBS_SIZE = 224
 _DEFAULT_ATTACK_ENERGY = 20     # baseline ATTACK payload when the model gives none
@@ -197,7 +197,18 @@ def _load_model():
         except Exception:
             spaces = None
 
-        model = PPO.load(model_path)
+        # Replace training-only objects (LR/clip-range schedules) at load time
+        # so the model deserializes even when this SB3 differs from the one that
+        # trained it (newer SB3 pickles the schedule as ``FloatSchedule``, which
+        # older versions can't import). These are unused for inference.
+        print(f">>>> Loading model: {model_path}")
+        model = PPO.load(
+            model_path,
+            custom_objects={
+                "lr_schedule": lambda _: 0.0,
+                "clip_range": lambda _: 0.0,
+            },
+        )
         if spaces is not None:
             is_md = isinstance(model.action_space, spaces.MultiDiscrete)
         else:
