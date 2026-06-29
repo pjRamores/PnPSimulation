@@ -232,7 +232,7 @@ def _load_spec():
     try:
         here = os.path.dirname(os.path.abspath(__file__))  # bots dir or Lambda root
         src_dir = os.path.dirname(here)  # .../src
-        if dep_dir in (here, src_dir):
+        for dep_dir in (here, src_dir):
             if dep_dir not in sys.path:
                 sys.path.insert(0, dep_dir)
         from model_specs import get_named_model_spec, DEFAULT_FULL_SPEC
@@ -242,27 +242,32 @@ def _load_spec():
     _SPEC = result
     return result
 
+
 # ----------------------------------------------------------------------------
 # Model prediction + action-mask enforcement
 # ----------------------------------------------------------------------------
-
 def _predict(model, is_md, obs, model_mask, env_mask, st, spec):
-    """Run the model and return `(action_type, target_x, target_y, energy_bin)`.
+    """Run the model and return ``(action_type, target_slot, energy_bin)``.
 
-    The model receives `model_mask` (sized to its own action space). Its raw predicted
-    action is mapped back to an env action id via the spec's `ActionSpec` (identity for the 19-action specs) and then run through the shared `action_masker` utility with the full 19-action `env_mask` so the bot only ever commits to a state-valid action.
+    The model receives `model_mask` (sized to its own action space). Its raw
+    predicted action is mapped back to an env action id via the spec's
+    `ActionSpec` (identity for the 19-action specs) and then run through the
+    shared `action_masker` utility with the full 19-action ``env_mask`` so the
+    bot only ever commits to a state-valid action. For the structured
+    MultiDiscrete model the vector is ``[action_type, target_slot, energy_bin]``
+    where ``target_slot`` indexes the top-N richest asteroids (entity-slot space).
     """
     obs_dict = {"observation": obs, "action_mask": model_mask}
     vec, _ = model.predict(obs_dict, deterministic=True)
 
-    tx = ty = ebin = None
+    slot = ebin = None
     arr = np.asarray(vec).reshape(-1)
     if is_md:
         raw_action = int(arr[0]) if arr.size >= 1 else None
+        if arr.size >= 2:
+            slot = int(arr[1])
         if arr.size >= 3:
-            tx, ty = int(arr[1]), int(arr[2])
-        if arr.size >= 4:
-            ebin = int(arr[3])
+            ebin = int(arr[2])
     else:
         raw_action = int(arr[0]) if arr.size >= 1 else None
 
@@ -282,10 +287,10 @@ def _predict(model, is_md, obs, model_mask, env_mask, st, spec):
         if masker is not None:
             action_type = masker.mask_action(action_type, st, mask=env_mask)
 
-    return action_type, tx, ty, ebin
+    return action_type, slot, ebin
 
 
-def energy_from_bin(ebin, max_energy):
+def _energy_from_bin(ebin, max_energy):
     """Map a MultiDiscrete energy-bin index to an energy amount (None for bin 0)."""
     if ebin is None or ebin <= 0:
         return None
@@ -293,11 +298,10 @@ def energy_from_bin(ebin, max_energy):
     return int(round(frac * max_energy))
 
 
-# ---------------------------------
-# Action -> lambda response (inverse of env_translate_bot_action)
-# ---------------------------------
-
-def action_to_response(ctx, action_type, tx, ty, ebin):
+# ----------------------------------------------------------------------------
+# Action -> lambda response (inverse of env _translate_bot_action)
+# ----------------------------------------------------------------------------
+def _action_to_response(ctx, action_type, tx, ty, ebin):
     """Convert a chosen env action id into a lambda response dict."""
     if action_type is None or not (0 <= action_type < _NUM_ACTIONS):
         return {"actionType": "WAIT"}
@@ -331,27 +335,31 @@ def action_to_response(ctx, action_type, tx, ty, ebin):
         }
 
     if name == "JUMP_TO_ASTEROID":
+        # Entity-slot: the model's ``slot`` indexes the top-N richest asteroids
+        # (same ranking the observation exposes). Resolve it to a coordinate; if
+        # the slot is empty fall back to the single best asteroid.
         target = None
-        if tx is not None and ty is not None and (tx, ty) != (ctx.x, ctx.y):
-            target = {"x": tx, "y": ty}
-        else:
-            top = _top_asteroids(ctx, ctx.x, ctx.y, 1)
-if top:
-    target = {"x": top[0]["x"], "y": top[0]["y"]}
-if target is None:
-    return {"actionType": "WAIT"}
-return {"actionType": "JUMP", "payload": {"target_location": target}}
+        top = _top_asteroids(ctx, ctx.x, ctx.y, _TOP_ASTEROIDS_COUNT)
+        if top:
+            if slot is not None and 0 <= slot < len(top):
+                ast = top[slot]
+            else:
+                ast = top[0]
+            target = {"x": ast["x"], "y": ast["y"]}
+        if target is None:
+            return {"actionType": "WAIT"}
+        return {"actionType": "JUMP", "payload": {"target_location": target}}
 
-if name == "JUMP_TO_TRADING_POST":
-    post = _nearest_entity(ctx.x, ctx.y, ctx.trading_posts)
-if post is None:
-    return {"actionType": "WAIT"}
-return {
-    "actionType": "JUMP",
-    "payload": {"target_location": {"x": post["x"], "y": post["y"]}},
-}
+    if name == "JUMP_TO_TRADING_POST":
+        post = _nearest_entity(ctx.x, ctx.y, ctx.trading_posts)
+    if post is None:
+        return {"actionType": "WAIT"}
+    return {
+        "actionType": "JUMP",
+        "payload": {"target_location": {"x": post["x"], "y": post["y"]}},
+    }
 
-return {"actionType": "WAIT"}
+    return {"actionType": "WAIT"}
 
 # --------------------------------
 # Public lambda contract
@@ -419,7 +427,7 @@ def get_model_action(action_request):
         model_mask[:_NUM_ACTIONS] = env_mask
 
     action_type, tx, ty, ebin = _predict(model, is_md, obs, model_mask, env_mask, st, spec)
-    return action_to_response(ctx, action_type, tx, ty, ebin)
+    return _action_to_response(ctx, action_type, tx, ty, ebin)
 
 def get_action(action_request):
     """Public entry point: returns a normalised response dict."""
