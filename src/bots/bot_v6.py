@@ -1,43 +1,45 @@
-"""
-Prospectors & Pirates bot (v6) -- model-backed.
+"""Prospectors & Pirates bot (v6) -- model-backed.
 
-Unlike the pure-stdlib heuristic bots (`'bot_v2'` .. `'bot_v5'`), this bot
+Unlike the pure-stdlib heuristic bots (``bot_v2`` .. ``bot_v5``), this bot
 delegates the decision to a trained reinforcement-learning model. It mirrors the
 same 2026 lambda contract -- a single :func:`get_action` that takes an
-ActionRequest dict and returns `"{actionType": str, "payload": ...}` -- but
+ActionRequest dict and returns ``{"actionType": str, "payload"?: ...}`` -- but
 the action is chosen by running the model over a reconstructed observation.
 
 How it works:
 
-1. :class:`_Context` parses the ActionRequest (`'me'` / `'sensors'` /
-   `'gameState.metadata'`) into the fields the environment's observation builder
+1. :class:`_Context` parses the ActionRequest (``me`` / ``sensors`` /
+   ``gameState.metadata``) into the fields the environment's observation builder
    consumes.
 2. :func:`_build_observation` reconstructs the environment's 224-dim observation
-   vector following the exact layout of `env_observation_mixin._get_observation`.
+   vector following the exact layout of ``env_observation_mixin._get_observation``.
    The "global" segments (top asteroids, nearest trading post, enemy extremes,
    nearest wreckage) are reconstructed from SENSOR-VISIBLE entities only -- the
-   lambda only sees what the server reports in `'sensors'` (entities within
+   lambda only sees what the server reports in ``sensors`` (entities within
    sensor range), so these are necessarily local/myopic compared to the
    in-environment AIs that enjoy global map knowledge.
 3. :func:`_mask_state` adapts the parsed state into a
-   `utils.action_masker.MaskState` and the shared action-masking utility
+   ``utils.action_masker.MaskState`` and the shared action-masking utility
    builds the env's 19-action validity mask (single source of truth with the
    environment) over SENSOR-VISIBLE entities only.
 4. The model predicts an action; its raw action TYPE is run through
-   `action_masker.mask_action` so the bot only ever commits to a valid action
+   ``action_masker.mask_action`` so the bot only ever commits to a valid action
    (the same enforcement the environment applies to the player). The model's own
    target coordinate / energy bin are reused for JUMP / ATTACK payloads.
 5. :func:`_action_to_response` converts the chosen env action id back into a
-   lambda response dict (the inverse of the environment's `_translate_bot_action`).
+   lambda response dict (the inverse of the environment's ``_translate_bot_action``).
 
 The default model is configurable via :data:`MODEL_NAME` (resolved relative to
-`../models/<MODEL_NAME>`). Any failure to import numpy / stable_baselines3 or
-to load the model degrades gracefully to `{"actionType": "WAIT"}`.
+``../models/<MODEL_NAME>``). Any failure to import numpy / stable_baselines3 or
+to load the model degrades gracefully to ``{"actionType": "WAIT"}``.
 """
 
 import math
 import os
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     import numpy as np
@@ -46,18 +48,66 @@ except Exception:  # pragma: no cover - numpy is expected but degrade gracefully
     np = None
     _NUMPY_OK = False
 
+# The observation/action-mask reconstruction is shared with the environment (so a
+# model trains on byte-identical observations to what it sees here at inference).
+# The shared modules live in ``src`` locally (this file's parent's parent); on
+# AWS Lambda the ``bots`` folder IS the deployment root, so they sit alongside
+# this file. Add BOTH so the shared module resolves in either layout.
+try:
+    _BOTS_DIR = os.path.dirname(os.path.baspath(__file__))  # .../src/bots or pkg root
+    _SRC_DIR = os.path.dirname(_BOTS_DIR)                   # .../src
+    for _dep_dir in (_BOTS_DIR, _SRC_DIR):
+        if _dep_dir not in sys.path:
+            sys.path.insert(0, _dep_dir)
+    from obs_reconstruction import (
+        _Context,
+        _build_observation,
+        _mask_state,
+        _get_masker,
+        _top_asteroids,
+        _entity_at,
+        _nearest_entity,
+        _ACTION_NAMES,
+        _NUM_ACTIONS,
+        _ENERGY_BINS,
+        _TOP_ASTEROIDS_COUNT,
+    )
+except Exception:  # pragma: no cover - degrade gracefully if the module is unavailable
+    _Context = None
+    _build_observation = None
+    _mask_state = None
+    _get_masker = lambda: None  # noqa: E731
+    _top_asteroids = None
+    _entity_at = None
+    _nearest_entity = None
+    _ACTION_NAMES = [
+        "WAIT", "MINE", "MOVE_NORTH", "MOVE_SOUTH", "MOVE_EAST", "MOVE_WEST",
+        "RECHARGE", "RECHARGE_END", "ATTACK", "JUMP_TO_ASTEROID", "SELL",
+        "RAISE_SHIELDS", "JUMP_TO_TRADING_POST", "RESPAWN", "PLUNDER", "SALVAGE",
+        "REPAIR", "NEGOTIATE", "LOWER_SHIELDS"
+    ]
+    _NUM_ACTIONS = 19
+    _ENERGY_BINS = 11
+    _TOP_ASTEROIDS_COUNT = 5
 
+
+# ----------------------------------------------------------------------------
 # Configuration (editable)
-# ---------------------------------
-# Default model file under `../models/` (the `.zip` suffix is optional -- stable_baselines3 appends it). Point this at any current full-spec model (# 224-dim Dict observation, 19 action types). `ppo_pnp_model_v9` is a native Multidiscrete([19, map_w, map_h, energy_bins]) model that matches the env.
-MODEL_NAME = "ppo_pnp_model_v9"
+# ----------------------------------------------------------------------------
+# Default model file under ``../models/`` (the ``.zip`` suffix is optional --
+# stable_baselines3 appends it). Point this at any current full-spec model
+# (# 224-dim Dict observation, 19 action types). ``ppo_pnp_model_v9`` is a native
+# MultiDiscrete([19, map_w, map_h, energy_bins]) model that matches the env.
+# MODEL_NAME = "ppo_pnp_model_v5"
+MODEL_NAME = "ppo_pnp_model_v7"
 
 # Observation / action format the loaded model expects, resolved via
-# `model_specs.get_named_model_spec`. Supported names: `'FULL'` (224-dim,
-# the default), `'COMPACT'` (20-dim essentials) and `'SENSOR_ONLY'`
+# ``model_specs.get_named_model_spec``. Supported names: ``"FULL"`` (224-dim,
+# the default), ``"COMPACT"`` (20-dim essentials) and ``"SENSOR_ONLY"``
 # (6 + (2*sensor_range+1)^2 local grid). The matching observation is
 # reconstructed from sensor-visible entities. Unknown names fall back to FULL.
-MODEL_SPEC = "FULL"
+# MODEL_SPEC = "FULL"
+MODEL_SPEC = "COMPACT"
 
 _NUM_ACTIONS = 19
 _OBS_SIZE = 224
