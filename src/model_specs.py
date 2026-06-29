@@ -255,7 +255,7 @@ class CompactObservationGenerator(ObservationGenerator):
 
         # Two enemy types (16 values: 2 enemies * 8 features) -- mirrors the FULL
         # spec's strongest/weakest enemy block (incl. same_team flag).
-        strongest, weakest = self.env_get_extreme_enemies(ship['x'], ship['y'])
+        strongest, weakest = self.env._get_extreme_enemies(ship['x'], ship['y'])
         player_team = ship.get('team_id')
         player_team = int(player_team) if player_team is not None else 0
         for enemy in [strongest, weakest]:
@@ -270,30 +270,11 @@ class CompactObservationGenerator(ObservationGenerator):
                     enemy['health'] / max(1, self.env.config['max_health']),
                     min(enemy['nutrinium'], 100) / 100.0,
                     min(enemy['credits'], 1000) / 1000.0,
-                    combat_score,   # Already normalized 0-1
-                    same_team,      # 1.0 if this enemy shares the player's team
+                    combat_score,  # Already normalized 0-1
+                    same_team,     # 1.0 if this enemy shares the player's team
                 ])
             else:
                 features.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-
-        # Nearest enemy (5 values)
-        nearest_enemy = None
-        for enemy in self.env.opponent_ships:
-            if not enemy.get('destroyed', False):
-                nearest_enemy = enemy
-                break
-
-        if nearest_enemy:
-            dist = self.env._calculate_distance(ship['x'], ship['y'], nearest_enemy['x'], nearest_enemy['y'])
-            features.extend([
-                nearest_enemy['x'] / self.env.map_width,
-                nearest_enemy['y'] / self.env.map_height,
-                nearest_enemy['health'] / self.env.config['max_health'],
-                nearest_enemy['nutrinium'] / self.env.config['max_nutrinium_cargo'],
-                dist / (self.env.map_width + self.env.map_height),
-            ])
-        else:
-            features.extend([0.0, 0.0, 0.0, 0.0, 1.0])
 
         obs_array = np.array(features, dtype=np.float32)
 
@@ -368,6 +349,7 @@ class SensorOnlyObservationGenerator(ObservationGenerator):
 # Registry of built-in generators
 OBSERVATION_GENERATORS = {
     'full': FullObservationGenerator,
+    'full_no_grid': FullNoGridObservationGenerator,
     'compact': CompactObservationGenerator,
     'sensor_only': SensorOnlyObservationGenerator,
 }
@@ -382,7 +364,42 @@ def get_observation_generator(spec: ObservationSpec, env: Any) -> ObservationGen
 # Preset specs for common configurations
 DEFAULT_FULL_SPEC = ModelSpec(
     name="default_full",
-    observation_spec=ObservationSpec('full', description="Full observation with all features"),
+    observation_spec=ObservationSpec(
+        'full',
+        sensor_range=5,
+        description="Full observation with all features (sensor window 5 -> 275-dim)",
+    ),
+    action_spec=ActionSpec(19, description="Standard 19 actions"),
+)
+
+# Wider sensor window variant: identical full observation layout but with a
+# sensor_range of 10 -> (2*10+1)**2 = 441 grid cells, yielding a 595-dim
+# observation. Opt-in only; the default training/eval path stays at 275-dim so
+# existing models keep loading. Per the game-mechanic coupling, selecting this
+# spec also widens the env's config['sensor_range'] (bot visibility + metadata).
+WIDE_SENSOR_SPEC = ModelSpec(
+    name="wide_sensor",
+    observation_spec=ObservationSpec(
+        'full',
+        sensor_range=10,
+        description="Full observation with wide sensor window 10 -> 595-dim"
+    ),
+    action_spec=ActionSpec(19, description="Standard 19 actions"),
+)
+
+# Full observation minus the local sensor grid: identical FULL layout but the
+# (2*sensor_range+1)**2 sensor-grid block is dropped, yielding 154-dim at
+# sensor_range=5 (275 - 121). The grid sits mid-vector, so this is a distinct
+# layout (not a tail-truncation of FULL) and must be trained fresh. The
+# game-mechanic config['sensor_range'] stays at 5 so opponent visibility and
+# top-asteroid/enemy detection match FULL exactly.
+FULL_NO_GRID_SPEC = ModelSpec(
+    name="full_no_grid",
+    observation_spec=ObservationSpec(
+        'full_no_grid',
+        sensor_range=5,
+        description="Full observation minus local sensor grid (154-dim)"
+    ),
     action_spec=ActionSpec(19, description="Standard 19 actions"),
 )
 
@@ -401,10 +418,16 @@ DEFAULT_SENSOR_SPEC = ModelSpec(
 
 PRESET_MODEL_SPECS = {
     'DEFAULT_FULL_SPEC': DEFAULT_FULL_SPEC,
+    'WIDE_SENSOr_SPEC': WIDE_SENSOR_SPEC,
+    'FULL_NO_GRID_SPEC': FULL_NO_GRID_SPEC,
     'DEFAULT_COMPACT_SPEC': DEFAULT_COMPACT_SPEC,
     'DEFAULT_SENSOR_SPEC': DEFAULT_SENSOR_SPEC,
     # Friendly aliases
     'FULL': DEFAULT_FULL_SPEC,
+    'WIDE_SENSOR': WIDE_SENSOR_SPEC,
+    'WIDE': WIDE_SENSOR_SPEC,
+    'FULL_NO_GRID': FULL_NO_GRID_SPEC,
+    'NO_GRID': FULL_NO_GRID_SPEC,
     'COMPACT': DEFAULT_COMPACT_SPEC,
     'SENSOR_ONLY': DEFAULT_SENSOR_SPEC,
 }
