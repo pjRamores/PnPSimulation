@@ -119,6 +119,7 @@ _SIMPLE_ACTIONS = {
     "LOWER_SHIELDS", "RESPAWN", "PLUNDER", "SALVAGE", "REPAIR", "NEGOTIATE",
 }
 
+
 def _to_response(payload):
     """Lightweight lambda response adapter (mirrors bot_v2 .. bot_v5)."""
     if isinstance(payload, dict):
@@ -149,12 +150,13 @@ def _to_response(payload):
 # ----------------------------------------------------------------------------
 _MODEL = "unset"  # sentinel -> (model, is_multidiscrete) tuple, or None on failure
 
-def load_model():
+def _load_model():
     """Load and cache the configured model. Returns `(model, is_md)` or `None`.
 
-    The parent ``PnPSimulation`` directory is added to ``sys.path`` so the
-    model and its dependencies resolve. Any failure (missing numpy / sb3 / model file)
-    is swallowed and cached as ``None`` so callers fall back to WAIT without re-attempting a slow load every tick.
+    The parent ``PnPSimulation`` directory is added to ``sys.path`` so the model
+    and its dependencies resolve. Any failure (missing numpy / sb3 / model file)
+    is swallowed and cached as ``None`` so callers fall back to WAIT without
+    re-attempting a slow load every tick.
     """
     global _MODEL
     if _MODEL != "unset":
@@ -162,11 +164,31 @@ def load_model():
 
     result = None
     try:
-        here = os.path.dirname(os.path.abspath(__file__))
-        parent = os.path.dirname(here)  # ../PnPSimulation
-        if parent not in sys.path:
-            sys.path.insert(0, parent)
-        model_path = os.path.join(parent, "models", MODEL_NAME)
+        here = os.path.dirname(os.path.abspath(__file__))  # .../src/bots (or the
+                                                           # Lambda package root)
+        src_dir = os.path.dirname(here)                    # .../src
+        repo_root = os.path.dirname(src_dir)               # .../PnPSimulation
+
+        # Make sibling dependency modules (model_specs, obs_reconstruction,
+        # utils, ...) importable in BOTH layouts: locally they live in ``src``
+        # (the parent of ``bots``); on AWS Lambda the ``bots`` folder IS the
+        # deployment root, so they sit alongside this file in ``here``.
+        for dep_dir in (here, src_dir):
+            if dep_dir not in sys.path:
+                sys.path.insert(0, dep_dir)
+
+        # Models may live next to this file (``<here>/models`` -- the local
+        # ``src/bots/models`` AND the Lambda ``bots/models``), or at the repo
+        # root (``PnPSimulation/models``). Pick the first candidate that exists
+        # (stable_baseline3 appends the ``.zip`` suffix on load).
+        model_path = os.path.join(here, "models", MODEL_NAME)
+        for candidate in (
+            os.path.join(here, "models", MODEL_NAME),
+            os.path.join(repo_root, "models", MODEL_NAME),
+        ):
+            if os.path.exists(candidate) or os.path.exists(candidate + ".zip"):
+                model_path = candidate
+                break
 
         from stable_baselines3 import PPO
         try:
@@ -181,41 +203,21 @@ def load_model():
             is_md = hasattr(model.action_space, "nvec")
         result = (model, is_md)
     except Exception:
+        logger.exception(
+            "bot_v6: failed to load model %r (tried %r) -- falling back to WAIT",
+            MODEL_NAME, locals().get("model_path", "<unresolved>"),
+        )
         result = None
 
     _MODEL = result
     return result
 
 
-_MASKER = "unset"  # sentinel -> the utils.action_masker module, or None on failure
-
-def get_masker():
-    """Lazily import and cache `utils.action_masker`. Returns the module or None.
-
-    The ``src`` directory (parent of ``bots``) is added to ``sys.path`` so the
-    utility resolves both inside the simulator and when run as a standalone
-    lambda. Any failure degrades gracefully (callers fall back to no masking).
-    """
-    global _MASKER
-    if _MASKER != "unset":
-        return _MASKER
-    result = None
-    try:
-        here = os.path.dirname(os.path.abspath(__file__))
-        src_dir = os.path.dirname(here)  # ../src
-        if src_dir not in sys.path:
-sys.path.insert(0, src_dir)
-from utils import action_masker
-result = action_masker
-except Exception:
-    result = None
-_MASKER = result
-return result
-
 _SPEC = "unset"  # sentinel -> resolved model_specs.ModelSpec, or None on failure
 
+
 def _load_spec():
-    """Resolve and cache the :data:`MODEL_SPEC` into a `model_specs.ModelSpec`.
+    """Resolve and cache the :data:`MODEL_SPEC` into a ``model_specs.ModelSpec``.
 
     The ``src`` directory (parent of ``bots``) is added to ``sys.path`` so
     ``model_specs`` resolves both inside the simulator and as a standalone
