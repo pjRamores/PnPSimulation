@@ -54,7 +54,7 @@ except Exception:  # pragma: no cover - numpy is expected but degrade gracefully
 # AWS Lambda the ``bots`` folder IS the deployment root, so they sit alongside
 # this file. Add BOTH so the shared module resolves in either layout.
 try:
-    _BOTS_DIR = os.path.dirname(os.path.baspath(__file__))  # .../src/bots or pkg root
+    _BOTS_DIR = os.path.dirname(os.path.abspath(__file__))  # .../src/bots or pkg root
     _SRC_DIR = os.path.dirname(_BOTS_DIR)                   # .../src
     for _dep_dir in (_BOTS_DIR, _SRC_DIR):
         if _dep_dir not in sys.path:
@@ -84,7 +84,7 @@ except Exception:  # pragma: no cover - degrade gracefully if the module is unav
         "WAIT", "MINE", "MOVE_NORTH", "MOVE_SOUTH", "MOVE_EAST", "MOVE_WEST",
         "RECHARGE", "RECHARGE_END", "ATTACK", "JUMP_TO_ASTEROID", "SELL",
         "RAISE_SHIELDS", "JUMP_TO_TRADING_POST", "RESPAWN", "PLUNDER", "SALVAGE",
-        "REPAIR", "NEGOTIATE", "LOWER_SHIELDS"
+        "REPAIR", "NEGOTIATE", "LOWER_SHIELDS",
     ]
     _NUM_ACTIONS = 19
     _ENERGY_BINS = 11
@@ -96,10 +96,11 @@ except Exception:  # pragma: no cover - degrade gracefully if the module is unav
 # ----------------------------------------------------------------------------
 # Default model file under ``../models/`` (the ``.zip`` suffix is optional --
 # stable_baselines3 appends it). Point this at any current full-spec model
-# (# 224-dim Dict observation, 19 action types). ``ppo_pnp_model_v9`` is a native
+# (224-dim Dict observation, 19 action types). ``ppo_pnp_model_v9`` is a native
 # MultiDiscrete([19, map_w, map_h, energy_bins]) model that matches the env.
 # MODEL_NAME = "ppo_pnp_model_v5"
 MODEL_NAME = "ppo_pnp_model_v7"
+# MODEL_NAME = "ppo_checkpoint_13M_v5"
 
 # Observation / action format the loaded model expects, resolved via
 # ``model_specs.get_named_model_spec``. Supported names: ``"FULL"`` (224-dim,
@@ -109,51 +110,16 @@ MODEL_NAME = "ppo_pnp_model_v7"
 # MODEL_SPEC = "FULL"
 MODEL_SPEC = "COMPACT"
 
-_NUM_ACTIONS = 19
 _OBS_SIZE = 224
-_ENERGY_BINS = 11  # MultiDiscrete energy dimension (matches the env)
-_DEFAULT_ATTACK_ENERGY = 20  # baseline ATTACK payload when the model gives none
+_DEFAULT_ATTACK_ENERGY = 20     # baseline ATTACK payload when the model gives none
 
-# Environment config constants that the observation normalizers depend on but
-# that the ActionRequest does not carry (they match the simulator's config).
-_MAX_CARGO = 1000  # max_nutrinium_cargo
-_MAX_CREDITS = 10000  # max_credits
-_MAX_HEALTH = 100  # max_health
-_MAX_SKILL_POINTS = 24  # max_skill_points
-_TOP_ASTEROIDS_COUNT = 5  # top_asteroids_count
-_MAX_STEPS = 300  # episode length proxy for the action counter
-_MARKET_REF = 98.0  # config market.sell_nutrinium reference price
-
-# Action id -> name (matches env_common.ActionType, display/translate order).
-_ACTION_NAMES = [
-    "WAIT", "MINE", "MOVE_NORTH", "MOVE_SOUTH", "MOVE_EAST", "MOVE_WEST",
-    "RECHARGE", "RECHARGE_END", "ATTACK", "JUMP_TO_ASTEROID", "SELL",
-    "RAISE_SHIELDS", "JUMP_TO_TRADING_POST", "RESPAWN", "PLUNDER", "SALVAGE",
-    "REPAIR", "NEGOTIATE", "LOWER_SHIELDS",
-]
-
-# Simple env action ids that translate to a bare `{"actionType": NAME}`.
+# Simple env action ids that translate to a bare ``{"actionType": NAME}``.
 _SIMPLE_ACTIONS = {
     "WAIT", "MINE", "RECHARGE", "RECHARGE_END", "RAISE_SHIELDS",
     "LOWER_SHIELDS", "RESPAWN", "PLUNDER", "SALVAGE", "REPAIR", "NEGOTIATE",
 }
 
-def _restriction_key(action_name):
-    """Map an action name to its `metadata.actionRestrictions` key.
-    The four MOVE directions share the `MOVE` rule and both JUMP variants share
-    the `JUMP` rule; every other action maps to itself. Mirrors
-    `utils.action_masker.ACTION_RESTRICTION_NAME`.
-"""
-if action_name.startswith("MOVE_"):
-    return "MOVE"
-if action_name.startswith("JUMP_"):
-    return "JUMP"
-return action_name
-
-# Action id -> restriction key, aligned to the 19-action mask order.
-_ACTION_RESTRICTION_KEY = [_restriction_key(n) for n in _ACTION_NAMES]
-
-def to_response(payload):
+def _to_response(payload):
     """Lightweight lambda response adapter (mirrors bot_v2 .. bot_v5)."""
     if isinstance(payload, dict):
         action = payload
@@ -177,9 +143,10 @@ def to_response(payload):
 
     return action
 
-# ---------------------------------
+
+# ----------------------------------------------------------------------------
 # Lazy model loading (cached at module scope)
-# ---------------------------------
+# ----------------------------------------------------------------------------
 _MODEL = "unset"  # sentinel -> (model, is_multidiscrete) tuple, or None on failure
 
 def load_model():
@@ -1002,6 +969,6 @@ def get_model_action(action_request):
 def get_action(action_request):
     """Public entry point: returns a normalised response dict."""
     try:
-        return to_response(get_model_action(action_request))
+        return _to_response(get_model_action(action_request))
     except Exception:
         return {"actionType": "WAIT"}
