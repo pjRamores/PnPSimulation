@@ -98,9 +98,9 @@ _refresh_logging_enabled()
 
 
 
-# -----------------------------------
+# ----------------------------------------------------------------------------
 # Per-game file logging
-# -----------------------------------
+# ----------------------------------------------------------------------------
 # Each game+round gets its own log file (named "<gameId>_<round>_game.log") so a
 # single round's tick-by-tick trace can be inspected in isolation. The file
 # handler is created once per game+round and reused across ticks; switching to a
@@ -213,9 +213,9 @@ def _reset_game_logging():
     _active_game_log["handler"] = None
 
 
-# -----------------------------------------
+# ----------------------------------------------------------------------------
 # Coordinate-orientation self-calibration
-# -----------------------------------------
+# ----------------------------------------------------------------------------
 # The local simulator documents N=y-1 / E=x+1, but the live competition server
 # has been observed to INVERT the N/S axis (a commanded "N" increases y), which
 # left the bot steering away from every target and oscillating between two cells
@@ -368,9 +368,9 @@ class Tunables:
     STUCK_ESCAPE_THRESHOLD = 3
 
 
-# ---------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Reusable utility classes
-# ---------------------------------------------------------
+# ----------------------------------------------------------------------------
 class ShipUtils:
     """Stateless geometry and parsing helpers shared across strategies."""
 
@@ -514,9 +514,9 @@ class CombatEvaluator:
         return base
 
 
-# -------------------------------------------------
+# ----------------------------------------------------------------------------
 # Parsed game state
-# -------------------------------------------------
+# ----------------------------------------------------------------------------
 class GameContext:
     """Parses one ActionRequest into structured, reusable state."""
 
@@ -796,9 +796,9 @@ class GameContext:
         return (expected_yield * pool_factor) / ((dist + 1.0) * competition_factor)
 
 
-# -----------------------------------
+# ----------------------------------------------------------------------------
 # Heuristic strategy
-# -----------------------------------
+# ----------------------------------------------------------------------------
 class HeuristicStrategy:
     """Priority-ordered decision policy with an action-mask safety net."""
 
@@ -1495,9 +1495,9 @@ class HeuristicStrategy:
         return final
 
 
-# ---------------------------------
+# ----------------------------------------------------------------------------
 # Action-mask safety net (shared utils.action_masker)
-# ---------------------------------
+# ----------------------------------------------------------------------------
 _MASKER = "unset"  # sentinel -> the utils.action_masker module, or None on failure
 
 
@@ -1689,9 +1689,9 @@ def _enforce(ctx, action):
     return enforced
 
 
-# --------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Public lambda contract
-# --------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 def get_action(action_request):
     logger.info(action_request)
     action = get_heuristic_action(action_request)
