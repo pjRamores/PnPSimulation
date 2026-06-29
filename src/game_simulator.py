@@ -1828,7 +1828,7 @@ def main():
                        choices=['all', 'random', 'none'],
                        help='Which module-locked actions (JUMP, REPAIR, SALVAGE) are installed '
                             'each episode. all (default) installs every module; random installs '
-                            'each with 50% probability; none installs nothing. Match this to how '
+                            'each with 50%% probability; none installs nothing. Match this to how '
                             'the model was trained.')
 
     args = parser.parse_args()
