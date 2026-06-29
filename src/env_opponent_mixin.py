@@ -329,9 +329,14 @@ class EnvOpponentMixin:
         mirrors the live-server ActionRequest the bots parse in production (see
         ``logs/action_request.json``): ``actionId``, ``actionResult``,
         ``eventLog``, ``gameState`` (with full ``metadata``), ``leaderboard``,
-        ``me`` and ``sensors``. The controlled ship becomes ``me``; nearby
-        entities (within sensor range) become ``sensors``; environment config
-        becomes ``gameState.metadata``. Fields the simulation does not track
+        ``me`` and ``sensors``. The controlled ship becomes ``me``; sensor
+        contacts become ``sensors``. Trading posts are ALWAYS included in full
+        (every post on the map, regardless of sensor range), mirroring the
+        production server which sends every trading post each tick as a known
+        navigation landmark. Asteroids, enemy ships and wreckage remain
+        sensor-limited (only those within the detection window are emitted) so
+        exploration is still required. Environment config becomes
+        ``gameState.metadata``. Fields the simulation does not track
         (transport/cosmetic: ``hue``, ``imageId``, ``requestConfig``,
         ``roundScores``, ``stats``) are emitted with neutral defaults so the
         shape matches production while the bots' consumed fields stay intact.
@@ -381,7 +386,7 @@ class EnvOpponentMixin:
             }
 
         sensors = []
-        # Asteroids and trading posts are static within an episode; query only the
+        # Asteroids are static within an episode but sensor-limited; query only the
         # cells inside the sensor window (O(window)) instead of scanning every
         # entity (O(all)). _entities_in_window returns them in original list order
         # so the emitted sensors list is identical to the legacy full scan.
@@ -395,7 +400,12 @@ class EnvOpponentMixin:
                 'round': round_no,
                 'type': 'asteroid',
             })
-        for tp in self._entities_in_window('trading_posts', sx, sy, effective_range):
+        # Trading posts are ALWAYS emitted in full (every post on the map),
+        # regardless of sensor range, matching the production server which always
+        # reports every trading post as a known navigation landmark. They are not
+        # windowed like asteroids/enemies, so the policy can navigate to a post it
+        # has not physically explored.
+        for tp in self.trading_posts:
             sensors.append({
                 'gameId': game_id,
                 'id': tp.get('id'),
