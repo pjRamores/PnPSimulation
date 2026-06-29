@@ -192,7 +192,7 @@ from utils import action_masker
 result = action_masker
 except Exception:
     result = None
-MASKER = result
+_MASKER = result
 return result
 
 _SPEC = "unset"  # sentinel -> resolved model_specs.ModelSpec, or None on failure
