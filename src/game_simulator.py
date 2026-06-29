@@ -40,7 +40,7 @@ else:
 
 from pnp_env import ProspectorsPiratesEnv, OpponentAIType
 from model_adapter import wrap_model_with_compat
-from model_specs import DEFAULT_FULL_SPEC, get_named_model_spec
+from model_specs import DEFAULT_FULL_SPEC, get_named_model_spec, ModelSpec
 
 
 def _parse_model_path_with_spec(raw_model_path: str) -> Tuple[str, Optional[str]]:
@@ -212,7 +212,10 @@ class GameSimulator:
                  use_predefined_start: bool = False,
                  start_position_config_path: str = 'start_positions.config',
                  enable_logging: bool = True,
-                 output_base_dir: str = 'output'):
+                 output_base_dir: str = 'output',
+                 partial_observability: bool = False,
+                 module_grant_mode: str = 'all',
+                 player_model_spec: Optional[ModelSpec] = None):
         """
         Initialize the game simulator.
 
@@ -228,6 +231,11 @@ class GameSimulator:
             start_position_config_path: Path to starting position configuration file
             enable_logging: Whether to enable logging to files
             output_base_dir: Base directory for output logs (default: 'output')
+            player_model_spec: Optional ModelSpec overriding the player's observation
+                encoding for the eval env. Takes precedence over any ``::SPEC`` suffix
+                on ``model_path`` and the DEFAULT_FULL_SPEC default. Used by
+                post-training performance testing to size the env to the model just
+                trained (e.g. a COMPACT/57-dim model).
         """
         parsed_model_path, parsed_spec_name = _parse_model_path_with_spec(model_path)
         self.model_path = parsed_model_path
@@ -238,6 +246,10 @@ class GameSimulator:
                 self.player_model_spec = resolved
             else:
                 print(f"WARNING: Unknown player MODEL_SPEC '{parsed_spec_name}' in --model-path. Falling back to DEFAULT_FULL_SPEC.")
+        # An explicit spec object wins over the :: SPEC suffix and the default. Used by
+        # post-training performance testing to size the eval env to the model the
+        # trainer just produced (e.g. a COMPACT/57-dim model) without round-tripping
+        # through a preset name.
         self.algorithm = algorithm.upper()
         self.map_width = map_width
         self.map_height = map_height
@@ -246,6 +258,13 @@ class GameSimulator:
         self.asteroid_config_path = asteroid_config_path
         self.use_predefined_start = use_predefined_start
         self.start_position_config_path = start_position_config_path
+        # When True, the player observation + action mask are reconstructed from a
+        # sensor-limited ActionRequest (matching BOT_V6 inference). Match this to how
+        # the model was trained to avoid a train/inference observation mismatch.
+        self.partial_observability = bool(partial_observability)
+        # Module grant policy ('all' | 'random' | 'none'). Match this to how the model
+        # was trained so module availability at eval mirrors training.
+        self.module_grant_mode = module_grant_mode
 
         # Track cumulative player placements across episodes
         self.player_placements = {1: 0, 2: 0, 3: 0}  # 1st, 2nd, 3rd place counts
