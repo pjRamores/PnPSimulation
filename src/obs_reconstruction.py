@@ -1,14 +1,14 @@
-"""
-Shared observation + action-mask reconstruction from an ActionRequest.
+"""Shared observation + action-mask reconstruction from an ActionRequest.
 
 Single source of truth used by BOTH:
-    * the model-backed bot (:mod:`bots.bot_v6`) at inference time, and
-    * the environment (:class:`ProspectorsPiratesEnv`) when
-        ``partial_observability`` training is enabled,
+
+  * the model-backed bot (:mod:`bots.bot_v6`) at inference time, and
+  * the environment (:class:`ProspectorsPiratesEnv`) when
+    ``partial_observability`` training is enabled,
 
 so a model trains on byte-identical observations/masks to what it sees as a
 delegating bot. Because both sides run the same builder over the same
-sensor-limited `ActionRequest` (produced by
+sensor-limited ``ActionRequest`` (produced by
 ``EnvOpponentMixin._compose_action_request``), parity is exact by construction.
 
 The reconstruction is intentionally *myopic*: it only consumes what the server
@@ -30,27 +30,27 @@ except Exception:  # pragma: no cover - numpy is expected but degrade gracefully
     _NUMPY_OK = False
 
 
-# ---------------------------------
+# -----------------------------------------------------------------------------
 # Constants (shared by the env training path and the bot inference path)
-# ---------------------------------
+# -----------------------------------------------------------------------------
 _NUM_ACTIONS = 19
-_ENERGY_BINS = 11          # MultiDiscrete energy dimension (matches the env)
+_ENERGY_BINS = 11               # MultiDiscrete energy dimension (matches the env)
 
 # Environment config constants that the observation normalizers depend on but
 # that the ActionRequest does not carry (they match the simulator's config).
-_MAX_CARGO = 1000         # max_nutrinium_cargo
-_MAX_CREDITS = 10000     # max_credits
-_MAX_HEALTH = 100        # max_health
-_MAX_SKILL_POINTS = 24   # max_skill_points
-_TOP_ASTEROIDS_COUNT = 5    # top_asteroids_count
-_MAX_STEPS = 300         # episode length proxy for the action counter
-_MARKET_REF = 98.0       # config market.sell_nutrinium reference price
-_SPATIAL_REF = 50.0      # fixed reference length for scale-free deltas/distances
+_MAX_CARGO = 1000               # max_nutrinium_cargo
+_MAX_CREDITS = 10000            # max_credits
+_MAX_HEALTH = 100               # max_health
+_MAX_SKILL_POINTS = 24          # max_skill_points
+_TOP_ASTEROIDS_COUNT = 5        # top_asteroids_count
+_MAX_STEPS = 300                # episode length proxy for the action counter
+_MARKET_REF = 98.0              # config market.sell_nutrinium reference price
+_SPATIAL_REF = 50.0             # fixed reference length for scale-free deltas/distances
 
 
 def _scaled_delta(d):
     """Scale a signed coordinate delta to [-1, 1] by a fixed reference length.
-    
+
     Map-size invariant; mirrors env_observation_mixin._scaled_delta exactly so
     the reconstructed observation matches the env for the same world geometry.
     """
@@ -58,8 +58,8 @@ def _scaled_delta(d):
 
 
 def _scaled_distance(dist):
-    """Scale a non-negative distance to [0, 1] via dist / (dist + ref).
-    
+    """Scale a non-negative distance to [0, 1) via dist / (dist + ref).
+
     Map-size invariant; mirrors env_observation_mixin._scaled_distance exactly.
     """
     return dist / (dist + _SPATIAL_REF)
@@ -73,8 +73,9 @@ _ACTION_NAMES = [
     "REPAIR", "NEGOTIATE", "LOWER_SHIELDS",
 ]
 
+
 def _restriction_key(action_name):
-    """Map an action name to its `metadata.actionRestrictions` key.
+    """Map an action name to its ``metadata.actionRestrictions`` key.
     
     The four MOVE directions share the ``MOVE`` rule and both JUMP variants share
     the ``JUMP`` rule; every other action maps to itself. Mirrors
@@ -90,15 +91,20 @@ def _restriction_key(action_name):
 # Action id -> restriction key, aligned to the 19-action mask order.
 _ACTION_RESTRICTION_KEY = [_restriction_key(n) for n in _ACTION_NAMES]
 
-# ---------------------------------
-# Lazy action_masker import (cached at module scope)
-# ---------------------------------
-_MASKER = "unset"  # sentinel -> the utils.action_masker module, or None on failure
-def get_masker():
-    """Lazily import and cache `utils.action_masker`. Returns the module or None.
 
-    The 'src' directory (this module's own directory) is added to `sys.path`
-    so the utility resolves both inside the simulator and when run as a standalone lambda. Any failure degrades gracefully (callers fall back to no masking).
+# -----------------------------------------------------------------------------
+# Lazy action_masker import (cached at module scope)
+# -----------------------------------------------------------------------------
+_MASKER = "unset"  # sentinel -> the utils.action_masker module, or None on failure
+
+
+def _get_masker():
+    """Lazily import and cache ``utils.action_masker``. Returns the module or None.
+
+    The '`src`' directory (this module's own directory) is added to ``sys.path``
+    so the utility resolves both inside the simulator and when run as a
+    standalone lambda. Any failure degrades gracefully (callers fall back to no
+    masking).
     """
     global _MASKER
     if _MASKER != "unset":
@@ -115,13 +121,14 @@ def get_masker():
     _MASKER = result
     return result
 
-# -------------------------------------
-# Geometry / parsing helpers (stateless)
-# -------------------------------------
 
-def distance(x1, y1, x2, y2):
+# -----------------------------------------------------------------------------
+# Geometry / parsing helpers (stateless)
+# -----------------------------------------------------------------------------
+def _distance(x1, y1, x2, y2):
     """Euclidean distance between two cells."""
     return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+
 
 def _entity_at(x, y, entities):
     """First entity exactly at (x, y), or None."""
@@ -130,11 +137,13 @@ def _entity_at(x, y, entities):
             return e
     return None
 
-def entities_at(x, y, entities):
+
+def _entities_at(x, y, entities):
     """All entities exactly at (x, y)."""
     return [e for e in entities if e["x"] == x and e["y"] == y]
 
-def nearest_entity(x, y, entities):
+
+def _nearest_entity(x, y, entities):
     """Nearest entity to (x, y) by Euclidean distance, or None."""
     best = None
     best_dist = None
@@ -145,17 +154,19 @@ def nearest_entity(x, y, entities):
             best = e
     return best
 
+
 def _ab(skills, name, default):
-    """Skill/ability value (numeric), falling back to `default`."""
+    """Skill/ability value (numeric), falling back to ``default``."""
     try:
         v = skills.get(name, default)
         return float(v if v is not None else default)
     except (AttributeError, TypeError, ValueError):
         return float(default)
 
-# -------------------------------------
+
+# -----------------------------------------------------------------------------
 # Parsed request
-# -------------------------------------
+# -----------------------------------------------------------------------------
 
 class _Context:
     """Parses one ActionRequest into the fields the observation builder needs."""
@@ -167,7 +178,7 @@ class _Context:
         self.x = int(loc.get("x", 0))
         self.y = int(loc.get("y", 0))
         self.energy = int(me.get("energy", 0))
-        self.health = int(me.get("health", MAX_HEALTH))
+        self.health = int(me.get("health", _MAX_HEALTH))
         self.nutrinium = int(me.get("nutrinium", 0))
         self.credits = int(me.get("credits", 0) or 0)
         self.recharging = bool(me.get("recharging", False))
@@ -188,112 +199,114 @@ class _Context:
 
         self.modules = set()
         for m in me.get("modules", []) or []:
-if isinstance(m, str):
-    self.modules.add(m.upper())
-elif isinstance(m, dict):
-    tag = m.get("type") or m.get("name")
-    if tag:
-        self.modules.add(str(tag).upper())
+            if isinstance(m, str):
+                self.modules.add(m.upper())
+            elif isinstance(m, dict):
+                tag = m.get("type") or m.get("name")
+                if tag:
+                    self.modules.add(str(tag).upper())
 
-objective = (me.get("objectives") or {}).get("negotiate") or {}
-self.negotiate_post_id = objective.get("tradingPostId")
+        objective = (me.get("objectives") or {}).get("negotiate") or {}
+        self.negotiate_post_id = objective.get("tradingPostId")
 
-# Split sensor contacts by type into flat {x, y,...} dicts.
-self.asteroids = []
-self.trading_posts = []
-self.ships = []
-self.wreckage = []
-for s in req.get("sensors", []) or []:
-    s_loc = s.get("location", {}) or {}
-    entry = {"x": int(s_loc.get("x", 0)), "y": int(s_loc.get("y", 0))}
-    s_type = s.get("type")
-    if s_type == "asteroid":
-        entry["nutrinium"] = int(s.get("nutrinium", 0))
-        entry["mass"] = int(s.get("mass", 0))
-        self.asteroids.append(entry)
-    elif s_type == "trading_post":
-        entry["name"] = s.get("name")
-        entry["id"] = s.get("id")
-        self.trading_posts.append(entry)
-    elif s_type == "wreckage":
-        entry["nutrinium"] = int(s.get("nutrinium", 0))
-        self.wreckage.append(entry)
-    elif s_type == "ship":
-        if str(s.get("state", "")).upper() == "DESTROYED":
-            continue
-        entry["health"] = int(s.get("health", MAX_HEALTH))
-        entry["energy"] = int(s.get("energy", 0))
-        entry["credits"] = int(s.get("credits", 0))
-        entry["nutrinium"] = int(s.get("nutrinium", 0))
-        entry["playerId"] = s.get("playerId")
-        entry["teamId"] = s.get("teamId")
-        entry["skills"] = s.get("skills", {}) or {}
-        sh = s.get("shield", {}) or {}
-        entry["shield_state"] = str(sh.get("state", "") or "").upper()
-        self.ships.append(entry)
+        # Split sensor contacts by type into flat {x, y,...} dicts.
+        self.asteroids = []
+        self.trading_posts = []
+        self.ships = []
+        self.wreckage = []
+        for s in req.get("sensors", []) or []:
+            s_loc = s.get("location", {}) or {}
+            entry = {"x": int(s_loc.get("x", 0)), "y": int(s_loc.get("y", 0))}
+            s_type = s.get("type")
+            if s_type == "asteroid":
+                entry["nutrinium"] = int(s.get("nutrinium", 0))
+                entry["mass"] = int(s.get("mass", 0))
+                self.asteroids.append(entry)
+            elif s_type == "trading_post":
+                entry["name"] = s.get("name")
+                entry["id"] = s.get("id")
+                self.trading_posts.append(entry)
+            elif s_type == "wreckage":
+                entry["nutrinium"] = int(s.get("nutrinium", 0))
+                self.wreckage.append(entry)
+            elif s_type == "ship":
+                if str(s.get("state", "")).upper() == "DESTROYED":
+                    continue
+                entry["health"] = int(s.get("health", _MAX_HEALTH))
+                entry["energy"] = int(s.get("energy", 0))
+                entry["credits"] = int(s.get("credits", 0))
+                entry["nutrinium"] = int(s.get("nutrinium", 0))
+                entry["playerId"] = s.get("playerId")
+                entry["teamId"] = s.get("teamId")
+                entry["skills"] = s.get("skills", {}) or {}
+                sh = s.get("shield", {}) or {}
+                entry["shield_state"] = str(sh.get("state", "") or "").upper()
+                self.ships.append(entry)
 
-# Round metadata: economics + map size + market price.
-game_state = req.get("gameState", {}) or {}
-self.game_id = game_state.get("gameId")
-self.game_round = game_state.get("round", 0)
-self.tick = int(game_state.get("tick", 0) or 0)
-# Wall-clock game bounds (Unix-ms). Present in live requests, absent in the
-# env-composed request -> remaining time falls back to the tick estimate.
-self.game_start = game_state.get("start")
-self.game_end = game_state.get("end")
-metadata = game_state.get("metadata", {}) or {}
-ship_cfg = metadata.get("shipConfig", {}) or {}
-costs = ship_cfg.get("energyCosts", {}) or {}
-self.mine_cost = int(costs.get("mine", 10))
-self.move_cost = int(costs.get("move", 0))
-self.attack_cost = int(costs.get("attack", 1))
-self.shields_cost = int(costs.get("shields", 1))
-self.plunder_cost = int(costs.get("plunder", 5))
-self.negotiate_cost = int(costs.get("negotiate", 5))
-self.jump_unit_cost = int(costs.get("jump", 1))
-self.jump_min_cost = int(costs.get("jumpMinCost", 75))
-self.max_energy = int(ship_cfg.get("maxEnergy", 100))
-self.per_recharge = int(ship_cfg.get("energyPerRecharge", 10))
-sensors_cfg = ship_cfg.get("sensors", {}) or {}
-self.sensor_range = int(sensors_cfg.get("range", 5))
-map_cfg = metadata.get("mapConfig", {}) or {}
-self.map_w = int(map_cfg.get("width", 10))
-self.map_h = int(map_cfg.get("height", 10))
-self.asteroid_mass_max = float(map_cfg.get("maxMass", 80))
-combat = metadata.get("combat", {}) or {}
-self.base_shield_capacity = float(combat.get("baseShieldCapacity", 100))
-salvage = metadata.get("salvage", {}) or {}
-self.salvage_cost = int(salvage.get("energyCost", 5))
-market = metadata.get("market", {}) or {}
-sell_cfg = market.get("sell", {}) or {}
-price = sell_cfg.get("nutrinium")
-self.market_price = float(price) if price is not None else 0.0
-# Per-state action restrictions (allowedWhileRecharging / allowedWithShieldsUp).
-self.action_restrictions = metadata.get("actionRestrictions", {}) or {}
+        # Round metadata: economics + map size + market price.
+        game_state = req.get("gameState", {}) or {}
+        self.game_id = game_state.get("gameId")
+        self.game_round = game_state.get("round", 0)
+        self.tick = int(game_state.get("tick", 0) or 0)
+        # Wall-clock game bounds (Unix-ms). Present in live requests, absent in the
+        # env-composed request -> remaining time falls back to the tick estimate.
+        self.game_start = game_state.get("start")
+        self.game_end = game_state.get("end")
+        metadata = game_state.get("metadata", {}) or {}
+        ship_cfg = metadata.get("shipConfig", {}) or {}
+        costs = ship_cfg.get("energyCosts", {}) or {}
+        self.mine_cost = int(costs.get("mine", 10))
+        self.move_cost = int(costs.get("move", 0))
+        self.attack_cost = int(costs.get("attack", 1))
+        self.shields_cost = int(costs.get("shields", 1))
+        self.plunder_cost = int(costs.get("plunder", 5))
+        self.negotiate_cost = int(costs.get("negotiate", 5))
+        self.jump_unit_cost = int(costs.get("jump", 1))
+        self.jump_min_cost = int(costs.get("jumpMinCost", 75))
+        self.max_energy = int(ship_cfg.get("maxEnergy", 100))
+        self.per_recharge = int(ship_cfg.get("energyPerRecharge", 10))
+        sensors_cfg = ship_cfg.get("sensors", {}) or {}
+        self.sensor_range = int(sensors_cfg.get("range", 5))
+        map_cfg = metadata.get("mapConfig", {}) or {}
+        self.map_w = int(map_cfg.get("width", 10))
+        self.map_h = int(map_cfg.get("height", 10))
+        self.asteroid_mass_max = float(map_cfg.get("maxMass", 80))
+        combat = metadata.get("combat", {}) or {}
+        self.base_shield_capacity = float(combat.get("baseShieldCapacity", 100))
+        salvage = metadata.get("salvage", {}) or {}
+        self.salvage_cost = int(salvage.get("energyCost", 5))
+        market = metadata.get("market", {}) or {}
+        sell_cfg = market.get("sell", {}) or {}
+        price = sell_cfg.get("nutrinium")
+        self.market_price = float(price) if price is not None else 0.0
+        # Per-state action restrictions (allowedWhileRecharging / allowedWithShieldsUp).
+        self.action_restrictions = metadata.get("actionRestrictions", {}) or {}
 
-# Convenience constants (config-derived, not in the request).
-self.max_health = MAX_HEALTH
-self.max_cargo = _MAX_CARGO
-self.max_credits = _MAX_CREDITS
-self.max_skill_points = _MAX_SKILL_POINTS
-self.top_count = _TOP_ASTEROIDS_COUNT
-self.max_steps = _MAX_STEPS
+        # Convenience constants (config-derived, not in the request).
+        self.max_health = MAX_HEALTH
+        self.max_cargo = _MAX_CARGO
+        self.max_credits = _MAX_CREDITS
+        self.max_skill_points = _MAX_SKILL_POINTS
+        self.top_count = _TOP_ASTEROIDS_COUNT
+        self.max_steps = _MAX_STEPS
 
-def jump_energy_cost(self, distance):
-    """Energy cost of a jump of the given distance (skill lowers the floor)."""
-    adj_min = max(0, self.jump_min_cost - int(_ab(self.skills, "jump_cost", 0)) * 5)
-    return int(max(adj_min, round(self.jump_unit_cost * distance)))
+    def jump_energy_cost(self, distance):
+        """Energy cost of a jump of the given distance (skill lowers the floor)."""
+        adj_min = max(0, self.jump_min_cost - int(_ab(self.skills, "jump_cost", 0)) * 5)
+        return int(max(adj_min, round(self.jump_unit_cost * distance)))
+
 
 # Public alias.
 Context = _Context
+
+
 # -----------------------------------------------------------------------------------------------
 # Observation reconstruction helpers (mirror env_observation_mixin)
 # -----------------------------------------------------------------------------------------------
-
 def _top_asteroids(ctx, x, y, count):
     """Top-N asteroids by the env's score (concentration * nutrinium / dist).
     
-    Mirrors `EnvObservationMixin._get_top_asteroids` but over sensor-visible
+    Mirrors ``EnvObservationMixin._get_top_asteroids`` but over sensor-visible
     asteroids only.
     """
     scored = []
@@ -382,23 +395,24 @@ def _remaining_time_fraction(ctx):
     neither, so it falls back to `(max_steps - tick) / max_steps` -- byte-identical
     to the env FULL builder's action-counter normalization (parity under partial-observability training).
     """
-start = ctx.game_start
-end = ctx.game_end
-if start is not None and end is not None:
-    try:
-        span = float(end) - float(start)
-        if span > 0:
-            now_ms = time.time() * 1000.0
-            return max(0.0, min(1.0, (float(end) - now_ms) / span))
-    except (TypeError, ValueError):
-        pass
-return max(0.0, min(1.0, (ctx.max_steps - ctx.tick) / max(1, ctx.max_steps)))
+    start = ctx.game_start
+    end = ctx.game_end
+    if start is not None and end is not None:
+        try:
+            span = float(end) - float(start)
+            if span > 0:
+                now_ms = time.time() * 1000.0
+                return max(0.0, min(1.0, (float(end) - now_ms) / span))
+        except (TypeError, ValueError):
+            pass
+    return max(0.0, min(1.0, (ctx.max_steps - ctx.tick) / max(1, ctx.max_steps)))
 
-def quadrant_norm(x, y, map_w, map_h):
+def _quadrant_norm(x, y, map_w, map_h):
     """Player's cell in a 3x3 map grid as a single normalized index q/8 (q in 0..8)."""
     col = min(2, (int(x) * 3) // max(1, int(map_w)))
     row = min(2, (int(y) * 3) // max(1, int(map_h)))
     return (row * 3 + col) / 8.0
+
 
 def _build_observation(ctx, spec=None):
     """Dispatch to the observation builder matching `spec`'s observation type.
@@ -420,12 +434,14 @@ def _build_observation(ctx, spec=None):
         return _build_sensor_only_observation(ctx)
     return _build_full_observation(ctx)
 
+
 def _build_full_observation(ctx, include_sensor_grid=True):
     """Reconstruct the env's full observation vector from the request.
-    With `include_sensor_grid` True (default) this yields the 275-dim FULL
+
+    With ``include_sensor_grid`` True (default) this yields the 275-dim FULL
     layout; with it False it yields the 154-dim FULL_NO_GRID layout (the local
     sensor-grid block is omitted), byte-identical to the env's
-    `_get_observation(include_sensor_grid=False)`.
+    ``_get_observation(include_sensor_grid=False)``.
 
     """
     o = []
@@ -443,18 +459,18 @@ def _build_full_observation(ctx, include_sensor_grid=True):
     o.append(1.0 if ctx.state == "READY" else 0.0)
     o.append(ctx.skill_points_total / max(1, ctx.max_skill_points))
     o.append(ctx.skill_points_spent / max(1, ctx.max_skill_points))
-    o.append(ab(sk, "energy_max", 5) / 10.0)
-    o.append(ab(sk, "recharge_energy", 0) / 10.0)
-    o.append(ab(sk, "mine_accuracy", 0) / 10.0)
-    o.append(ab(sk, "mine_yield_multiplier", 1) / 5.0)
-    o.append(ab(sk, "mine_cost", 2) / 10.0)
-    o.append(ab(sk, "combat_salvage_multiplier", 0) / 5.0)
-    o.append(ab(sk, "sensor_range", 1) / max(1, ctx.sensor_range))
-    o.append(ab(sk, "attack_accuracy", 0) / 10.0)
-    o.append(ab(sk, "attack_power", 0) / 10.0)
-    o.append(ab(sk, "evade", 0) / 10.0)
-    o.append(ab(sk, "shield_strength", 0) / 10.0)
-    o.append(ab(sk, "jump_distance", 0) / 10.0)
+    o.append(_ab(sk, "energy_max", 5) / 10.0)
+    o.append(_ab(sk, "recharge_energy", 0) / 10.0)
+    o.append(_ab(sk, "mine_accuracy", 0) / 10.0)
+    o.append(_ab(sk, "mine_yield_multiplier", 1) / 5.0)
+    o.append(_ab(sk, "mine_cost", 2) / 10.0)
+    o.append(_ab(sk, "combat_salvage_multiplier", 0) / 5.0)
+    o.append(_ab(sk, "sensor_range", 1) / max(1, ctx.sensor_range))
+    o.append(_ab(sk, "attack_accuracy", 0) / 10.0)
+    o.append(_ab(sk, "attack_power", 0) / 10.0)
+    o.append(_ab(sk, "evade", 0) / 10.0)
+    o.append(_ab(sk, "shield_strength", 0) / 10.0)
+    o.append(_ab(sk, "jump_distance", 0) / 10.0)
     o.append(ctx.tick / max(1, ctx.max_steps))
 
     # === STRATEGIC CONTEXT (8 values) ===
@@ -477,158 +493,160 @@ def _build_full_observation(ctx, include_sensor_grid=True):
         o.append(_scaled_delta(nearest_tp["y"] - ctx.y))
     else:
         o.extend([0.0, 0.0])
-# === LOCAL SENSOR GRID (11x11 = 121 values) ===
-# Omitted entirely for the FULL_NO_GRID layout (include_sensor_grid=False).
-if include_sensor_grid:
-    sr = ctx.sensor_range
-    side = 2 * sr + 1
-    x_min = ctx.x - sr
-    y_min = ctx.y - sr
-    x_min = max(0, min(x_min, ctx.map_w - side)) if ctx.map_w >= side else 0
-    y_min = max(0, min(y_min, ctx.map_h - side)) if ctx.map_h >= side else 0
-    for row in range(side):
-        for col in range(side):
-            x = x_min + col
-            y = y_min + row
-            if 0 <= x < ctx.map_w and 0 <= y < ctx.map_h:
-                if x == ctx.x and y == ctx.y:
-                    o.append(0.0)
-                elif _entity_at(x, y, ctx.ships):
-                    o.append(1.0)
-                elif _entity_at(x, y, ctx.trading_posts):
-                    o.append(0.66)
-                elif _entity_at(x, y, ctx.asteroids):
-                    o.append(0.33)
+
+    # === LOCAL SENSOR GRID (11x11 = 121 values) ===
+    # Omitted entirely for the FULL_NO_GRID layout (include_sensor_grid=False).
+    if include_sensor_grid:
+        sr = ctx.sensor_range
+        side = 2 * sr + 1
+        x_min = ctx.x - sr
+        y_min = ctx.y - sr
+        x_min = max(0, min(x_min, ctx.map_w - side)) if ctx.map_w >= side else 0
+        y_min = max(0, min(y_min, ctx.map_h - side)) if ctx.map_h >= side else 0
+        for row in range(side):
+            for col in range(side):
+                x = x_min + col
+                y = y_min + row
+                if 0 <= x < ctx.map_w and 0 <= y < ctx.map_h:
+                    if x == ctx.x and y == ctx.y:
+                        o.append(0.0)
+                    elif _entity_at(x, y, ctx.ships):
+                        o.append(1.0)
+                    elif _entity_at(x, y, ctx.trading_posts):
+                        o.append(0.66)
+                    elif _entity_at(x, y, ctx.asteroids):
+                        o.append(0.33)
+                    else:
+                        o.append(0.0)
                 else:
-                    o.append(0.0)
-            else:
-                o.append(-1.0)
+                    o.append(-1.0)
 
-# === TOP 5 ASTEROIDS (30 values) ===
-top5 = _top_asteroids(ctx, ctx.x, ctx.y, ctx.top_count)
-max_mass = max(1.0, ctx.asteroid_mass_max)
-for a in top5:
-    o.append(a["x"] / max(1, ctx.map_w))
-    o.append(a["y"] / max(1, ctx.map_h))
-    o.append(a["mass"] / max_mass)
-    o.append(a["nutrinium"] / max_mass)
-    o.append(_scaled_distance(a["distance"]))
-    o.append(a["score"])
-for _ in range(ctx.top_count - len(top5)):
-    o.extend([0.0, 0.0, 0.0, 0.0, 0.0])
+    # === TOP 5 ASTEROIDS (30 values) ===
+    top5 = _top_asteroids(ctx, ctx.x, ctx.y, ctx.top_count)
+    max_mass = max(1.0, ctx.asteroid_mass_max)
+    for a in top5:
+        o.append(a["x"] / max(1, ctx.map_w))
+        o.append(a["y"] / max(1, ctx.map_h))
+        o.append(a["mass"] / max_mass)
+        o.append(a["nutrinium"] / max_mass)
+        o.append(_scaled_distance(a["distance"]))
+        o.append(a["score"])
+    for _ in range(ctx.top_count - len(top5)):
+        o.extend([0.0, 0.0, 0.0, 0.0, 0.0])
 
-# === NEAREST TRADING POST (3 values) ===
-if nearest_tp:
-    dist = _distance(ctx.x, ctx.y, nearest_tp["x"], nearest_tp["y"])
-    o.append(nearest_tp["x"] / max(1, ctx.map_w))
-    o.append(nearest_tp["y"] / max(1, ctx.map_h))
-    o.append(_scaled_distance(dist))
-else:
-    o.extend([0.0, 0.0, 0.0])
-
-# === TWO ENEMY TYPES (16 values) ===
-strongest, weakest = _extreme_enemies(ctx)
-for enemy in (strongest, weakest):
-    if enemy:
-        o.append(enemy["x"] / max(1, ctx.map_w))
-        o.append(enemy["y"] / max(1, ctx.map_h))
-        o.append(enemy["energy"] / max(1, ctx.max_energy))
-        o.append(enemy["health"] / max(1, ctx.max_health))
-        o.append(min(enemy["nutrinium"], 100) / 100.0)
-        o.append(min(enemy["credits"], 1000) / 1000.0)
-        o.append(combat_score(enemy))
-        enemy_team = enemy.get("teamId")
-        o.append(1.0 if (enemy_team is not None and int(enemy_team) == ctx.team_id) else 0.0)
+    # === NEAREST TRADING POST (3 values) ===
+    if nearest_tp:
+        dist = _distance(ctx.x, ctx.y, nearest_tp["x"], nearest_tp["y"])
+        o.append(nearest_tp["x"] / max(1, ctx.map_w))
+        o.append(nearest_tp["y"] / max(1, ctx.map_h))
+        o.append(_scaled_distance(dist))
     else:
-        o.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        o.extend([0.0, 0.0, 0.0])
 
-# === SPEC-FIDELITY FEATURES (24 values) ===
-o.append(_ab(sk, "shield_capacity", 0) / 10.0)
-o.append(_ab(sk, "shield_efficiency", 0) / 10.0)
-o.append(_ab(sk, "jump_cost", 0) / 10.0)
-o.append(_ab(sk, "salvage_yield", 0) / 10.0)
-o.append(_ab(sk, "negotiate_skill", 0) / 10.0)
-o.append(_ab(sk, "negotiate_cautious", 0) / 10.0)
-o.append(_ab(sk, "negotiate_ambition", 0) / 10.0)
+    # === TWO ENEMY TYPES (16 values) ===
+    strongest, weakest = _extreme_enemies(ctx)
+    for enemy in (strongest, weakest):
+        if enemy:
+            o.append(enemy["x"] / max(1, ctx.map_w))
+            o.append(enemy["y"] / max(1, ctx.map_h))
+            o.append(enemy["energy"] / max(1, ctx.max_energy))
+            o.append(enemy["health"] / max(1, ctx.max_health))
+            o.append(min(enemy["nutrinium"], 100) / 100.0)
+            o.append(min(enemy["credits"], 1000) / 1000.0)
+            o.append(combat_score(enemy))
+            enemy_team = enemy.get("teamId")
+            o.append(1.0 if (enemy_team is not None and int(enemy_team) == ctx.team_id) else 0.0)
+        else:
+            o.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
-scap = ctx.shield_capacity
-sval = ctx.shield_value
-max_capacity = ctx.base_shield_capacity + 10 * 10  # base + max_abil shield_capacity*10
-o.append(1.0 if ctx.shield_state == "POWERED" else 0.0)
-o.append(1.0 if ctx.shield_state == "DRAINING" else 0.0)
-o.append(1.0 if ctx.shield_state == "DOWN" else 0.0)
-o.append(sval / scap) if scap > 0 else 0.0
-o.append(scap / max(1.0, max_capacity))
+    # === SPEC-FIDELITY FEATURES (24 values) ===
+    o.append(_ab(sk, "shield_capacity", 0) / 10.0)
+    o.append(_ab(sk, "shield_efficiency", 0) / 10.0)
+    o.append(_ab(sk, "jump_cost", 0) / 10.0)
+    o.append(_ab(sk, "salvage_yield", 0) / 10.0)
+    o.append(_ab(sk, "negotiate_skill", 0) / 10.0)
+    o.append(_ab(sk, "negotiate_cautious", 0) / 10.0)
+    o.append(_ab(sk, "negotiate_ambition", 0) / 10.0)
 
-o.append(1.0 if "JUMP" in ctx.modules else 0.0)
-o.append(1.0 if "REPAIR" in ctx.modules else 0.0)
-o.append(1.0 if "SALVAGE" in ctx.modules else 0.0)
+    scap = ctx.shield_capacity
+    sval = ctx.shield_value
+    max_capacity = ctx.base_shield_capacity + 10 * 10  # base + max_abil shield_capacity*10
+    o.append(1.0 if ctx.shield_state == "POWERED" else 0.0)
+    o.append(1.0 if ctx.shield_state == "DRAINING" else 0.0)
+    o.append(1.0 if ctx.shield_state == "DOWN" else 0.0)
+    o.append(sval / scap) if scap > 0 else 0.0
+    o.append(scap / max(1.0, max_capacity))
 
-o.append(min(1.0, ctx.team_id / 3.0))
-o.append(0.0) # team_bonus is not exposed in the request
-price = ctx.market_price if ctx.market_price > 0 else _MARKET_REF
-o.append(min(1.0, price / _MARKET_REF))
+    o.append(1.0 if "JUMP" in ctx.modules else 0.0)
+    o.append(1.0 if "REPAIR" in ctx.modules else 0.0)
+    o.append(1.0 if "SALVAGE" in ctx.modules else 0.0)
 
-obj_post = None
-if ctx.negotiate_post_id is not None:
-    obj_post = next(
-        (p for p in ctx.trading_posts if p.get("id") == ctx.negotiate_post_id),
-        None,
-)
-if obj_post:
-    o.append(1.0)
-    o.append(_scaled_delta(obj_post["x"] - ctx.x))
-    o.append(_scaled_delta(obj_post["y"] - ctx.y))
-else:
-    o.extend([0.0, 0.0, 0.0])
+    o.append(min(1.0, ctx.team_id / 3.0))
+    o.append(0.0) # team_bonus is not exposed in the request
+    price = ctx.market_price if ctx.market_price > 0 else _MARKET_REF
+    o.append(min(1.0, price / _MARKET_REF))
 
-nearest_wreck = None
-if ctx.wreckage:
-    nearest_wreck = min(
-        ctx.wreckage,
-        key=lambda w: (w["x"] - ctx.x) ** 2 + (w["y"] - ctx.y) ** 2,
+    obj_post = None
+    if ctx.negotiate_post_id is not None:
+        obj_post = next(
+            (p for p in ctx.trading_posts if p.get("id") == ctx.negotiate_post_id),
+            None,
     )
-if nearest_wreck:
-    o.append(1.0)
-    o.append(_scaled_delta(nearest_wreck["x"] - ctx.x))
-    o.append(_scaled_delta(nearest_wreck["y"] - ctx.y))
-else:
-    o.extend([0.0, 0.0, 0.0])
+    if obj_post:
+        o.append(1.0)
+        o.append(_scaled_delta(obj_post["x"] - ctx.x))
+        o.append(_scaled_delta(obj_post["y"] - ctx.y))
+    else:
+        o.extend([0.0, 0.0, 0.0])
 
-# Action restrictions (38 values: 19 actions * 2 flags), mirroring the env's
-# _action_restriction_features. Encodes the request's actionRestrictions matrix
-# so a restriction-aware model can adapt; missing rules default to allowed.
-restrictions = ctx.action_restrictions or {}
-for key in _ACTION_RESTRICTION_KEY:
-    rule = restrictions.get(key, {})
-    o.append(1.0 if rule.get("allowedWhileRecharging", True) else 0.0)
-    o.append(1.0 if rule.get("allowedWithShieldsUp", True) else 0.0)
+    nearest_wreck = None
+    if ctx.wreckage:
+        nearest_wreck = min(
+            ctx.wreckage,
+            key=lambda w: (w["x"] - ctx.x) ** 2 + (w["y"] - ctx.y) ** 2,
+        )
+    if nearest_wreck:
+        o.append(1.0)
+        o.append(_scaled_delta(nearest_wreck["x"] - ctx.x))
+        o.append(_scaled_delta(nearest_wreck["y"] - ctx.y))
+    else:
+        o.extend([0.0, 0.0, 0.0])
 
-# === TEMPORAL/SPATIAL (2 values, appended last) ===
-# remaining_time_fraction: fraction of the game still left (1.0 -> 0.0). A live
-# request carries wall-clock bounds (start/end, Unix-ms) so the bot reads true
-# time remaining; the env-composed request has neither, so training falls back
-# to the tick estimate -- byte-identical to the env FULL builder.
-# quadrant_norm: player's cell in a 3x3 map grid as a single normalized index.
-o.append(_remaining_time_fraction(ctx))
-o.append(_quadrant_norm(ctx.x, ctx.y, ctx.map_w, ctx.map_h))
+    # Action restrictions (38 values: 19 actions * 2 flags), mirroring the env's
+    # _action_restriction_features. Encodes the request's actionRestrictions matrix
+    # so a restriction-aware model can adapt; missing rules default to allowed.
+    restrictions = ctx.action_restrictions or {}
+    for key in _ACTION_RESTRICTION_KEY:
+        rule = restrictions.get(key, {})
+        o.append(1.0 if rule.get("allowedWhileRecharging", True) else 0.0)
+        o.append(1.0 if rule.get("allowedWithShieldsUp", True) else 0.0)
 
-# === PREY ENEMIES (9 values: 3 weakest huntable enemies * 3 features) ===
-# Appended after temporal/spatial so legacy offsets stay stable. Top 3 weakest
-# non-teammate enemies with weaker attack AND defense than the player, holding
-# nutrinium, among the sensor-visible contacts. Each: (x/W, y/H, nutrinium).
-prey = _prey_enemies(ctx, count=3)
-for p in prey:
-    o.append(p["x"] / max(1, ctx.map_w))
-    o.append(p["y"] / max(1, ctx.map_h))
-    o.append(min(p.get("nutrinium", 0), 100) / 100.0)
-for _ in range(3 - len(prey)):
-    o.extend([0.0, 0.0, 0.0])
+    # === TEMPORAL/SPATIAL (2 values, appended last) ===
+    # remaining_time_fraction: fraction of the game still left (1.0 -> 0.0). A live
+    # request carries wall-clock bounds (start/end, Unix-ms) so the bot reads true
+    # time remaining; the env-composed request has neither, so training falls back
+    # to the tick estimate -- byte-identical to the env FULL builder.
+    # quadrant_norm: player's cell in a 3x3 map grid as a single normalized index.
+    o.append(_remaining_time_fraction(ctx))
+    o.append(_quadrant_norm(ctx.x, ctx.y, ctx.map_w, ctx.map_h))
 
-return np.array(o, dtype=np.float32)
+    # === PREY ENEMIES (9 values: 3 weakest huntable enemies * 3 features) ===
+    # Appended after temporal/spatial so legacy offsets stay stable. Top 3 weakest
+    # non-teammate enemies with weaker attack AND defense than the player, holding
+    # nutrinium, among the sensor-visible contacts. Each: (x/W, y/H, nutrinium).
+    prey = _prey_enemies(ctx, count=3)
+    for p in prey:
+        o.append(p["x"] / max(1, ctx.map_w))
+        o.append(p["y"] / max(1, ctx.map_h))
+        o.append(min(p.get("nutrinium", 0), 100) / 100.0)
+    for _ in range(3 - len(prey)):
+        o.extend([0.0, 0.0, 0.0])
+
+    return np.array(o, dtype=np.float32)
 
 def _build_compact_observation(ctx):
     """Reconstruct the 57-dim compact observation (mirrors ``CompactObservationGenerator``).
+
     Layout: ship state (8) + top 5 asteroids (30) + nearest trading post (3) +
     two enemy types (16), over sensor-visible entities only.
     """
@@ -668,23 +686,23 @@ def _build_compact_observation(ctx):
     else:
         o.extend([0.0, 0.0, 1.0])
 
-# Two enemy types (16 values: 2 enemies * 8 features)
-strongest, weakest = _extreme_enemies(ctx)
-for enemy in (strongest, weakest):
-    if enemy:
-        o.append(enemy["x"] / max(1, ctx.map_w))
-        o.append(enemy["y"] / max(1, ctx.map_h))
-        o.append(enemy["energy"] / max(1, ctx.max_energy))
-        o.append(enemy["health"] / max(1, ctx.max_health))
-        o.append(min(enemy["nutrinium"], 100) / 100.0)
-        o.append(min(enemy["credits"], 1000) / 1000.0)
-        o.append(_combat_score(enemy))
-        enemy_team = enemy.get("teamId")
-        o.append(1.0 if (enemy_team is not None and int(enemy_team) == ctx.team_id) else 0.0)
-    else:
-        o.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    # Two enemy types (16 values: 2 enemies * 8 features)
+    strongest, weakest = _extreme_enemies(ctx)
+    for enemy in (strongest, weakest):
+        if enemy:
+            o.append(enemy["x"] / max(1, ctx.map_w))
+            o.append(enemy["y"] / max(1, ctx.map_h))
+            o.append(enemy["energy"] / max(1, ctx.max_energy))
+            o.append(enemy["health"] / max(1, ctx.max_health))
+            o.append(min(enemy["nutrinium"], 100) / 100.0)
+            o.append(min(enemy["credits"], 1000) / 1000.0)
+            o.append(_combat_score(enemy))
+            enemy_team = enemy.get("teamId")
+            o.append(1.0 if (enemy_team is not None and int(enemy_team) == ctx.team_id) else 0.0)
+        else:
+            o.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
-return np.array(o, dtype=np.float32)
+    return np.array(o, dtype=np.float32)
 
 def _build_sensor_only_observation(ctx):
     """Reconstruct the sensor-only observation (mirrors `SensorOnlyObservationGenerator`).
@@ -720,35 +738,41 @@ def _build_sensor_only_observation(ctx):
     o.extend(grid)
 
     return np.array(o, dtype=np.float32)
-return masker.MaskState(
-    x=ctx.x,
-    y=ctx.y,
-    energy=ctx.energy,
-    health=ctx.health,
-    nutrinium=ctx.nutrinium,
-    credits=ctx.credits,
-    destroyed=(ctx.state == "DESTROYED"),
-    recharging=ctx.recharging,
-    just_recharged=False,
-    shield_state=ctx.shield_state,
-    shield_value=ctx.shield_value,
-    shield_capacity=ctx.shield_capacity,
-    shields_up=ctx.shields_up,
-    modules=ctx.modules,
-    negotiate_post_id=ctx.negotiate_post_id,
-    enemies=ctx.ships,
-    asteroids=ctx.asteroids,
-    trading_posts=ctx.trading_posts,
-    wreckage=ctx.wreckage,
-    map_width=ctx.map_w,
-    map_height=ctx.map_h,
-    max_energy=ctx.max_energy,
-    max_health=ctx.max_health,
-    energy_costs=energy_costs,
-    salvage_energy_cost=ctx.salvage_cost,
-    repair_cost=0,
-    action_restrictions=ctx.action_restrictions,
-)
+
+
+def _mask_state(ctx):
+    masker = _get_masker()
+    if masker is None:
+        return None
+    return masker.MaskState(
+        x=ctx.x,
+        y=ctx.y,
+        energy=ctx.energy,
+        health=ctx.health,
+        nutrinium=ctx.nutrinium,
+        credits=ctx.credits,
+        destroyed=(ctx.state == "DESTROYED"),
+        recharging=ctx.recharging,
+        just_recharged=False,
+        shield_state=ctx.shield_state,
+        shield_value=ctx.shield_value,
+        shield_capacity=ctx.shield_capacity,
+        shields_up=ctx.shields_up,
+        modules=ctx.modules,
+        negotiate_post_id=ctx.negotiate_post_id,
+        enemies=ctx.ships,
+        asteroids=ctx.asteroids,
+        trading_posts=ctx.trading_posts,
+        wreckage=ctx.wreckage,
+        map_width=ctx.map_w,
+        map_height=ctx.map_h,
+        max_energy=ctx.max_energy,
+        max_health=ctx.max_health,
+        energy_costs=energy_costs,
+        salvage_energy_cost=ctx.salvage_cost,
+        repair_cost=0,
+        action_restrictions=ctx.action_restrictions,
+    )
 
 # --------------------------------
 # Public API (used by both the bot and the environment)
@@ -778,8 +802,8 @@ def build_action_mask(action_request):
         `np.ndarray` (int8) of length 19.
     """
     ctx = _Context(action_request)
-    st = mask_state(ctx)
-    masker = get_masker()
+    st = _mask_state(ctx)
+    masker = _get_masker()
     if masker is not None and st is not None:
         return masker.get_action_mask(st)
     return np.ones(_NUM_ACTIONS, dtype=np.int8)
