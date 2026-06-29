@@ -246,10 +246,12 @@ class GameSimulator:
                 self.player_model_spec = resolved
             else:
                 print(f"WARNING: Unknown player MODEL_SPEC '{parsed_spec_name}' in --model-path. Falling back to DEFAULT_FULL_SPEC.")
-        # An explicit spec object wins over the :: SPEC suffix and the default. Used by
+        # An explicit spec object wins over the ::SPEC suffix and the default. Used by
         # post-training performance testing to size the eval env to the model the
         # trainer just produced (e.g. a COMPACT/57-dim model) without round-tripping
         # through a preset name.
+        if player_model_spec is not None:
+            self.player_model_spec = player_model_spec
         self.algorithm = algorithm.upper()
         self.map_width = map_width
         self.map_height = map_height
@@ -290,9 +292,9 @@ class GameSimulator:
         # Statistics tracking
         self.episode_stats: List[Dict] = []
 
-    # ================================================
+    # ====================================================================
     # Public API
-    # ================================================
+    # ====================================================================
 
     @staticmethod
     def get_ai_type_name(ai_type):
@@ -570,11 +572,15 @@ class GameSimulator:
             cell_width=cell_width,
             minimap_mode=minimap,
             minimap_radius=minimap_radius,
-            forced_opponent_types=forced_opponent_types
+            forced_opponent_types=forced_opponent_types,
+            # Pass the player MODEL_SPEC (from --model-path MODEL_PATH::SPEC_NAME) at
+            # construction so the env sizes observation_space (and the coupled
+            # config['sensor_range']) from it. Setting it post-construction would be too
+            # late: the obs_size formula runs in __init__.
+            player_model_spec=self.player_model_spec,
+            partial_observability=self.partial_observability,
+            module_grant_mode=self.module_grant_mode,
         )
-
-        # Apply optional player MODEL_SPEC from --model-path (MODEL_PATH::SPEC_NAME)
-        env.player_model_spec = self.player_model_spec
 
         # Load model and reset the environment
         model = self.load_model(env)
@@ -807,13 +813,13 @@ class GameSimulator:
         #         ai_display = ai_type_name
         #
         #     status = "DESTROYED" if enemy['destroyed'] else "ALIVE"
-        #     print(f"  {enemy_name} ({ai_display}): {status}, HP:{enemy['health']}, "
+        #     print(f"    {enemy_name} ({ai_display}): {status}, HP:{enemy['health']}, "
         #           f"Credits:{enemy['credits']}, Nutrinium:{enemy['nutrinium']}")
-        # # Print enemy abilities/skills horizontally
-        # e_abilities = enemy.get('abilities', {}) or {}
-        # if e_abilities:
-        #     e_items = ", ".join(f"{k}:{v}" for k, v in sorted(e_abilities.items()))
-        #     print(f"  Abilities: {e_items}")
+        #     # Print enemy abilities/skills horizontally
+        #     e_abilities = enemy.get('abilities', {}) or {}
+        #     if e_abilities:
+        #         e_items = ", ".join(f"{k}:{v}" for k, v in sorted(e_abilities.items()))
+        #         print(f"      Abilities: {e_items}")
 
     def calculate_player_placement(self, stats: Dict):
         """Calculate player's placement (1st, 2nd, 3rd) for this episode and update cumulative stats."""
@@ -1031,9 +1037,9 @@ class GameSimulator:
             'total_enemies_destroyed': sum(enemies_destroyed)
         }
 
-    # =================================
+    # ====================================================================
     # Private helpers
-    # =================================
+    # ====================================================================
 
     def _print_participant_stats(self):
         """Print aggregated stats for each participant across all episodes."""
@@ -1813,6 +1819,16 @@ def main():
                        help='Print detailed info for each step during simulation')
     parser.add_argument('--opponents', type=str, default=None,
                        help='Comma-separated list of exact opponents (e.g. BOT_V2,BOT_V3,BOT_V4,BOT_V5,BOT_V6,BOT_V7,BOT_V8.models/ppo_pnp_model_v29). Each entry may carry an optional [N] repeat-count suffix, e.g. BOT_V2[1],BOT_V3[3],BOT_V4[4],BOT_V5[3],BOT_V7[4] is equivalent to listing each name N times. Overrides --min-opponents and --max-opponents.')
+    parser.add_argument('--partial-observability', action='store_true',
+                        help='Reconstruct the player observation and action mask from a '
+                             'sensor-limited ActionRequest (matching BOT_V6 inference). Use this '
+                             'when the model was trained with --partial-observability so the '
+                             'observation distribution matches (default: off).')
+    parser.add_argument('--module-grant-mode', type=str, default='all',
+                        help='Which module-locked actions (JUMP, REPAIR, SALVAGE) are installed '
+                             'each episode. all (default) installs every module; random installs '
+                             'each with 50% probability; none installs nothing. Match this to how '
+                             'the model was trained.')
 
     args = parser.parse_args()
 
@@ -1827,7 +1843,9 @@ def main():
             use_predefined_asteroids=args.predefined_asteroids,
             asteroid_config_path=args.asteroid_config,
             use_predefined_start=args.predefined_start,
-            start_position_config_path=args.start_position_config
+            start_position_config_path=args.start_position_config,
+            partial_observability=args.partial_observability,
+            module_grant_mode=args.module_grant_mode,
         )
 
         # Parse forced opponents list (supports optional NAME[N] repeat counts)
