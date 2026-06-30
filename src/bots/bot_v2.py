@@ -1578,6 +1578,9 @@ def _build_mask_state(ctx, masker):
         salvage_energy_cost=ctx.salvage_energy_cost,
         repair_cost=0,
         action_restrictions=ctx.action_restrictions,
+        jump_min_cost=ctx.jump_min_cost,
+        jump_cost_skill=int(ctx.skills.get("jump_cost", 0) or 0),
+        max_jump_distance=ctx.max_jump_distance + int(ctx.skills.get("jump_distance", 0) or 0) * 10,
     )
 
 
