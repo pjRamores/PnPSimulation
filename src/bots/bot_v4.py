@@ -177,6 +177,7 @@ class _Context:
         self.state = str(me.get("state", "READY")).upper()
         self.credits = int(me.get("credits", 0))
         self.max_energy = int(ship_cfg.get("maxEnergy", 100))
+        self.max_jump_distance = int(ship_cfg.get("maxJumpDistance", 50))
         self.max_health = int(ship_cfg.get("maxHealth", 100))
         map_cfg = metadata.get("mapConfig", {}) or {}
         self.map_w = int(map_cfg.get("width", 125))
@@ -407,6 +408,9 @@ def _build_mask_state(ctx, masker):
         salvage_energy_cost=999,
         repair_cost=0,
         action_restrictions=ctx.action_restrictions,
+        jump_min_cost=ctx.jump_min_cost,
+        jump_cost_skill=int(_skill(ctx.skills, "jump_cost")),
+        max_jump_distance=ctx.max_jump_distance + int(_skill(ctx.skills, "jump_distance")) * 10,
     )
 
 
