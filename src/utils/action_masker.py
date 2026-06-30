@@ -148,17 +148,18 @@ def _distance(x1: int, y1: int, x2: int, y2: int) -> float:
     return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
 
-def _jump_energy_cost(st: 'maskState', distance: float) -> int:
+def _jump_energy_cost(st: 'MaskState', distance: float) -> int:
     """Energy cost of a jump, mirroring env ``_jump_energy_cost``.
 
     cost = max(adjMinCost, round(jump_unit_cost * distance)) where
     adjMinCost = max(0, jump_min_cost - jump_cost_skill * 5). Without the
     jumpMinCost floor the mask would mark short jumps affordable that the env
-    then rejects (the energy < floor trap), so the floor MUST watch the env.
+    then rejects (the energy < floor trap), so the floor MUST match the env.
     """
     unit_cost = st.energy_costs.get('jump', 1)
     adj_min_cost = max(0, st.jump_min_cost - st.jump_cost_skill * 5)
     return int(max(adj_min_cost, round(unit_cost * distance)))
+
 
 def _entity_at(x: int, y: int, entities: List[dict]) -> Optional[dict]:
     """First non-destroyed entity exactly at ``(x, y)``, or ``None``."""
@@ -372,10 +373,10 @@ def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
         distance = best['distance']
         if distance == 0:
             return False, "best asteroid is at current location (distance 0), mine it or move away"
-        energy_cost = int(distance * costs['jump'])
         if distance > st.max_jump_distance:
             return False, f"best asteroid out of jump range (distance {distance}, max {st.max_jump_distance}"
-        if st.energy < _jump_energy_cost(st, distance):
+        energy_cost = _jump_energy_cost(st, distance)
+        if st.energy < energy_cost:
             return False, f"insufficient energy (need {energy_cost}, have {st.energy})"
         return True, ""
 
@@ -392,10 +393,10 @@ def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
         if post is None:
             return False, "no trading posts available"
         distance = _distance(st.x, st.y, post['x'], post['y'])
-        energy_cost = int(distance * costs['jump'])
         if distance > st.max_jump_distance:
             return False, f"nearest trading post out of jump range (distance {distance}, max {st.max_jump_distance})"
-        if st.energy < _jump_energy_cost(st, distance):
+        energy_cost = _jump_energy_cost(st, distance)
+        if st.energy < energy_cost:
             return False, f"insufficient energy (need {energy_cost}, have {st.energy})"
         return True, ""
 
