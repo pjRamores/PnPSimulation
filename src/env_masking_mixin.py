@@ -165,6 +165,9 @@ class EnvMaskingMixin:
             salvage_energy_cost=self.config['salvage']['energy_cost'],
             repair_cost=self.config['market']['repair'],
             action_restrictions=self.config.get('action_restrictions', {}),
+            jump_min_cost=self.config['energy_costs'].get('jump_min_cost', 0),
+            jump_cost_skill=int(self._skill(ship, 'jump_cost')),
+            max_jump_distance=self._max_jump_distance(ship),
         )
 
     def _get_action_mask(self, ship: dict = None, is_player: bool = True) -> np.ndarray:
