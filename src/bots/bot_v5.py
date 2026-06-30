@@ -264,6 +264,7 @@ class _Context:
         self.jump_unit_cost = int(costs.get("jump", 1))
         self.jump_min_cost = int(costs.get("jumpMinCost", 75))
         self.max_energy = int(ship_cfg.get("maxEnergy", 100))
+        self.max_jump_distance = int(ship_cfg.get("maxJumpDistance", 50))
         self.per_recharge = int(ship_cfg.get("energyPerRecharge", 10))
         # Extra fields the shared action-masker safety net validates against.
         self.move_cost = int(costs.get("move", 1))
@@ -570,6 +571,9 @@ def _build_mask_state(ctx, masker):
         salvage_energy_cost=999,
         repair_cost=0,
         action_restrictions=ctx.action_restrictions,
+        jump_min_cost=ctx.jump_min_cost,
+        jump_cost_skill=int(_skill(ctx.skills, "jump_cost")),
+        max_jump_distance=ctx.max_jump_distance + int(_skill(ctx.skills, "jump_distance")) * 10,
     )
 
 
