@@ -30,9 +30,9 @@ except Exception:  # pragma: no cover - numpy is expected but degrade gracefully
     _NUMPY_OK = False
 
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Constants (shared by the env training path and the bot inference path)
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 _NUM_ACTIONS = 19
 _ENERGY_BINS = 11               # MultiDiscrete energy dimension (matches the env)
 
@@ -76,7 +76,7 @@ _ACTION_NAMES = [
 
 def _restriction_key(action_name):
     """Map an action name to its ``metadata.actionRestrictions`` key.
-    
+
     The four MOVE directions share the ``MOVE`` rule and both JUMP variants share
     the ``JUMP`` rule; every other action maps to itself. Mirrors
     ``utils.action_masker.ACTION_RESTRICTION_NAME``.
@@ -92,16 +92,16 @@ def _restriction_key(action_name):
 _ACTION_RESTRICTION_KEY = [_restriction_key(n) for n in _ACTION_NAMES]
 
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Lazy action_masker import (cached at module scope)
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 _MASKER = "unset"  # sentinel -> the utils.action_masker module, or None on failure
 
 
 def _get_masker():
     """Lazily import and cache ``utils.action_masker``. Returns the module or None.
 
-    The '`src`' directory (this module's own directory) is added to ``sys.path``
+    The ``src`` directory (this module's own directory) is added to ``sys.path``
     so the utility resolves both inside the simulator and when run as a
     standalone lambda. Any failure degrades gracefully (callers fall back to no
     masking).
@@ -122,9 +122,9 @@ def _get_masker():
     return result
 
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Geometry / parsing helpers (stateless)
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 def _distance(x1, y1, x2, y2):
     """Euclidean distance between two cells."""
     return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
@@ -164,10 +164,9 @@ def _ab(skills, name, default):
         return float(default)
 
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Parsed request
-# -----------------------------------------------------------------------------
-
+# ----------------------------------------------------------------------------
 class _Context:
     """Parses one ActionRequest into the fields the observation builder needs."""
 
@@ -209,7 +208,7 @@ class _Context:
         objective = (me.get("objectives") or {}).get("negotiate") or {}
         self.negotiate_post_id = objective.get("tradingPostId")
 
-        # Split sensor contacts by type into flat {x, y,...} dicts.
+        # Split sensor contacts by type into flat {x, y, ...} dicts.
         self.asteroids = []
         self.trading_posts = []
         self.ships = []
@@ -263,6 +262,7 @@ class _Context:
         self.negotiate_cost = int(costs.get("negotiate", 5))
         self.jump_unit_cost = int(costs.get("jump", 1))
         self.jump_min_cost = int(costs.get("jumpMinCost", 75))
+        self.max_jump_distance = int(ship_cfg.get("maxJumpDistance", 50))
         self.max_energy = int(ship_cfg.get("maxEnergy", 100))
         self.per_recharge = int(ship_cfg.get("energyPerRecharge", 10))
         sensors_cfg = ship_cfg.get("sensors", {}) or {}
@@ -283,7 +283,7 @@ class _Context:
         self.action_restrictions = metadata.get("actionRestrictions", {}) or {}
 
         # Convenience constants (config-derived, not in the request).
-        self.max_health = MAX_HEALTH
+        self.max_health = _MAX_HEALTH
         self.max_cargo = _MAX_CARGO
         self.max_credits = _MAX_CREDITS
         self.max_skill_points = _MAX_SKILL_POINTS
@@ -300,12 +300,12 @@ class _Context:
 Context = _Context
 
 
-# -----------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------
 # Observation reconstruction helpers (mirror env_observation_mixin)
-# -----------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------
 def _top_asteroids(ctx, x, y, count):
     """Top-N asteroids by the env's score (concentration * nutrinium / dist).
-    
+
     Mirrors ``EnvObservationMixin._get_top_asteroids`` but over sensor-visible
     asteroids only.
     """
@@ -330,8 +330,9 @@ def _top_asteroids(ctx, x, y, count):
     scored.sort(key=lambda e: e["score"], reverse=True)
     return scored[:count]
 
+
 def _combat_score(enemy, raw=False):
-    """Weighted enemy combat score (mirrors `_calculate_enemy_combat_score`)."""
+    """Weighted enemy combat score (mirrors ``_calculate_enemy_combat_score``)."""
     skills = enemy.get("skills", {}) or {}
     score = (
         enemy.get("health", 0) * 1.0
@@ -346,8 +347,9 @@ def _combat_score(enemy, raw=False):
         return score
     return min(1.0, score / 510.0)
 
+
 def _extreme_enemies(ctx):
-    """Strongest / weakest visible enemy (mirrors `_get_extreme_enemies`)."""
+    """Strongest / weakest visible enemy (mirrors ``_get_extreme_enemies``)."""
     active = list(ctx.ships)
     if not active:
         return None, None
@@ -356,13 +358,14 @@ def _extreme_enemies(ctx):
     scored = sorted(active, key=lambda e: _combat_score(e, raw=True), reverse=True)
     return scored[0], scored[-1]
 
-def _prey_enemies(ctx, count=3):
-    """Top N weakest huntable enemies (mirrors `_get_prey_enemies`). 
 
-    Over the sensor-visible contacts (`ctx.ships`), keep enemies that are not
+def _prey_enemies(ctx, count=3):
+    """Top N weakest huntable enemies (mirrors ``_get_prey_enemies``).
+
+    Over the sensor-visible contacts (``ctx.ships``), keep enemies that are not
     teammates, hold nutrinium, and are weaker than the player in BOTH attack
     (attack_power + attack_accuracy) AND defense (shield_strength + evade).
-    Ranked weakest-first by raw combat score. Each: `{'x', 'y', 'nutrinium'}`.
+    Ranked weakest-first by raw combat score. Each: ``{'x', 'y', 'nutrinium'}``.
     """
     player_attack = _ab(ctx.skills, "attack_power", 0) + _ab(ctx.skills, "attack_accuracy", 0)
     player_defense = _ab(ctx.skills, "shield_strength", 0) + _ab(ctx.skills, "evade", 0)
@@ -387,13 +390,15 @@ def _prey_enemies(ctx, count=3):
         for _, e in candidates[:count]
     ]
 
+
 def _remaining_time_fraction(ctx):
     """Fraction of the game still remaining, in [0, 1] (1.0 at start -> 0.0 at end).
 
-    Live requests carry wall-clock bounds (`gameState.start` / `end` in Unix-ms),
+    Live requests carry wall-clock bounds (``gameState.start`` / ``end`` in Unix-ms),
     so inference reads the true time left. The env-composed training request has
-    neither, so it falls back to `(max_steps - tick) / max_steps` -- byte-identical
-    to the env FULL builder's action-counter normalization (parity under partial-observability training).
+    neither, so it falls back to ``(max_steps - tick) / max_steps`` -- byte-identical
+    to the env FULL builder's action-counter normalization (parity under
+    partial-observability training).
     """
     start = ctx.game_start
     end = ctx.game_end
@@ -407,6 +412,7 @@ def _remaining_time_fraction(ctx):
             pass
     return max(0.0, min(1.0, (ctx.max_steps - ctx.tick) / max(1, ctx.max_steps)))
 
+
 def _quadrant_norm(x, y, map_w, map_h):
     """Player's cell in a 3x3 map grid as a single normalized index q/8 (q in 0..8)."""
     col = min(2, (int(x) * 3) // max(1, int(map_w)))
@@ -415,9 +421,10 @@ def _quadrant_norm(x, y, map_w, map_h):
 
 
 def _build_observation(ctx, spec=None):
-    """Dispatch to the observation builder matching `spec`'s observation type.
-    Supports 'full' (275-dim), 'full_no_grid' (154-dim), 'compact' (57-dim)
-    and 'sensor_only' (6 + (2*sensor_range+1)^2). Anything else (or a missing
+    """Dispatch to the observation builder matching ``spec``'s observation type.
+
+    Supports ``full`` (275-dim), ``full_no_grid`` (154-dim), ``compact`` (57-dim)
+    and ``sensor_only`` (6 + (2*sensor_range+1)^2). Anything else (or a missing
     spec) builds the full observation.
     """
     obs_type = "full"
@@ -442,7 +449,6 @@ def _build_full_observation(ctx, include_sensor_grid=True):
     layout; with it False it yields the 154-dim FULL_NO_GRID layout (the local
     sensor-grid block is omitted), byte-identical to the env's
     ``_get_observation(include_sensor_grid=False)``.
-
     """
     o = []
     sk = ctx.skills
@@ -532,7 +538,7 @@ def _build_full_observation(ctx, include_sensor_grid=True):
         o.append(_scaled_distance(a["distance"]))
         o.append(a["score"])
     for _ in range(ctx.top_count - len(top5)):
-        o.extend([0.0, 0.0, 0.0, 0.0, 0.0])
+        o.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
     # === NEAREST TRADING POST (3 values) ===
     if nearest_tp:
@@ -553,11 +559,11 @@ def _build_full_observation(ctx, include_sensor_grid=True):
             o.append(enemy["health"] / max(1, ctx.max_health))
             o.append(min(enemy["nutrinium"], 100) / 100.0)
             o.append(min(enemy["credits"], 1000) / 1000.0)
-            o.append(combat_score(enemy))
+            o.append(_combat_score(enemy))
             enemy_team = enemy.get("teamId")
             o.append(1.0 if (enemy_team is not None and int(enemy_team) == ctx.team_id) else 0.0)
         else:
-            o.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            o.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
     # === SPEC-FIDELITY FEATURES (24 values) ===
     o.append(_ab(sk, "shield_capacity", 0) / 10.0)
@@ -565,7 +571,7 @@ def _build_full_observation(ctx, include_sensor_grid=True):
     o.append(_ab(sk, "jump_cost", 0) / 10.0)
     o.append(_ab(sk, "salvage_yield", 0) / 10.0)
     o.append(_ab(sk, "negotiate_skill", 0) / 10.0)
-    o.append(_ab(sk, "negotiate_cautious", 0) / 10.0)
+    o.append(_ab(sk, "negotiate_caution", 0) / 10.0)
     o.append(_ab(sk, "negotiate_ambition", 0) / 10.0)
 
     scap = ctx.shield_capacity
@@ -574,7 +580,7 @@ def _build_full_observation(ctx, include_sensor_grid=True):
     o.append(1.0 if ctx.shield_state == "POWERED" else 0.0)
     o.append(1.0 if ctx.shield_state == "DRAINING" else 0.0)
     o.append(1.0 if ctx.shield_state == "DOWN" else 0.0)
-    o.append(sval / scap) if scap > 0 else 0.0
+    o.append((sval / scap) if scap > 0 else 0.0)
     o.append(scap / max(1.0, max_capacity))
 
     o.append(1.0 if "JUMP" in ctx.modules else 0.0)
@@ -582,7 +588,7 @@ def _build_full_observation(ctx, include_sensor_grid=True):
     o.append(1.0 if "SALVAGE" in ctx.modules else 0.0)
 
     o.append(min(1.0, ctx.team_id / 3.0))
-    o.append(0.0) # team_bonus is not exposed in the request
+    o.append(0.0)  # team_bonus is not exposed in the request
     price = ctx.market_price if ctx.market_price > 0 else _MARKET_REF
     o.append(min(1.0, price / _MARKET_REF))
 
@@ -591,7 +597,7 @@ def _build_full_observation(ctx, include_sensor_grid=True):
         obj_post = next(
             (p for p in ctx.trading_posts if p.get("id") == ctx.negotiate_post_id),
             None,
-    )
+        )
     if obj_post:
         o.append(1.0)
         o.append(_scaled_delta(obj_post["x"] - ctx.x))
@@ -617,15 +623,15 @@ def _build_full_observation(ctx, include_sensor_grid=True):
     # so a restriction-aware model can adapt; missing rules default to allowed.
     restrictions = ctx.action_restrictions or {}
     for key in _ACTION_RESTRICTION_KEY:
-        rule = restrictions.get(key, {})
+        rule = restrictions.get(key, {}) if key is not None else {}
         o.append(1.0 if rule.get("allowedWhileRecharging", True) else 0.0)
         o.append(1.0 if rule.get("allowedWithShieldsUp", True) else 0.0)
 
     # === TEMPORAL/SPATIAL (2 values, appended last) ===
     # remaining_time_fraction: fraction of the game still left (1.0 -> 0.0). A live
-    # request carries wall-clock bounds (start/end, Unix-ms) so the bot reads true
-    # time remaining; the env-composed request has neither, so training falls back
-    # to the tick estimate -- byte-identical to the env FULL builder.
+    #   request carries wall-clock bounds (start/end, Unix-ms) so the bot reads true
+    #   time remaining; the env-composed request has neither, so training falls back
+    #   to the tick estimate -- byte-identical to the env FULL builder.
     # quadrant_norm: player's cell in a 3x3 map grid as a single normalized index.
     o.append(_remaining_time_fraction(ctx))
     o.append(_quadrant_norm(ctx.x, ctx.y, ctx.map_w, ctx.map_h))
@@ -643,6 +649,7 @@ def _build_full_observation(ctx, include_sensor_grid=True):
         o.extend([0.0, 0.0, 0.0])
 
     return np.array(o, dtype=np.float32)
+
 
 def _build_compact_observation(ctx):
     """Reconstruct the 57-dim compact observation (mirrors ``CompactObservationGenerator``).
@@ -674,7 +681,7 @@ def _build_compact_observation(ctx):
         o.append(a["distance"] / max(1.0, max_dist))
         o.append(a["score"])
     for _ in range(ctx.top_count - len(top5)):
-        o.extend([0.0, 0.0, 0.0, 0.0, 0.0])
+        o.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
     # Nearest trading post (3 values)
     nearest_post = _nearest_entity(ctx.x, ctx.y, ctx.trading_posts)
@@ -700,14 +707,15 @@ def _build_compact_observation(ctx):
             enemy_team = enemy.get("teamId")
             o.append(1.0 if (enemy_team is not None and int(enemy_team) == ctx.team_id) else 0.0)
         else:
-            o.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            o.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
     return np.array(o, dtype=np.float32)
 
-def _build_sensor_only_observation(ctx):
-    """Reconstruct the sensor-only observation (mirrors `SensorOnlyObservationGenerator`).
 
-    Layout: ship essentials (6) + a centered, unclamped `(2*sensor_range+1)^2`
+def _build_sensor_only_observation(ctx):
+    """Reconstruct the sensor-only observation (mirrors ``SensorOnlyObservationGenerator``).
+
+    Layout: ship essentials (6) + a centered, unclamped ``(2*sensor_range+1)^2``
     local grid (enemy 0.9 > trading post 0.7 > asteroid 0.5, else 0; out-of-map
     cells stay 0).
     """
@@ -734,16 +742,33 @@ def _build_sensor_only_observation(ctx):
                     grid[idx] = 0.7
                 elif _entity_at(gx, gy, ctx.asteroids):
                     grid[idx] = 0.5
-
     o.extend(grid)
 
     return np.array(o, dtype=np.float32)
 
 
+# ----------------------------------------------------------------------------------------------
+# Action masking (delegated to utils.action_masker -- single source of truth
+# ----------------------------------------------------------------------------------------------
 def _mask_state(ctx):
+    """Adapt a parsed request context into a ``util.action_masker.MaskState``
+
+    Returns ``None`` if the masking utility cannot be imported (the caller then
+    proceeds without masking). The mask is built over SENSOR-VISIBLE entities
+    only -- the lambda only sees what the server reports within sensor range.
+    """
     masker = _get_masker()
     if masker is None:
         return None
+    energy_costs = {
+        "mine": ctx.mine_cost,
+        "move": ctx.move_cost,
+        "attack": ctx.attack_cost,
+        "shields": ctx.shields_cost,
+        "jump": ctx.jump_unit_cost,
+        "plunder": ctx.plunder_cost,
+        "negotiate": ctx.negotiate_cost,
+    }
     return masker.MaskState(
         x=ctx.x,
         y=ctx.y,
@@ -772,34 +797,39 @@ def _mask_state(ctx):
         salvage_energy_cost=ctx.salvage_cost,
         repair_cost=0,
         action_restrictions=ctx.action_restrictions,
+        jump_min_cost=ctx.jump_min_cost,
+        jump_cost_skill=int(_ab(ctx.skills, "jump_cost", 0)),
+        max_jump_distance=ctx.max_jump_distance + int(_ab(ctx.skills, "jump_distance", 0)) * 10,
     )
 
-# --------------------------------
+
+# ----------------------------------------------------------------------------------------------
 # Public API (used by both the bot and the environment)
-# --------------------------------
+# ----------------------------------------------------------------------------------------------
 def build_observation(action_request, spec=None):
-    """Build the reconstructed observation vector from an `ActionRequest`.
+    """Build the reconstructed observation vector from an ``ActionRequest``.
 
     Args:
         action_request: The server/simulator ActionRequest dict.
-        spec: Optional `model_specs.ModelSpec` selecting the observation type
-            (`full` / `compact` / `sensor_only`). Defaults to full.
+        spec: Optional ``model_specs.ModelSpec`` selecting the observation type
+            (``full`` / ``compact`` / ``sensor_only``). Defaults to full.
 
     Returns:
-        `np.ndarray` (float32) observation vector.
+        ``np.ndarray`` (float32) observation vector.
     """
     ctx = _Context(action_request)
     return _build_observation(ctx, spec)
 
-def build_action_mask(action_request):
-    """Build the 19-action validity mask from an `ActionRequest`.
 
-    Mirrors the env's per-state mask but over SENSOR-VISIBLE entities only,
-    so a training env using this matches what the bot computes at inference.
-    Falls back to an all-ones mask if `utils.action_masker` cannot be imported.
+def build_action_mask(action_request):
+    """Build the 19-action validity mask from an ``ActionRequest``.
+
+    Mirrors the env's per-state mask but over SENSOR-VISIBLE entities only, so a
+    training env using this matches what the bot computes at inference. Falls
+    back to an all-ones mask if ``utils.action_masker`` cannot be imported.
 
     Returns:
-        `np.ndarray` (int8) of length 19.
+        ``np.ndarray`` (int8) of length 19.
     """
     ctx = _Context(action_request)
     st = _mask_state(ctx)
