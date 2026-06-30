@@ -747,11 +747,11 @@ def _build_sensor_only_observation(ctx):
     return np.array(o, dtype=np.float32)
 
 
-# ----------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Action masking (delegated to utils.action_masker -- single source of truth
-# ----------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 def _mask_state(ctx):
-    """Adapt a parsed request context into a ``util.action_masker.MaskState``
+    """Adapt a parsed request context into a ``util.action_masker.MaskState``,
 
     Returns ``None`` if the masking utility cannot be imported (the caller then
     proceeds without masking). The mask is built over SENSOR-VISIBLE entities
@@ -803,9 +803,9 @@ def _mask_state(ctx):
     )
 
 
-# ----------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Public API (used by both the bot and the environment)
-# ----------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 def build_observation(action_request, spec=None):
     """Build the reconstructed observation vector from an ``ActionRequest``.
 
