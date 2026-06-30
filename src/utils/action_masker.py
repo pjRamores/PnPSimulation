@@ -374,7 +374,7 @@ def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
         if distance == 0:
             return False, "best asteroid is at current location (distance 0), mine it or move away"
         if distance > st.max_jump_distance:
-            return False, f"best asteroid out of jump range (distance {distance}, max {st.max_jump_distance}"
+            return False, f"best asteroid out of jump range (distance {distance}, max {st.max_jump_distance})"
         energy_cost = _jump_energy_cost(st, distance)
         if st.energy < energy_cost:
             return False, f"insufficient energy (need {energy_cost}, have {st.energy})"
