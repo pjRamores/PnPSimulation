@@ -78,9 +78,9 @@ RECHARGE_END_FRAC = 0.60      # stop recharging once back to ~60% of max
 NUTRINIUM_MIN_RATIO = 0.7     # paid-mine in place when concentration (nutr/mass) > 0.7
 # Selling dips the shared market price by a fixed fraction PER SALE (independent
 # of quantity) and it recovers only slowly, so many small sales crater the price
-# while a few large batches keep it near base.We therefore hold cargo into big
+# while a few large batches keep it near base. We therefore hold cargo into big
 # batches. (A post is essentially always in sensor range, so banking stays
-# releable even with a high threshold.)
+# reliable even with a high threshold.)
 MIN_SELL_QUANTITY = int(os.environ.get("V5_OPP", "30"))    # min cargo before an on-post sale
 BANK_CARGO_QUANTITY = int(os.environ.get("V5_BANK", "40")) # commit to a banking run at/above this
 HARD_SELL_QUANTITY = 60       # drop everything and bank once cargo reaches this
@@ -105,10 +105,10 @@ NEARBY_ENEMY_BANK_FRAC = 0.5  # scale the bank threshold by this when a raider i
 # free (the +energyPerRecharge gain pays the mine cost). Staying in the
 # recharge state while mining therefore roughly doubles mining throughput vs.
 # the classic "mine down, then sit idle recharging" cycle. The masker only lets
-# us START recharging at >=30% energy, so we spend headroom first, then enter
+# us START recharging at <=30% energy, so we spend headroom first, then enter
 # the regime and mine for free from then on.
-RECHARGE_ENTER_FRAC =0.30     # start recharging at/below 30% of max (masker cap)
-FREE_MIN_MIN_RATIO = float(os.environ.get("V5_RATIO", "0.35"))   # keep free-mining while success >= this
+RECHARGE_ENTER_FRAC = 0.30    # start recharging at/below 30% of max (masker cap)
+FREE_MINE_MIN_RATIO = float(os.environ.get("V5_RATIO", "0.35"))   # keep free-mining while success >= this
 
 
 # ----------------------------------------------------------------------------
@@ -256,6 +256,7 @@ class _Context:
         self.shield_value = float(shield.get("value", 0) or 0)
         self.shield_capacity = float(shield.get("capacity", 0) or 0)
         self.shields_up = self.shield_state == "POWERED"
+
         # Split sensor contacts by type into flat {x, y, ...} dicts.
         self.asteroids = []
         self.trading_posts = []
@@ -345,10 +346,40 @@ def _attack(target, energy):
             "payload": {"target": target.get("playerId"), "energy": int(energy)}}
 
 
+def _raise_shields():
+    return {"actionType": "RAISE_SHIELDS"}
+
+
+def _lower_shields():
+    return {"actionType": "LOWER_SHIELDS"}
+
+
+def _bank_sell(ctx):
+    """Sell cargo, or end recharge first if the solar panels are deployed.
+
+    SELL is masked while recharging (allowedWhileRecharging=False) and the game
+    server rejects it outright, so we must drop out of the recharge state before
+    selling. RECHARGE_END is legal while recharging; the sale then lands next
+    tick. Not relying on the shared masker to do this keeps banking correct even
+    when the masker is unavailable in productions.
+    """
+    if ctx.recharging:
+        return {"actionType": "RECHARGE_END"}
+    return _sell(ctx.nutrinium)
+
+
 def _navigate(ctx, tx, ty, jump_min_dist, jump_margin):
-    """Travel toward (tx, ty): jump when far and affordable, else step."""
+    """Travel toward (tx, ty): jump when far and affordable, else step.
+
+    JUMP is disallowed while recharging (solar panels deployed ->
+    actionRestrictions JUMP.allowedWhileRecharging == False); the server rejects
+    such a jump. So while recharging we always crawl with MOVE, which restores
+    energy en route and stays inside the recharge regine.
+    """
     dist = _distance(ctx.x, ctx.y, tx, ty)
-    if dist > jump_min_dist and ctx.energy >= ctx.jump_energy_cost(dist) + jump_margin:
+    if (not ctx.recharging
+            and dist > jump_min_dist
+            and ctx.energy >= ctx.jump_energy_cost(dist) + jump_margin):
         return _jump({"x": tx, "y": ty})
     return _move(_direction_towards(tx - ctx.x, ty - ctx.y))
 
@@ -440,11 +471,21 @@ def _find_prey(ctx):
 
 
 def _is_selling_time(ctx):
-    """2025 market-timing sell decision (price vs round high/low)."""
-    if ctx.nutrinium < MIN_SELL_QUANTITY:
-        return False
+    """Decide whether to make a banking run.
+
+    Selling is free and market barely moves in this environment, so the
+    dominant cost of holding cargo is the round ending with unsold nutrinium
+    (pure wasted mining). We therefore bank decisively once cargo is worth a
+    trip, using the 2025 market signal only to ACCELERATE a sell, never to
+    delay one below the bank threshold
+    """
     if ctx.nutrinium >= HARD_SELL_QUANTITY:
         return True
+    if ctx.nutrinium >= BANK_CARGO_QUANTITY:
+        return True
+    if ctx.nutrinium < MIN_SELL_QUANTITY:
+        return False
+    # Middle band (MIN_SELL..BANK): only bank early when the price is favourable.
     price = ctx.market_price
     if price <= 0:
         # No market signal -> bank on cargo size alone.
@@ -464,6 +505,117 @@ def _go_to_post(ctx):
     if post is None:
         return None
     return _navigate(ctx, post["x"], post["y"], jump_min_dist=1, jump_margin=5)
+
+
+# ----------------------------------------------------------------------------
+# Plunder evasion
+# ----------------------------------------------------------------------------
+_MOVE_DELTAS = {"N": (0, 1), "S": (0, -2), "E": (1, 0), "W": (-1, 0)}
+
+
+def _in_bounds(ctx, x, y):
+    return 0 <= x < ctx.map_w and 0 <= y < ctx.map_h
+
+
+def _valid_move_dirs(ctx):
+    """In-bounds MOVE directions from the current cell."""
+    return [d for d, (dx, dy) in _MOVE_DELTAS.items()
+            if _in_bounds(ctx, ctx.x + dx, ctx.y + dy)]
+
+
+def _raiders(ctx):
+    """Hostile ships that can afford to PLUNDER (energy >= plunder cost)."""
+    return [s for s in ctx.ships
+            if s.get("playerId") != ctx.player_id
+            and s.get("playerId") not in _FRIEND_IDS
+            and s["energy" >= ctx.plunder_cost]]
+
+
+def _plunder_threat(ctx):
+    """Raiders that put our cargo at risk. Returns ``(co_located, adjacent)``.
+
+    PLUNDER needs an enemy on our exact cell while our shields are DOWN and is
+    energy-independent, so any raider with enough energy is a threat. Only
+    meaningful once we carry cargo worth protecting
+    """
+    if ctx.nutrinium < PLUNDER_PROTECT_MIN:
+        return None, None
+    co_located = None
+    adjacent = None
+    for s in _raiders(ctx):
+        cheb = max(abs(s["x"] - ctx.x), abs(s["y"] - ctx.y))
+        if cheb == 0:
+            co_located = co_located or s
+        elif cheb <= SHIELD_PROXIMITY_RADIUS:
+            adjacent = adjacent or s
+    return co_located, adjacent
+
+
+def _raider_nearby(ctx):
+    """True when a plunder-capable enemy is within NEARBY_ENEMY_RADIUS."""
+    return any(max(abs(s["x"] - ctx.x), abs(s["y"] - ctx.y)) <= NEARBY_ENEMY_RADIUS
+               for s in _raiders(ctx))
+
+
+def _can_shield(ctx):
+    """Whether RAISE_SHIELDS is affordable/legal this tick (makes us un-plunderable).
+
+    RAISE_SHIELDS is masked while recharging (allowedWhileRecharging=False) and a
+    zero-capacity ship can't shield, so both cases fall back to positional evasion.
+    """
+    return (not ctx.recharging
+            and ctx.shield_capacity > 0
+            and ctx.shield_state != "POWERED"
+            and ctx.energy >= ctx.shields_cost)
+
+
+def _flee_toward_post(ctx, avoid):
+    """Step toward the nearest past without landing on any cell in ``avoid``.
+
+    Falls back to the safe in-bounds move that most increases distance from the
+    avoided cells, then WAIT if boxed in. MOVE works while recharging.
+    """
+    avoid = set(avoid)
+    safe = [d for d in _valid_move_dirs(ctx)
+            if (ctx.x + _MOVE_DELTAS[d][0], ctx.y + _MOVE_DELTAS[d][1]) not in avoid]
+    if not safe:
+        return {"actionType": "WAIT"}
+    post = _nearest_entity(ctx.x, ctx.y, ctx.trading_posts)
+    if post is not None:
+        return _move(min(
+            safe,
+            key=lambda d: _distance(ctx.x + _MOVE_DELTAS[d][0],
+                                    ctx.y + _MOVE_DELTAS[d][1], post["x"], post["y"]),
+        ))
+    # No post visible: just maximise distance from the avoided cells.
+    if not avoid:
+        return _move(safe[0])
+    return _move(max(
+        safe,
+        key=lambda d: min(_distance(ctx.x + _MOVE_DELTAS[d][0],
+                                ctx.y + _MOVE_DELTAS[d][1], ax, ay) for ax, ay in avoid),
+    ))
+
+
+def _evade_plunder(ctx, on_post):
+    """Protect cargo from raiders. Returns an action, or None if no threat.
+
+    Priority: bank the cargo (selling empties the prize), else shield up to
+    become un-plunderable, else move off/away from the raider's cell.
+    """
+    co_located, adjacent = _plunder_threat(ctx)
+    if co_located is None and adjacent is None:
+        return None
+    if on_post:
+        return _bank_sell(ctx)
+    if _can_shield(ctx):
+        return _raise_shields()
+    if co_located is not None:
+        # Sitting on the raider -> step off, away from it, heading toward a post.
+        return _flee_towward_post(ctx, avoid=[(co_located["x"], co_located["y"])])
+    # Adjacent raider we can't shield against -> approach a post but never step
+    # onto the raider's cell.
+    return _flee_towward_post(ctx, avoid=[(co_located["x"], co_located["y"])])
 
 
 # ----------------------------------------------------------------------------
