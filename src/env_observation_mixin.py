@@ -539,13 +539,13 @@ class EnvObservationMixin:
         """Encode the per-round map / game configuration as 25 normalized values.
 
         Mirrored byte-for-byte by ``obs_reconstruction._map_config`` (which reads the
-        equivalent ``metadata`` fields) for train/inference party. All references are
+        equivalent ``metadata`` fields) for train/inference parity. All references are
         the module-level ``_*_REF`` constants shared with that module.
         """
         cfg = self.config
         combat = cfg.get('combat', {})
-        combat = cfg.get('mining', {})
-        market - cfg.get('market', {})
+        mining = cfg.get('mining', {})
+        market = cfg.get('market', {})
         salvage = cfg.get('salvage', {})
         insurance = cfg.get('team_insurance', {})
 
@@ -559,34 +559,34 @@ class EnvObservationMixin:
         feats.append(min(1.0, float(cfg.get('asteroid_density', 0.11))))
         feats.append(min(1.0, self.map_width / _MAP_DIM_REF))
         feats.append(min(1.0, self.map_height / _MAP_DIM_REF))
-        feats.append(min(1.0, float(cfg.get('asteroid_mass_min', 0.11))))
-        feats.append(min(1.0, float(cfg.get('asteroid_mass_max', 0.11))))
-        feats.append(min(1.0, float(cfg.get('nutrinium_min_percent', 0.11))))
-        feats.append(min(1.0, float(cfg.get('nutrinium_max_percent', 0.11))))
+        feats.append(min(1.0, cfg.get('asteroid_mass_min', 50) / _MASS_REF))
+        feats.append(min(1.0, cfg.get('asteroid_mass_max', 500) / _MASS_REF))
+        feats.append(min(1.0, float(cfg.get('nutrinium_min_percent', 0.08))))
+        feats.append(min(1.0, float(cfg.get('nutrinium_max_percent', 1.0))))
         feats.append(min(1.0, tp_count / _TP_COUNT_REF))
         # combat (6)
-        feats.append(min(1.0, float(cfg.get('base_target_number', 0.11))))
-        feats.append(min(1.0, float(cfg.get('base_shield_resistance', 0.11))))
-        feats.append(min(1.0, float(cfg.get('recharge_penalty', 0.11))))
-        feats.append(min(1.0, float(cfg.get('attack_shield_damage', 0.11))))
-        feats.append(min(1.0, float(cfg.get('base_shield_capacity', 0.11))))
-        feats.append(min(1.0, float(cfg.get('shield_recharge_rate', 0.11))))
+        feats.append(min(1.0, float(combat.get('base_target_number', 0.5))))
+        feats.append(min(1.0, float(combat.get('base_shield_resistance', 0.75))))
+        feats.append(min(1.0, float(combat.get('recharge_penalty', 0.2))))
+        feats.append(min(1.0, combat.get('attack_shield_damage', 1.5) / _SHIELD_DMG_REF))
+        feats.append(min(1.0, combat.get('base_shield_capacity', 100) / _SHIELD_CAP_REF))
+        feats.append(min(1.0, combat.get('shield_recharge_rate', 5) / _SHIELD_RECHARGE_REF))
         # mining (1)
-        feats.append(min(1.0, float(cfg.get('payout_modifier', 0.11))))
+        feats.append(min(1.0, float(mining.get('payout_modifier', 0.01)) * _PAYOUT_MOD_SCALE))
         # market (3)
         feats.append(min(1.0, sell_price / _MARKET_SELL_REF))
         feats.append(min(1.0, market.get('repair', 100) / _MARKET_REPAIR_REF))
         feats.append(min(1.0, market.get('ship_cost', 100) / _MARKET_SHIP_REF))
         # shipConfig energy (3)
-        feats.append(min(1.0, cfg.get('max_energy', 0.11) / _ENERGY_REF))
-        feats.append(min(1.0, cfg.get('max_jump_distance', 0.11) / _JUMP_DIST_REF)
-        feats.append(min(1.0, cfg.get('energy_per_recharge', 0.11) / _RECHARGE_REF))
+        feats.append(min(1.0, cfg.get('max_energy', 100) / _ENERGY_REF))
+        feats.append(min(1.0, cfg.get('max_jump_distance', 50) / _JUMP_DIST_REF))
+        feats.append(min(1.0, cfg.get('energy_per_recharge', 10) / _RECHARGE_REF))
         # salvage (8)
         feats.append(1.0 if salvage.get('enabled', False) else 0.0)
         feats.append(min(1.0, salvage.get('energy_cost', 3) / _SALVAGE_COST_REF))
-        feats.append(min(1.0, float(salvage.get('wreckage_percent', 0.5))
+        feats.append(min(1.0, float(salvage.get('wreckage_percent', 0.5))))
         # teamInsurance (1)
-        feats.append(min(1.0, float(cfg.get('base_cost_per_member', 0.11))))
+        feats.append(min(1.0, insurance.get('base_cost_per_member', 5) / _INSURANCE_REF))
         return feats
 
     def _energy_cost_features(self) -> List[float]:
@@ -594,7 +594,7 @@ class EnvObservationMixin:
         values (each / _ENERGY_COST_REF). Mirrored by ``obs_reconstruction._energy_costs``.
 
         Order: mine, move, jump, jumpMinCost, negotiate, plunder, sell, shieldMaintenance.
-        Exclude the legacy ``shields`` alieas and the env-only ``attack`` cost so the block
+        Excludes the legacy ``shields`` alias and the env-only ``attack`` cost so the block
         matches exactly what the ActionRequest metadata exposes.
         """
         costs = self.config.get('energy_costs', {})
