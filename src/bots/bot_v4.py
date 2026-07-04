@@ -287,7 +287,7 @@ def _salvage():
 # Pirate decision (ported from ProspectorsPiratesEnv._ai_pirate)
 # ----------------------------------------------------------------------------
 def _pirate_action(ctx):
-    """Pirate-first raider: plunder/attack/salvage first, sell on good price."""
+    """Pirate-first raider: plunder/attack/salvage first, sell on good prices."""
     # === 1. ENERGY MANAGEMENT ===
     if ctx.recharging:
         if ctx.energy >= RECHARGE_END_ENERGY:
@@ -298,7 +298,7 @@ def _pirate_action(ctx):
         return {"actionType": "RECHARGE"}
 
     _update_market_window(ctx)
-    op_post = _entity_at(ctx.x, ctx.y, ctx.trading_posts) is not None
+    on_post = _entity_at(ctx.x, ctx.y, ctx.trading_posts) is not None
 
     same_zone_targets = _entities_at(ctx.x, ctx.y, ctx.ships)
 
