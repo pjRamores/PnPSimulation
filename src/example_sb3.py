@@ -20,6 +20,17 @@ except ImportError:
     SB3_AVAILABLE = False
 
 try:
+    # sb3-contrib provides MaskablePPO for TRUE action masking (invalid-action
+    # logits are zeroed before sampling). Optional: only needed for the
+    # --use-masked-ppo A/B training path.
+    from sb3_contrib import MaskablePPO
+
+    SB3_CONTRIB_AVAILABLE = True
+except ImportError:
+    MaskablePPO = None
+    SB3_CONTRIB_AVAILABLE = False
+
+try:
     from setproctitle import setproctitle
 
     SETPROCTITLE_AVAILABLE = True
@@ -196,6 +207,77 @@ def _make_env_fn(rank, env_kwargs, min_opponents, max_opponents, use_dynamic_opp
         if use_dynamic_opponents:
             env = DynamicOpponentsWrapper(env, min_opponents, max_opponents)
         env = ActionMaskWrapper(env)
+        env = Monitor(env)
+        return env
+    return _init
+
+
+class MaskableActionMaskWrapper(gym.Wrapper):
+    """Expose a flat per-sub-action validity mask for sb3-contrib MaskablePPO.
+
+    MaskablePPO performs TRUE action masking: it zeroes the logits of invalid
+    actions before sampling, so (unlike ActionMaskWrapper) no post-hoc
+    replacement or penalty is needed. It obtains the mask by calling this
+    wrapper's ``action_masks()`` method (SB3 discovers it via env_method on the
+    surrounding VecEnv).
+
+    The env action space is ``MultiDiscrete([num_action_types(19),
+    num_target_slots, energy_bins])``. Phase-1 masks ONLY the 19 action-type
+    sub-dimension (from the env's own ``action_mask`` observation); the
+    target-slot and energy-bin sub-dimensions are left fully valid (all ones),
+    so the model still freely chooses those. The returned mask is the flat
+    concatenation SB3 expects (length == sum(action_space.nvec)).
+    """
+
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        base = env.unwrapped
+        self._num_action_types = int(base.num_action_types)
+        self._num_target_slots = int(base.num_target_slots)
+        self._energy_bins = int(base.energy_bins)
+        self._last_action_mask = None
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        self._capture_mask(obs)
+        return obs, info
+
+    def ste(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        self._capture_mask(obs)
+        return obs, reward, terminated, truncated, info
+
+    def _captue_mask(self, obs):
+        if isinstance(obs, dict) and 'action_mask' in obs:
+            self._last_action_mask = np.asarray(obs['action_mask']).astype(bool)
+
+    def action_masks(self):
+        if (self._last_action_mask is not None
+                and len(self._last_action_mask) == self._num_action_types):
+            type_mask = self._last_action_mask
+        else:
+            # Before the first reset (or on a malformed obs) allow everything so
+            # sampling never dead-locks; real masks arrive after reset().
+            type_mask = np.ones(self._num_action_types, dtype=bool)
+        # Target-slot + energy-bin sub-dimensions are unmasked in phase 1.
+        return np.concatenate([
+            type_mask,
+            np.ones(self._num_target_slots, dtype=bool),
+            np.ones(self._energy_bins, dtype=bool),
+        ])
+
+
+def _make_masked_env_fn(rank, env_kwargs, min_opponents, max_opponents, use_dynamic_opponents):
+    """Picklable factory building one MaskablePPO-compatible training env.
+
+    Identical to _make_env_fn but swaps the penalty-based ActionMaskWrapper for
+    MaskableActionMaskWrapper, which exposes action_masks() for true masking.
+    """
+    def _init():
+        env = ProspectorsPiratesEnv(**env_kwargs)
+        if use_dynamic_opponents:
+            env = DynamicOpponentsWrapper(env, min_opponents, max_opponents)
+        env = MaskableActionMaskWrapper(env)
         env = Monitor(env)
         return env
     return _init
