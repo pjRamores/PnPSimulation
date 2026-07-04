@@ -320,8 +320,8 @@ class _Context:
         buy_cfg = market.get("buy", {}) or {}
         price = sell_cfg.get("nutrinium")
         self.market_price = float(price) if price is not None else 0.0
-        self.market_repair = int(buy_cfg.get("repair", 100))
-        self.market_ship = int(buy_cfg.get("ship", 100))
+        self.market_repair = float(buy_cfg.get("repair", 100))
+        self.market_ship = float(buy_cfg.get("ship", 100))
         # Per-state action restrictions (allowedWhileRecharging / allowedWithShieldsUp).
         self.action_restrictions = metadata.get("actionRestrictions", {}) or {}
 
@@ -476,7 +476,7 @@ def _abilities(ctx):
         _ab(sk, "energy_max", 5) / 10.0,
         _ab(sk, "recharge_energy", 0) / 10.0,
         _ab(sk, "mine_accuracy", 0) / 10.0,
-        _ab(sk, "min_yield_multiplier", 1) / 5.0,
+        _ab(sk, "mine_yield_multiplier", 1) / 5.0,
         _ab(sk, "mine_cost", 2) / 10.0,
         _ab(sk, "combat_salvage_multiplier", 0) / 5.0,
         _ab(sk, "sensor_range", 1) / max(1, ctx.sensor_range),
@@ -532,7 +532,7 @@ def _map_config(ctx):
     # salvage (3)
     o.append(1.0 if ctx.salvage_enabled else 0.0)
     o.append(min(1.0, ctx.salvage_cost / _SALVAGE_COST_REF))
-    o.append(min(1.0, ctx.salvage_werckage_percent))
+    o.append(min(1.0, ctx.salvage_wreckage_percent))
     # teamInsurance (1)
     o.append(min(1.0, ctx.insurance_base_cost / _INSURANCE_REF))
     return o
@@ -542,7 +542,7 @@ def _energy_costs(ctx):
     """8 normalized per-action energy costs (each / _ENERGY_COST_REF).
 
     Order: mine, move, jump, jumpMinCost, negotiate, plunder, sell, shieldMaintenance.
-    Mirrors ``envObservation_mixin._energy_cost_features``.
+    Mirrors ``env_observation_mixin._energy_cost_features``.
     """
     return [
         min(1.0, ctx.mine_cost / _ENERGY_COST_REF),
@@ -554,6 +554,7 @@ def _energy_costs(ctx):
         min(1.0, ctx.sell_cost / _ENERGY_COST_REF),
         min(1.0, ctx.shield_maintenance_cost / _ENERGY_COST_REF),
     ]
+
 
 def _build_observation(ctx, spec=None):
     """Dispatch to the observation builder matching ``spec``'s observation type.
@@ -755,14 +756,20 @@ def _build_full_observation(ctx, include_sensor_grid=True):
     for _ in range(3 - len(prey)):
         o.extend([0.0, 0.0, 0.0])
 
+    # === MAP / ROUND CONFIG (25) + PER-ACTION ENERGY COSTS (8) ===
+    # Mirrors env_observation_mixin._map_config_features / _energy_cost_features.
+    o.extend(_map_config(ctx))
+    o.extend(_energy_costs(ctx))
+
     return np.array(o, dtype=np.float32)
 
 
 def _build_compact_observation(ctx):
-    """Reconstruct the 57-dim compact observation (mirrors ``CompactObservationGenerator``).
+    """Reconstruct the 93-dim compact observation (mirrors ``CompactObservationGenerator``).
 
-    Layout: ship state (8) + top 5 asteroids (30) + nearest trading post (3) +
-    two enemy types (16), over sensor-visible entities only.
+    Layout: ship state (8) + abilities (19) + top 5 asteroids (30) + nearest trading
+    post (3) + map/round config (25) + per-action energy costs (8), over
+    sensor-visible entities only.
     """
     map_span = max(1, ctx.map_w + ctx.map_h)
     o = [
@@ -775,6 +782,9 @@ def _build_compact_observation(ctx):
         1.0 if ctx.recharging else 0.0,
         1.0 if ctx.shields_up else 0.0,
     ]
+
+    # Abilities (19 values -- all ship skills)
+    o.extend(_abilities(ctx))
 
     # Top 5 asteroids (30 values: 5 asteroids * 6 features)
     top5 = _top_asteroids(ctx, ctx.x, ctx.y, ctx.top_count)
@@ -800,21 +810,10 @@ def _build_compact_observation(ctx):
     else:
         o.extend([0.0, 0.0, 1.0])
 
-    # Two enemy types (16 values: 2 enemies * 8 features)
-    strongest, weakest = _extreme_enemies(ctx)
-    for enemy in (strongest, weakest):
-        if enemy:
-            o.append(enemy["x"] / max(1, ctx.map_w))
-            o.append(enemy["y"] / max(1, ctx.map_h))
-            o.append(enemy["energy"] / max(1, ctx.max_energy))
-            o.append(enemy["health"] / max(1, ctx.max_health))
-            o.append(min(enemy["nutrinium"], 100) / 100.0)
-            o.append(min(enemy["credits"], 1000) / 1000.0)
-            o.append(_combat_score(enemy))
-            enemy_team = enemy.get("teamId")
-            o.append(1.0 if (enemy_team is not None and int(enemy_team) == ctx.team_id) else 0.0)
-        else:
-            o.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    # Map / round config (25) + per-action energy costs (8).
+    # Mirrors env_observation_mixin._map_config_features / _energy_cost_features.
+    o.extend(_map_config(ctx))
+    o.extend(_energy_costs(ctx))
 
     return np.array(o, dtype=np.float32)
 
