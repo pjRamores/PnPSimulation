@@ -20,7 +20,7 @@ _SPATIAL_REF = 50.0
 # Fixed normalization references for the map/round-config and per-action energy-cost
 # observation blocks. These MUST stay byte-identical to the same-named constants in
 # obs_reconstruction.py so the env training path and the BOT_V6 inference path produce
-# identical observations. They are round-config scale factor (not learned).
+# identical observations. They are round-config scale factors (not learned).
 _MAP_DIM_REF = 200.0        # map width/height reference (cells)
 _MASS_REF = 500.0           # asteroid mass reference
 _TP_COUNT_REF = 50.0        # trading-post count reference
@@ -198,9 +198,6 @@ class EnvObservationMixin:
         # removed (remaining_time_fraction in the temporal block already encodes it).
         obs.extend(self._ability_features(ship))
 
-        # Action counter (1 value) - normalized by max_steps (typical ~300)
-        obs.append(self.action_counter / max(1, self.max_steps))
-
         # === STRATEGIC CONTEXT (8 values) ===
         # These high-signal features directly encode actionable state
         map_diag = max(1.0, math.sqrt(self.map_width**2 + self.map_height**2))
@@ -358,7 +355,7 @@ class EnvObservationMixin:
 
         # === TWO ENEMY TYPES: REMOVED ===
         # The strongest/weakest enemy block was removed: nearby pirates/enemies are
-        # already represented in the local sensor grid (and teh prey block below),
+        # already represented in the local sensor grid (and the prey block below),
         # so this dedicated block was redundant.
 
         # === SPEC-FIDELITY FEATURES (17 values; appended to keep legacy offsets stable) ===
@@ -466,6 +463,15 @@ class EnvObservationMixin:
         for _ in range(3 - len(prey)):
             obs.extend([0.0, 0.0, 0.0])
 
+        # === MAP / ROUND CONFIG (25 values) + PER-ACTION ENERGY COSTS (8 values) ===
+        # Appended last so any legacy offset assumptions stay stable. These encode the
+        # per-round metadata (map density/mass/nutrinium, combat/mining/market/salvage
+        # config, ship energy limits, per-action energy costs) so the policy can adapt
+        # to the randomized round configuration. The arithmetic here is mirrored exactly
+        # in obs_reconstruction.py (_map_config / _energy_costs) for train/inference parity.
+        obs.extend(self._map_config_features())
+        obs.extend(self._energy_cost_features())
+
         # Return Dict observation with action mask
         obs_array = np.array(obs, dtype=np.float32)
         if skip_mask:
@@ -476,6 +482,39 @@ class EnvObservationMixin:
             'observation': obs_array,
             'action_mask': mask
         }
+
+    def _ability_features(self, ship: dict) -> List[float]:
+        """Encode a ship's 19 skill levels as normalized values (all ship abilities).
+
+        The first 12 keep their legacy normalization; the final 7 (shield_capacity,
+        shield_efficiency, jump_cost, salvage_yield, negotiate_skill, negotiate_caution,
+        negotiate_ambition) were previously in the spec-fidelity block and are
+        consolidated here. Mirrored byte-for-byte by ``obs_recostruction._abilities``.
+        Shared by the FULL and COMPACT builders so both stay in sync.
+        """
+        abilities = ship.get('abilities', {}) or {}
+        max_abilities = self.config.get('abilities', {})
+        return [
+            abilities.get('energy_max', 5) / max(1, max_abilities.get('energy_mas', 10)),
+            abilities.get('recharge_energy', 0) / max(1, max_abilities.get('recharge_energy', 10)),
+            abilities.get('mine_accuracy', 0) / max(1, max_abilities.get('mine_accuracy', 10)),
+            abilities.get('min_yield_multiplier', 1) / max(1, max_abilities.get('mine_yield_multiplier', 5)),
+            abilities.get('mine_cost', 2) / max(1, max_abilities.get('mine_cost', 10)),
+            abilities.get('combat_salvage_multiplier', 0) / max(1, max_abilities.get('combat_salvage_multiplier', 5)),
+            abilities.get('sensor_range', 1) / max(1, self.config['sensor_range']),
+            abilities.get('attack_accuracy', 0) / max(1, max_abilities.get('attack_accuracy', 10)),
+            abilities.get('attack_power', 0) / max(1, max_abilities.get('attack_power', 10)),
+            abilities.get('evade', 0) / max(1, max_abilities.get('evade', 10)),
+            abilities.get('shield_strength', 0) / max(1, max_abilities.get('shield_strength', 10)),
+            abilities.get('jumpt_distance', 0) / max(1, max_abilities.get('jump_distance', 10)),
+            abilities.get('shield_capacity', 0) / max(1, max_abilities.get('shield_capacity', 10)),
+            abilities.get('shield_efficiency', 0) / max(1, max_abilities.get('shield_efficiency', 10)),
+            abilities.get('jump_cost', 0) / max(1, max_abilities.get('jump_cost', 10)),
+            abilities.get('salvage_yield', 0) / max(1, max_abilities.get('salvage_yield', 10)),
+            abilities.get('negotiate_skill', 0) / max(1, max_abilities.get('negotiate_skill', 10)),
+            abilities.get('negotiate_caution', 0) / max(1, max_abilities.get('negotiate_caution', 10)),
+            abilities.get('negotiate_ambition', 0) / max(1, max_abilities.get('negotiate_ambition', 10)),
+        ]
 
     def _action_restriction_features(self) -> List[float]:
         """Encode the active action-restriction matrix as 2 flags per action id.
