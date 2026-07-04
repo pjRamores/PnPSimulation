@@ -641,7 +641,7 @@ def _balanced_action(ctx):
     if on_post and ctx.nutrinium >= MIN_SELL_QUANTITY:
         return _bank_sell(ctx)
 
-    # === 2b. PLUNDER EVASION: a raider is on/next to us and we hold cargo +++
+    # === 2b. PLUNDER EVASION: a raider is on/next to us and we hold cargo ===
     # PLUNDER ignores relative energy, so even a weak raider sharing our cell can
     # rob us while shields are DOWN. Bank it, shield up, or step off the raider.
     evade = _evade_plunder(ctx, on_post)
@@ -651,53 +651,79 @@ def _balanced_action(ctx):
     # === 2c. STAND DOWN SHIELDS: no raider left but shields still POWERED ===
     # We only reach here un-threatened (an active raider is handled in 2b). MINE
     # and RECHARGE are masked while shields are POWERED, so drop them now to avoid
-    # a struck loop; the sale path above already tolerates shields being up.
+    # a stuck loop; the sale path above already tolerates shields being up.
     if ctx.shield_state == "POWERED":
         return _lower_shields()
 
     # === 3. THREAT-AWARE BANKING: protect cargo from a stronger neighbour ===
     if ctx.nutrinium > 0 and _has_potential_attacker(ctx):
-        if _entity_at(ctx.x, ctx.y, ctx.trading_posts):
-            return _sell(ctx.nutrinium)
+        if on_post:
+            return _bank_sell(ctx.nutrinium)
         flee = _go_to_post(ctx)
         if flee is not None:
             return flee
 
-    # === 4. MARKET-TIMING SELL ===
-    if _is_selling_time(ctx):
-        if _entity_at(ctx.x, ctx.y, ctx.trading_posts):
-            return _sell(ctx.nutrinium)
+    # === 4. DECISIVE BANKING: once loaded, commit to the nearest post ===
+    # A post is essentially always in sensor range, so this reliably converts
+    # a full batch to credits instead of hoarding it until the round ends. When a
+    # raider is prowling nearby we bank sooner (lower threshold) to shrink the
+    # window a co-location can rob us.
+    bank_threshold = BANK_CARGO_QUANTITY
+    if _raider_nearby(ctx):
+        bank_threshold = max(PLUNDER_PROTECT_MIN,
+                             int(BANK_CARGO_QUANTITY * NEARBY_ENEMY_BANK_FRAC))
+    if ctx.nutrinium >= bank_threshold:
+        if on_post:
+            return _bank_sell(ctx)
         to_post = _go_to_post(ctx)
         if to_post is not None:
             return to_post
-        # No post in range; fall through and keep working.
 
-    # === 5. OPPORTUNISTIC ATTACK ===
-    prey, commit = _find_prey(ctx)
-    if prey is not None:
-        return _attack(prey, commit)
+    # === 5. OPPORTUNISTIC ATTACK (only when not recharging) ===
+    # Attacking is masked while recharging; interrupting the free-mining regime
+    # for an opportunistic same-cell strike isn't worth the RECHARGE_END churn.
+    if not ctx.recharging:
+        prey, commit = _find_prey(ctx)
+        if prey is not None:
+            return _attack(prey, commit)
 
-    # === 6. MINE vs MOVE (zone valuation) ===
-    target = _find_target_zone(ctx)
-    asteroid_here = _entity_at(ctx.x, ctx.y, ctx.asteroids)
-    if asteroid_here and asteroid_here["nutrinium"] > 0 and asteroid_here["mass"] > 0:
-        at_target = target is not None and target["x"] == ctx.x and target["y"] == ctx.y
+    # === 6. FREE-MINING: mine the rock under us, staying in the recharge state ===
+    # so the recharge gain pays the mine cost (see RECHARGE_ENTER_FRAC comment).
+    if mineable_here:
         ratio = asteroid_here["nutrinium"] / asteroid_here["mass"]
-        if at_target or ratio > NUTRINIUM_MIN_RATIO:
-            if ctx.energy >= ctx.mine_cost:
+        min_ratio = FREE_MINE_MIN_RATIO if ctx.recharging else NUTRINIUM_MIN_RATIO
+        if at_target or ratio >= min_ratio:
+            if ctx.recharging:
+                # Recharge gain already credited this tick -> the mine is free.
+                if ctx.energy >= ctx.mine_cost:
+                    return {"actionType": "MINE"}
+                return {"actionType": "WAIT"}  # bank a single tick (rare)
+            # Not recharging: spend energy headroom, then enter the free regime.
+            if ctx.energy > RECHARGE_ENTER_FRAC * ctx.max_energy and ctx.energy >= ctx.mine_cost:
                 return {"actionType": "MINE"}
             return {"actionType": "RECHARGE"}
 
-    # Travel toward the best zone (jump when far + affordable).
+    # === 7. Travel toward the best zone (MOVE works while recharging; jump when
+    # far + affordable). Crawling while recharging restores energy en route. ===
     if target is not None and (target["x"], target["y"]) != (ctx.x, ctx.y):
         return _navigate(ctx, target["x"], target["y"], jump_min_dist=2, jump_margin=15)
 
-    # Nothing rich nearby: bank any meaningful cargo, else explore.
-    if ctx.nutrinium >= HAUL_CARGO_THRESHOLD:
+    # === 8. No premium zone in range: bank any cargo, else head toward the
+    # nearest visible asteroid (directed, not a random walk). ===
+    if ctx.nutrinium > 0:
         to_post = _go_to_post(ctx)
         if to_post is not None:
             return to_post
+    nearest_rock = _nearest_entity(
+        ctx.x, ctx.y,
+        [a for a in ctx.asteroids if a["nutrinium"] > 0 and a["mass"] > 0],
+    )
+    if nearest_rock is not None:
+        return _navigate(ctx, nearest_rock["x"], nearest_rock["y"], jump_min_dist=2, jump_margin=15)
 
+    # === 9. Nothing visible: bank energy if low, else explore. ===
+    if not ctx.recharging and 0 < ctx.energy <= RECHARGE_ENTER_FRAC * ctx.max_energy:
+        return {"actionType": "RECHARGE"}
     return _move_explore(ctx)
 
 
