@@ -47,6 +47,26 @@ _MAX_STEPS = 300                # episode length proxy for the action counter
 _MARKET_REF = 98.0              # config market.sell_nutrinium reference price
 _SPATIAL_REF = 50.0             # fixed reference length for scale-free deltas/distances
 
+# Fixed normalization references for the map/round-config and per-action energy-cost
+# observation blocks. MUST stay byte-identical to the same-named constants in
+# env_observation_mixin.py so the env training path and the BOT_V6 inference path
+# produce identical observations.
+_MAP_DIM_REF = 200.0
+_MASS_REF = 500.0
+_TP_COUNT_REF = 50.0
+_SHIELD_DMG_REF = 5.0
+_SHIELD_CAP_REF = 200.0
+_SHIELD_RECHARGE_REF = 20.0
+_MARKET_SELL_REF = 200.0
+_MARKET_REPAIR_REF = 500.0
+_MARKET_SHIP_REF = 2000.0
+_ENERGY_REF = 200.0
+_JUMP_DIS_REF = 100.0
+_RECHARGE_REF = 20.0
+_SALVAGE_COST_REF = 20.0
+_INSURANCE_REF = 20.0
+_ENERGY_COST_REF = 100.0
+_PAYOUT_MOD_SCALE = 10.0
 
 def _scaled_delta(d):
     """Scale a signed coordinate delta to [-1, 1] by a fixed reference length.
@@ -258,8 +278,10 @@ class _Context:
         self.move_cost = int(costs.get("move", 0))
         self.attack_cost = int(costs.get("attack", 1))
         self.shields_cost = int(costs.get("shields", 1))
+        self.shield_maintenance_cost = int(costs.get("shieldMaintenance", 1))
         self.plunder_cost = int(costs.get("plunder", 5))
         self.negotiate_cost = int(costs.get("negotiate", 5))
+        self.sell_cost = int(costs.get("sell", 0))
         self.jump_unit_cost = int(costs.get("jump", 1))
         self.jump_min_cost = int(costs.get("jumpMinCost", 75))
         self.max_jump_distance = int(ship_cfg.get("maxJumpDistance", 50))
@@ -271,14 +293,33 @@ class _Context:
         self.map_w = int(map_cfg.get("width", 10))
         self.map_h = int(map_cfg.get("height", 10))
         self.asteroid_mass_max = float(map_cfg.get("maxMass", 80))
+        self.asteroid_mass_min = float(map_cfg.get("minMass", 50))
+        self.asteroid_density = float(map_cfg.get("asteroidDensity", 0.11))
+        self.nutrinium_min_percent = float(map_cfg.get("minNutriniumPercent", 0.08))
+        self.nutrinium_max_percent = float(map_cfg.get("maxNutriniumPercent", 1.0))
+        self.trading_post_count = float(map_cfg.get("tradingPostCount", 0) or 0)
         combat = metadata.get("combat", {}) or {}
         self.base_shield_capacity = float(combat.get("baseShieldCapacity", 100))
+        self.base_hit_chance = float(combat.get("baseHitChance", 0.5))
+        self.base_shield_resistance = float(combat.get("baseShieldResistance", 0.75))
+        self.recharge_penalty = float(combat.get("rechargePenalty", 0.2))
+        self.attack_shield_damage = float(combat.get("attackShieldDamage", 1.5))
+        self.shield_recharge_rate = float(combat.get("shieldRechargeRate", 5))
+        mining = metadata.get("mining", {}) or {}
+        self.payout_modifier = float(combat.get("payoutModifier", 0.01))
         salvage = metadata.get("salvage", {}) or {}
         self.salvage_cost = int(salvage.get("energyCost", 5))
+        self.salvage_enabled = int(salvage.get("enabled", False))
+        self.salvage_wreckage_percent = int(salvage.get("wreckagePercent", 0.5))
+        insurance = metadata.get("teamInsurance", {}) or {}
+        self.insurance_base_cost = int(salvage.get("baseCostPerMember", 5))
         market = metadata.get("market", {}) or {}
         sell_cfg = market.get("sell", {}) or {}
+        buy_cfg = market.get("buy", {}) or {}
         price = sell_cfg.get("nutrinium")
         self.market_price = float(price) if price is not None else 0.0
+        self.market_repair = int(salvage.get("repair", 100))
+        self.market_ship = int(salvage.get("ship", 100))
         # Per-state action restrictions (allowedWhileRecharging / allowedWithShieldsUp).
         self.action_restrictions = metadata.get("actionRestrictions", {}) or {}
 
