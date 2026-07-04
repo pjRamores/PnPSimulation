@@ -108,7 +108,7 @@ NEARBY_ENEMY_BANK_FRAC = 0.5  # scale the bank threshold by this when a raider i
 # us START recharging at <=30% energy, so we spend headroom first, then enter
 # the regime and mine for free from then on.
 RECHARGE_ENTER_FRAC = 0.30    # start recharging at/below 30% of max (masker cap)
-FREE_MINE_MIN_RATIO = float(os.environ.get("V5_RATIO", "0.35"))   # keep free-mining while success >= this
+FREE_MINE_MIN_RATIO = float(os.environ.get("V5_RATIO", "0.35"))  # keep free-mining while success >= this
 
 
 # ----------------------------------------------------------------------------
@@ -361,7 +361,7 @@ def _bank_sell(ctx):
     server rejects it outright, so we must drop out of the recharge state before
     selling. RECHARGE_END is legal while recharging; the sale then lands next
     tick. Not relying on the shared masker to do this keeps banking correct even
-    when the masker is unavailable in productions.
+    when the masker is unavailable in production.
     """
     if ctx.recharging:
         return {"actionType": "RECHARGE_END"}
@@ -374,7 +374,7 @@ def _navigate(ctx, tx, ty, jump_min_dist, jump_margin):
     JUMP is disallowed while recharging (solar panels deployed ->
     actionRestrictions JUMP.allowedWhileRecharging == False); the server rejects
     such a jump. So while recharging we always crawl with MOVE, which restores
-    energy en route and stays inside the recharge regine.
+    energy en route and stays inside the recharge regime.
     """
     dist = _distance(ctx.x, ctx.y, tx, ty)
     if (not ctx.recharging
@@ -473,11 +473,11 @@ def _find_prey(ctx):
 def _is_selling_time(ctx):
     """Decide whether to make a banking run.
 
-    Selling is free and market barely moves in this environment, so the
+    Selling is free and the market barely moves in this environment, so the
     dominant cost of holding cargo is the round ending with unsold nutrinium
     (pure wasted mining). We therefore bank decisively once cargo is worth a
     trip, using the 2025 market signal only to ACCELERATE a sell, never to
-    delay one below the bank threshold
+    delay one below the bank threshold.
     """
     if ctx.nutrinium >= HARD_SELL_QUANTITY:
         return True
@@ -510,7 +510,7 @@ def _go_to_post(ctx):
 # ----------------------------------------------------------------------------
 # Plunder evasion
 # ----------------------------------------------------------------------------
-_MOVE_DELTAS = {"N": (0, 1), "S": (0, -2), "E": (1, 0), "W": (-1, 0)}
+_MOVE_DELTAS = {"N": (0, 1), "S": (0, -1), "E": (1, 0), "W": (-1, 0)}
 
 
 def _in_bounds(ctx, x, y):
@@ -528,7 +528,7 @@ def _raiders(ctx):
     return [s for s in ctx.ships
             if s.get("playerId") != ctx.player_id
             and s.get("playerId") not in _FRIEND_IDS
-            and s["energy" >= ctx.plunder_cost]]
+            and s["energy"] >= ctx.plunder_cost]
 
 
 def _plunder_threat(ctx):
@@ -536,7 +536,7 @@ def _plunder_threat(ctx):
 
     PLUNDER needs an enemy on our exact cell while our shields are DOWN and is
     energy-independent, so any raider with enough energy is a threat. Only
-    meaningful once we carry cargo worth protecting
+    meaningful once we carry cargo worth protecting.
     """
     if ctx.nutrinium < PLUNDER_PROTECT_MIN:
         return None, None
@@ -570,7 +570,7 @@ def _can_shield(ctx):
 
 
 def _flee_toward_post(ctx, avoid):
-    """Step toward the nearest past without landing on any cell in ``avoid``.
+    """Step toward the nearest post without landing on any cell in ``avoid``.
 
     Falls back to the safe in-bounds move that most increases distance from the
     avoided cells, then WAIT if boxed in. MOVE works while recharging.
@@ -593,7 +593,7 @@ def _flee_toward_post(ctx, avoid):
     return _move(max(
         safe,
         key=lambda d: min(_distance(ctx.x + _MOVE_DELTAS[d][0],
-                                ctx.y + _MOVE_DELTAS[d][1], ax, ay) for ax, ay in avoid),
+                                    ctx.y + _MOVE_DELTAS[d][1], ax, ay) for ax, ay in avoid),
     ))
 
 
@@ -612,10 +612,10 @@ def _evade_plunder(ctx, on_post):
         return _raise_shields()
     if co_located is not None:
         # Sitting on the raider -> step off, away from it, heading toward a post.
-        return _flee_towward_post(ctx, avoid=[(co_located["x"], co_located["y"])])
+        return _flee_toward_post(ctx, avoid=[(co_located["x"], co_located["y"])])
     # Adjacent raider we can't shield against -> approach a post but never step
     # onto the raider's cell.
-    return _flee_towward_post(ctx, avoid=[(co_located["x"], co_located["y"])])
+    return _flee_toward_post(ctx, avoid=[(adjacent["x"], adjacent["y"])])
 
 
 # ----------------------------------------------------------------------------
@@ -626,17 +626,34 @@ def _balanced_action(ctx):
     if ctx.state == "DESTROYED":
         return {"actionType": "RESPAWN"}
 
-    # === 2. ENERGY MANAGEMENT ===
-    if ctx.recharging:
-        if ctx.energy + ctx.per_recharge > ctx.max_energy:
-            return {"actionType": "RECHARGE_END"}
-        if ctx.energy >= RECHARGE_END_FRAC * ctx.max_energy:
-            return {"actionType": "RECHARGE_END"}
-        return {"actionType": "WAIT"}
-    if ctx.energy <= 0:
-        return {"actionType": "RECHARGE"}
-    if ctx.energy < RECHARGE_LOW_FRAC * ctx.max_energy:
-        return {"actionType": "RECHARGE"}
+    asteroid_here = _entity_at(ctx.x, ctx.y, ctx.asteroids)
+    mineable_here = bool(
+        asteroid_here and asteroid_here["nutrinium"] > 0 and asteroid_here["mass"] > 0
+    )
+    target = _find_target_zone(ctx)
+    at_target = target is not None and target["x"] == ctx.x and target["y"] == ctx.y
+    on_post = _entity_at(ctx.x, ctx.y, ctx.trading_posts) is not None
+
+    # === 2. OPPORTUNISTIC SELL: already on a post with worthwhile cargo ===
+    # Selling is free and instant -- never walk off a post holding sellable
+    # cargo. (SELL is masked while recharging, so _bank_sell ends the recharge
+    # first and the sale lands next tick.)
+    if on_post and ctx.nutrinium >= MIN_SELL_QUANTITY:
+        return _bank_sell(ctx)
+
+    # === 2b. PLUNDER EVASION: a raider is on/next to us and we hold cargo +++
+    # PLUNDER ignores relative energy, so even a weak raider sharing our cell can
+    # rob us while shields are DOWN. Bank it, shield up, or step off the raider.
+    evade = _evade_plunder(ctx, on_post)
+    if evade is not None:
+        return evade
+
+    # === 2c. STAND DOWN SHIELDS: no raider left but shields still POWERED ===
+    # We only reach here un-threatened (an active raider is handled in 2b). MINE
+    # and RECHARGE are masked while shields are POWERED, so drop them now to avoid
+    # a struck loop; the sale path above already tolerates shields being up.
+    if ctx.shield_state == "POWERED":
+        return _lower_shields()
 
     # === 3. THREAT-AWARE BANKING: protect cargo from a stronger neighbour ===
     if ctx.nutrinium > 0 and _has_potential_attacker(ctx):
