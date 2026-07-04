@@ -138,6 +138,7 @@ class MaskState:
     jump_min_cost: int = 0      # jumpMinCost floor (before jump_cost skill reduction)
     jump_cost_skill: int = 0    # jump_cost ability points; lowers the floor by 5/pt
     max_jump_distance: float = float('inf')  # max reachable jump distance (incl. jump_distance skill)
+    shield_proximity_radius: int = 0  # Chebyshev radius wihtin which an enemy makes RAISE_SHIELDS valid (0 = same cell only)
 
 
 # ---------------------------------------------------------------------------
@@ -418,9 +419,12 @@ def is_action_valid(action: int, st: MaskState) -> Tuple[bool, str]:
         active_targets = _active_enemies(st)
         if not active_targets:
             return False, "no enemy threat, shields not needed"
-        enemy_in_same_zone = any((t['x'] == st.x and t['y'] == st.y) for t in active_targets)
-        if not enemy_in_same_zone:
-            return False, "no enemy in same zone, no threat"
+        radius = max(0, st.shield_proximity_radius)
+        enemy_in_range = any(
+            max(abs(t['x'] - st.x), abs(t['y'] - st.y)) <= radius for t in active_targets
+        )
+        if not enemy_in_range:
+            return False, "no enemy in range, no threat"
         return True, ""
 
     # PLUNDER - energy, and a shields-down enemy with nutrinium in zone

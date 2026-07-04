@@ -552,9 +552,9 @@ class ProspectorsPiratesEnv(
         # + Map / round config block = 25 values (map dims, combat, mining, market,
         #   shipConfig energy, salvage, insurance) so the policy can adapt to
         #   randomized round configs.
-        # * Per-action energy costs = 8 values (mine, move, jump, jumpMinCost,
+        # + Per-action energy costs = 8 values (mine, move, jump, jumpMinCost,
         #   negotiate, plunder, sell, shieldMaintenance).
-        # (The obsolete per-enemy *two enemy types* block was removed -- enemies are
+        # (The obsolete per-enemy "two enemy types" block was removed -- enemies are
         # already encoded by the local sensor grid and the prey block below.)
 
         ship_state_size = 30  # Complete ship state (basics, flags, skill points, 19 abilities)
@@ -623,8 +623,8 @@ class ProspectorsPiratesEnv(
             # + top-asteroids block + nearest trading post (3)
             # + map/round config (25) + per-action energy costs (8).
             obs_size = (
-                    8 + 19 + top_asteroids_size + trading_post_size
-                    + map_config_size + energy_costs_size
+                8 + 19 + top_asteroids_size + trading_post_size
+                + map_config_size + energy_costs_size
             )
         elif _player_obs_type == 'sensor_only':
             # SensorOnlyObservationGenerator: 6 ship essentials + local sensor grid.
