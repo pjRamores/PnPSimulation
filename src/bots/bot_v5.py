@@ -658,7 +658,7 @@ def _balanced_action(ctx):
     # === 3. THREAT-AWARE BANKING: protect cargo from a stronger neighbour ===
     if ctx.nutrinium > 0 and _has_potential_attacker(ctx):
         if on_post:
-            return _bank_sell(ctx.nutrinium)
+            return _bank_sell(ctx)
         flee = _go_to_post(ctx)
         if flee is not None:
             return flee
@@ -783,10 +783,10 @@ def _build_mask_state(ctx, masker):
         destroyed=(ctx.state == "DESTROYED"),
         recharging=ctx.recharging,
         just_recharged=False,
-        shield_state="DOWN",
-        shield_value=0,
-        shield_capacity=0,
-        shields_up=False,
+        shield_state=ctx.shield_state,
+        shield_value=ctx.shield_value,
+        shield_capacity=ctx.shield_capacity,
+        shields_up=ctx.shields_up,
         modules=ctx.modules,
         negotiate_post_id=None,
         enemies=ctx.ships,
@@ -804,6 +804,7 @@ def _build_mask_state(ctx, masker):
         jump_min_cost=ctx.jump_min_cost,
         jump_cost_skill=int(_skill(ctx.skills, "jump_cost")),
         max_jump_distance=ctx.max_jump_distance + int(_skill(ctx.skills, "jump_distance")) * 10,
+        shield_proximity_radius=SHIELD_PROXIMITY_RADIUS,
     )
 
 
@@ -821,6 +822,7 @@ def _action_name_to_id(masker, action, ctx):
         "PLUNDER": masker.PLUNDER,
         "RESPAWN": masker.RESPAWN,
         "RAISE_SHIELDS": masker.RAISE_SHIELDS,
+        "LOWER_SHIELDS": masker.LOWER_SHIELDS,
     }
     if at in simple:
         return simple[at]
@@ -860,6 +862,8 @@ def _masked_to_response(ctx, action_id, masker):
         return {"actionType": "RESPAWN"}
     if action_id == masker.RAISE_SHIELDS:
         return {"actionType": "RAISE_SHIELDS"}
+    if action_id == masker.LOWER_SHIELDS:
+        return {"actionType": "LOWER_SHIELDS"}
     if action_id == masker.MOVE_NORTH:
         return _move("N")
     if action_id == masker.MOVE_SOUTH:

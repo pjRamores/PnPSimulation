@@ -98,8 +98,8 @@ except Exception:  # pragma: no cover - degrade gracefully if the module is unav
 # stable_baselines3 appends it). Point this at any current full-spec model
 # (224-dim Dict observation, 19 action types). ``ppo_pnp_model_v9`` is a native
 # MultiDiscrete([19, map_w, map_h, energy_bins]) model that matches the env.
-# MODEL_NAME = "ppo_pnp_model_v2"
-MODEL_NAME = "ppo_checkpoint_1M_v3"
+# MODEL_NAME = "ppo_pnp_model_v5"
+MODEL_NAME = "ppo_checkpoint_87M_v6"
 
 # Observation / action format the loaded model expects, resolved via
 # ``model_specs.get_named_model_spec``. Supported names: ``"FULL"`` (224-dim,
@@ -449,5 +449,8 @@ def get_action(action_request):
     """Public entry point: returns a normalised response dict."""
     try:
         return _to_response(get_model_action(action_request))
-    except Exception:
+    except Exception as e:
+        print(f"Error in bot_v6: {e}, action_request: {action_request}")
+        import traceback
+        traceback.print_exc()
         return {"actionType": "WAIT"}
