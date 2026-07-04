@@ -462,6 +462,8 @@ class EnvOpponentMixin:
                 'height': self.map_height,
                 'maxMass': self.config.get('asteroid_mass_max', 500),
                 'minMass': self.config.get('asteroid_mass_min', 50),
+                'maxNutriniumPercent': self.config.get('nutrinium_max_percent', 1.0),
+                'minNutriniumPercent': self.config.get('nutrinium_min_percent', 0.08),
                 'tradingPostCount': getattr(
                     self, 'trading_post_target',
                     self._compute_trading_post_target()

@@ -581,7 +581,7 @@ class EnvObservationMixin:
         feats.append(min(1.0, cfg.get('max_energy', 100) / _ENERGY_REF))
         feats.append(min(1.0, cfg.get('max_jump_distance', 50) / _JUMP_DIST_REF))
         feats.append(min(1.0, cfg.get('energy_per_recharge', 10) / _RECHARGE_REF))
-        # salvage (8)
+        # salvage (3)
         feats.append(1.0 if salvage.get('enabled', False) else 0.0)
         feats.append(min(1.0, salvage.get('energy_cost', 3) / _SALVAGE_COST_REF))
         feats.append(min(1.0, float(salvage.get('wreckage_percent', 0.5))))
