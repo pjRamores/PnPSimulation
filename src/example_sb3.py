@@ -1267,7 +1267,6 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
             print(f"  Action masking: MaskablePPO true masking (action-type)")
         else:
             print(f"  Action masking: penalty-based enforcement")
-        print(f"  Action masking: penalty-based enforcement")
         print(f"  Parallel envs: {n_envs} (SubprocVecEnv)")
 
         # Validate the gym API on a single throwaway env before spawning workers
@@ -1345,11 +1344,11 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                 print(f"  Loading from: {model_path_with_zip}")
 
                 if algorithm == 'PPO' and use_masked_ppo:
-                    # MaskablePPO checkpoint. Cannot load a vanilla-ppo model here
+                    # MaskablePPO checkpoint. Cannot load a vanilla-PPO model here
                     # (incompatible policy); load failure falls back to fresh below.
                     model = MaskablePPO.load(transfer_from, env=env)
-                    print("   ✓ Loaded as MaskablePPO")
-                if algorithm == 'PPO':
+                    print("  ✓ Loaded as MaskablePPO")
+                elif algorithm == 'PPO':
                     # Load as regular PPO.
                     # The env uses a Dict obs space ({'observation', 'action_mask'}).
                     # Regular PPO with MultiInputPolicy can handle Dict observations.
@@ -1461,7 +1460,11 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
             if n_envs and n_envs > 1:
                 print(f"  PPO rollout: {ppo_n_steps} steps x {n_envs} envs = {rollout_size} "
                       f"samples per update")
-            model = PPO(
+            _ppo_cls = MaskablePPO if use_masked_ppo else PPO
+            _tb_subdir = 'maskable_ppo' if use_masked_ppo else 'ppo'
+            if use_masked_ppo:
+                print("   Algorithm: MaskablePPO (sb3-contrib, true action masking)")
+            model = _ppo_cls(
                 'MultiInputPolicy',
                 env,
                 verbose=0,
@@ -1479,7 +1482,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                     net_arch=dict(pi=[512, 256, 128], vf=[512, 256, 128]),
                     # Larger network for expanded sensor range (11x11 grid)
                 ),
-                tensorboard_log=f"./tensorboard_logs/ppo/"
+                tensorboard_log=f"./tensorboard_logs/{_tb_subdir}/"
             )
         elif algorithm == 'DQN':
             model = DQN(
@@ -1539,6 +1542,8 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
     training_type = "fine-tuning" if is_transfer else "training"
     print(f"\n{training_type.capitalize()} for {total_timesteps:,} timesteps...")
 
+    import time as _time
+    _train_start = _time.perf_counter()
     try:
         # Always reset timestep counter so that total_timesteps means
         # "train for N additional steps" (not "train until N total").
@@ -1559,6 +1564,14 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         traceback.print_exc()
         print("\nAttempting to save current model state...")
         # Continue to save even if training failed
+
+    # Benchmark summary: wall-clock + throughput so PPO vs MaskablePPO A/B runs
+    # cab be compared on sample efficiency AND real training speed.
+    _elapsed = _time.perf_counter() - _train_start
+    _steps = getattr(model, 'num_timesteps', total_timesteps) or total_timesteps
+    _mode_label = 'MaskablePPO' if (algorithm == 'PPO' and use_masked_ppo) else algorithm
+    print(f"\n[benchmark] mode={_mode_label} n_envs={n_envs} timesteps={_steps:,} "
+          f"wall_time_s={_elapsed:.1f} throughput={_steps / max(_elapsed, 1e-9):.1f} steps/s")
 
     # Save model
     # Get version number
@@ -1957,6 +1970,13 @@ Examples:
                         help='Number of parallel environments for training (PPO only). '
                              '>1 uses SubprocVecEnv worker processes for higher throughput; '
                              '1 (default) keeps the single-process path (default: 1)')
+    parser.add_argument('--use-masked-ppo', action='store_true',
+                        help='PPO-only A/B switch: train with sb3-contrib MaskablePPO using TRUE '
+                             'action masking (invalid action-type logits are zeroed before  '
+                             'sampling) instead of the default penalty-based ActionMaskWrapper. '
+                             'Requires sb3-contrib. MaskablePPO checkpoints are NOT weight-'
+                             'compatible with vanilla PPO, so --transfer-from must reference a '
+                             'MaskablePPO model. Default off keeps the standard PPO path.')
     parser.add_argument('--randomize-config', action='store_true',
                         help='Randomize the per-round-varying game config (asteroid density, '
                              'mass regime, payout modifier, energy/jump/shield costs, shield '
@@ -1964,9 +1984,9 @@ Examples:
                              'ranges each episode for robustness (default: off)')
     parser.add_argument('--model-spec', type=str, default=None,
                         help='Select the PLAYER observation spec by name (case-insensitive) for '
-                             'any registered preset: FULL (default, 275-dim), WIDE_SENSOR (alias '
-                             'WIDE, sensor window 10 -> 595-dim), FULL_NO_GRID (alias NO_GRID, '
-                             'FULL minus the local sensor grid -> 154-dim), COMPACT (57-dim), '
+                             'any registered preset: FULL (default, 291-dim), WIDE_SENSOR (alias '
+                             'WIDE, sensor window 10 -> 611-dim), FULL_NO_GRID (alias NO_GRID, '
+                             'FULL minus the local sensor grid -> 170-dim), COMPACT (93-dim), '
                              'SENSOR_ONLY. Each spec is a distinct observation layout -> train '
                              'fresh; models trained on a different spec are incompatible. '
                              'Default None -> DEFAULT_FULL_SPEC.')
@@ -2093,6 +2113,7 @@ Examples:
             player_model_spec=train_player_spec,
             partial_observability=args.partial_observability,
             module_grant_mode=args.module_grant_mode,
+            use_masked_ppo=args.use_masked_ppo,
         )
         if model:
             # After training and saving the model, ask the user whether to proceed to evaluation
