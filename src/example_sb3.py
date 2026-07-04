@@ -1463,7 +1463,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
             _ppo_cls = MaskablePPO if use_masked_ppo else PPO
             _tb_subdir = 'maskable_ppo' if use_masked_ppo else 'ppo'
             if use_masked_ppo:
-                print("   Algorithm: MaskablePPO (sb3-contrib, true action masking)")
+                print("  Algorithm: MaskablePPO (sb3-contrib, true action masking)")
             model = _ppo_cls(
                 'MultiInputPolicy',
                 env,
@@ -1566,7 +1566,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         # Continue to save even if training failed
 
     # Benchmark summary: wall-clock + throughput so PPO vs MaskablePPO A/B runs
-    # cab be compared on sample efficiency AND real training speed.
+    # can be compared on sample efficiency AND real training speed.
     _elapsed = _time.perf_counter() - _train_start
     _steps = getattr(model, 'num_timesteps', total_timesteps) or total_timesteps
     _mode_label = 'MaskablePPO' if (algorithm == 'PPO' and use_masked_ppo) else algorithm
@@ -1972,7 +1972,7 @@ Examples:
                              '1 (default) keeps the single-process path (default: 1)')
     parser.add_argument('--use-masked-ppo', action='store_true',
                         help='PPO-only A/B switch: train with sb3-contrib MaskablePPO using TRUE '
-                             'action masking (invalid action-type logits are zeroed before  '
+                             'action masking (invalid action-type logits are zeroed before '
                              'sampling) instead of the default penalty-based ActionMaskWrapper. '
                              'Requires sb3-contrib. MaskablePPO checkpoints are NOT weight-'
                              'compatible with vanilla PPO, so --transfer-from must reference a '
