@@ -223,6 +223,10 @@ class CompactObservationGenerator(ObservationGenerator):
             1.0 if ship.get('shields_up', False) else 0.0,
         ])
 
+        # Abilities (19 values -- all ship skills). Shares the FULL builder's helper
+        # so the normalization stays identical.
+        features.extends(self.env._ability_features(ship))
+
         # Top 5 asteroids (30 values: 5 asteroids * 6 features) -- mirrors the
         # FULL spec's top-asteroid block.
         top_asteroids = self.env._get_top_asteroids(
@@ -253,28 +257,10 @@ class CompactObservationGenerator(ObservationGenerator):
         else:
             features.extend([0.0, 0.0, 1.0])
 
-        # Two enemy types (16 values: 2 enemies * 8 features) -- mirrors the FULL
-        # spec's strongest/weakest enemy block (incl. same_team flag).
-        strongest, weakest = self.env._get_extreme_enemies(ship['x'], ship['y'])
-        player_team = ship.get('team_id')
-        player_team = int(player_team) if player_team is not None else 0
-        for enemy in [strongest, weakest]:
-            if enemy:
-                combat_score = self.env._calculate_enemy_combat_score(enemy)
-                enemy_team = enemy.get('team_id')
-                same_team = 1.0 if (enemy_team is not None and int(enemy_team) == player_team) else 0.0
-                features.extend([
-                    enemy['x'] / max(1, self.env.map_width),
-                    enemy['y'] / max(1, self.env.map_height),
-                    enemy['energy'] / max(1, self.env.config['max_energy']),
-                    enemy['health'] / max(1, self.env.config['max_health']),
-                    min(enemy['nutrinium'], 100) / 100.0,
-                    min(enemy['credits'], 1000) / 1000.0,
-                    combat_score,  # Already normalized 0-1
-                    same_team,     # 1.0 if this enemy shares the player's team
-                ])
-            else:
-                features.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        # Map / round config (25) + per-action energy costs (8). Shares the FULL
+        # builder's helpers so the values stay identical.
+        features.extend(self.env._map_config_features())
+        features.extend(self.env._energy_cost_features())
 
         obs_array = np.array(features, dtype=np.float32)
 
@@ -367,14 +353,14 @@ DEFAULT_FULL_SPEC = ModelSpec(
     observation_spec=ObservationSpec(
         'full',
         sensor_range=5,
-        description="Full observation with all features (sensor window 5 -> 275-dim)",
+        description="Full observation with all features (sensor window 5 -> 291-dim)",
     ),
     action_spec=ActionSpec(19, description="Standard 19 actions"),
 )
 
 # Wider sensor window variant: identical full observation layout but with a
-# sensor_range of 10 -> (2*10+1)**2 = 441 grid cells, yielding a 595-dim
-# observation. Opt-in only; the default training/eval path stays at 275-dim so
+# sensor_range of 10 -> (2*10+1)**2 = 441 grid cells, yielding a 611-dim
+# observation. Opt-in only; the default training/eval path stays at 291-dim so
 # existing models keep loading. Per the game-mechanic coupling, selecting this
 # spec also widens the env's config['sensor_range'] (bot visibility + metadata).
 WIDE_SENSOR_SPEC = ModelSpec(
@@ -382,14 +368,14 @@ WIDE_SENSOR_SPEC = ModelSpec(
     observation_spec=ObservationSpec(
         'full',
         sensor_range=10,
-        description="Full observation with wide sensor window 10 -> 595-dim",
+        description="Full observation with wide sensor window 10 -> 611-dim",
     ),
     action_spec=ActionSpec(19, description="Standard 19 actions"),
 )
 
 # Full observation minus the local sensor grid: identical FULL layout but the
-# (2*sensor_range+1)**2 sensor-grid block is dropped, yielding 154-dim at
-# sensor_range=5 (275 - 121). The grid sits mid-vector, so this is a distinct
+# (2*sensor_range+1)**2 sensor-grid block is dropped, yielding 170-dim at
+# sensor_range=5 (291 - 121). The grid sits mid-vector, so this is a distinct
 # layout (not a tail-truncation of FULL) and must be trained fresh. The
 # game-mechanic config['sensor_range'] stays at 5 so opponent visibility and
 # top-asteroid/enemy detection match FULL exactly.
@@ -398,7 +384,7 @@ FULL_NO_GRID_SPEC = ModelSpec(
     observation_spec=ObservationSpec(
         'full_no_grid',
         sensor_range=5,
-        description="Full observation minus local sensor grid (154-dim)",
+        description="Full observation minus local sensor grid (170-dim)",
     ),
     action_spec=ActionSpec(19, description="Standard 19 actions"),
 )
