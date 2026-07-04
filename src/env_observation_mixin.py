@@ -17,6 +17,29 @@ from utils import action_masker
 _SPATIAL_REF = 50.0
 
 
+# Fixed normalization references for the map/round-config and per-action energy-cost
+# observation blocks. These MUST stay byte-identical to the same-named constants in
+# obs_reconstruction.py so the env training path and the BOT_V6 inference path produce
+# identical observations. They are round-config scale factor (not learned).
+_MAP_DIM_REF = 200.0        # map width/height reference (cells)
+_MASS_REF = 500.0           # asteroid mass reference
+_TP_COUNT_REF = 50.0        # trading-post count reference
+_SHIELD_DMG_REF = 5.0       # combat.attackShieldDamage reference
+_SHIELD_CAP_REF = 200.0     # combat.baseShieldCapacity reference
+_SHIELD_RECHARGE_REF = 20.0 # combat.shieldRechargeRate reference
+_MARKET_SELL_REF = 200.0    # market.sell.nutrinium reference
+_MARKET_REPAIR_REF = 500.0  # market.buy.repair reference
+_MARKET_SHIP_REF = 2000.0   # market.buy.ship reference
+_ENERGY_REF = 200.0         # shipConfig.maxEnergy reference
+_JUMP_DIST_REF = 100.0      # shipConfig.maxJumpDistance reference
+_RECHARGE_REF = 20.0        # shipConfig.energyPerRecharge reference
+_SALVAGE_COST_REF = 20.0    # salvage.energyCost reference
+_INSURANCE_REF = 20.0       # teamInsurance.baseCostPerMember reference
+_ENERGY_COST_REF = 100.0    # per-action energy-cost reference (== max_energy)
+_PAYOUT_MOD_SCALE = 10.0    # mining.payoutModifier scale factor
+
+
+
 def _scaled_delta(d: float) -> float:
     """Scale a signed coordinate delta to [-1, 1] by a fixed reference length.
 
@@ -142,10 +165,8 @@ class EnvObservationMixin:
         # Legacy observation generation (full format)
         obs = []
         ship = self.player_ship
-        abilities = ship.get('abilities', {})
-        max_abilities = self.config.get('abilities', {})
 
-        # === ENHANCED SHIP STATE (24 values) ===
+        # === ENHANCED SHIP STATE (30 values) ===
         # Basic stats (6 values)
         obs.extend([
             ship['x'] / max(1, self.map_width),
@@ -169,21 +190,13 @@ class EnvObservationMixin:
             ship.get('skill_points_spent', 0) / max(1, self.config.get('max_skill_points', 20)),
         ])
 
-        # Abilities (12 values)
-        obs.extend([
-            abilities.get('energy_max', 5) / max(1, max_abilities.get('energy_max', 10)),
-            abilities.get('recharge_energy', 0) / max(1, max_abilities.get('recharge_energy', 10)),
-            abilities.get('mine_accuracy', 0) / max(1, max_abilities.get('mine_accuracy', 10)),
-            abilities.get('mine_yield_multiplier', 1) / max(1, max_abilities.get('mine_yield_multiplier', 5)),
-            abilities.get('mine_cost', 2) / max(1, max_abilities.get('mine_cost', 10)),
-            abilities.get('combat_salvage_multiplier', 0) / max(1, max_abilities.get('combat_salvage_multiplier', 5)),
-            abilities.get('sensor_range', 1) / max(1, self.config['sensor_range']),
-            abilities.get('attack_accuracy', 0) / max(1, max_abilities.get('attack_accuracy', 10)),
-            abilities.get('attack_power', 0) / max(1, max_abilities.get('attack_power', 10)),
-            abilities.get('evade', 0) / max(1, max_abilities.get('evade', 10)),
-            abilities.get('shield_strength', 0) / max(1, max_abilities.get('shield_strength', 10)),
-            abilities.get('jump_distance', 0) / max(1, max_abilities.get('jump_distance', 10)),
-        ])
+        # Abilities (19 values -- all ship skills). The first 12 keep their legacy
+        # normalization; the final 7 (shield_capacity, shield_efficiency, jump_cost,
+        # salvage_yield, negotiate_skill, negotiate_caution, negotiate_ambition) were
+        # previously in the spec-fidelity block and are consolidated here so the whole
+        # skill vector lives in one place. The obsolete action-counter feature was
+        # removed (remaining_time_fraction in the temporal block already encodes it).
+        obs.extend(self._ability_features(ship))
 
         # Action counter (1 value) - normalized by max_steps (typical ~300)
         obs.append(self.action_counter / max(1, self.max_steps))
@@ -343,43 +356,15 @@ class EnvObservationMixin:
         else:
             obs.extend([0.0, 0.0, 0.0])
 
-        # === TWO ENEMY TYPES (16 values: 2 enemies * 8 features) ===
-        # Get strongest and weakest enemies at same coordinates as player
-        strongest, weakest = self._get_extreme_enemies(ship['x'], ship['y'])
+        # === TWO ENEMY TYPES: REMOVED ===
+        # The strongest/weakest enemy block was removed: nearby pirates/enemies are
+        # already represented in the local sensor grid (and teh prey block below),
+        # so this dedicated block was redundant.
 
-        player_team = ship.get('team_id')
-        player_team = int(player_team) if player_team is not None else 0
-        for enemy in [strongest, weakest]:
-            if enemy:
-                combat_score = self._calculate_enemy_combat_score(enemy)
-                enemy_team = enemy.get('team_id')
-                same_team = 1.0 if (enemy_team is not None and int(enemy_team) == player_team) else 0.0
-                obs.extend([
-                    enemy['x'] / max(1, self.map_width),
-                    enemy['y'] / max(1, self.map_height),
-                    enemy['energy'] / max(1, self.config['max_energy']),
-                    enemy['health'] / max(1, self.config['max_health']),
-                    min(enemy['nutrinium'], 100) / 100.0,
-                    min(enemy['credits'], 1000) / 1000.0,
-                    combat_score,  # Already normalized 0-1
-                    same_team,     # 1.0 if this enemy shares the player's team
-                ])
-            else:
-                obs.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-
-        # === SPEC-FIDELITY FEATURES (24 values; appended to keep legacy offsets stable) ===
+        # === SPEC-FIDELITY FEATURES (17 values; appended to keep legacy offsets stable) ===
+        # (The 7 extra skills that used to live here were consolidated into the
+        # 19-value abilities block above.)
         max_abil = self.config.get('abilities', {})
-
-        # New skills beyond the legacy 12-ability block (7 values)
-        obs.extend([
-            abilities.get('shield_capacity', 0) / max(1, max_abil.get('shield_capacity', 10)),
-            abilities.get('shield_efficiency', 0) / max(1, max_abil.get('shield_efficiency', 10)),
-            abilities.get('jump_cost', 0) / max(1, max_abil.get('jump_cost', 10)),
-            abilities.get('salvage_yield', 0) / max(1, max_abil.get('salvage_yield', 10)),
-            abilities.get('negotiate_skill', 0) / max(1, max_abil.get('negotiate_skill', 10)),
-            abilities.get('negotiate_caution', 0) / max(1, max_abil.get('negotiate_caution', 10)),
-            abilities.get('negotiate_ambition', 0) / max(1, max_abil.get('negotiate_ambition', 10)),
-        ])
 
         # Shield state machine (5 values): one-hot state + value fill + capacity
         shield = ship.get('shield') if isinstance(ship.get('shield'), dict) else {}
