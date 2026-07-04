@@ -138,7 +138,7 @@ class MaskState:
     jump_min_cost: int = 0      # jumpMinCost floor (before jump_cost skill reduction)
     jump_cost_skill: int = 0    # jump_cost ability points; lowers the floor by 5/pt
     max_jump_distance: float = float('inf')  # max reachable jump distance (incl. jump_distance skill)
-    shield_proximity_radius: int = 0  # Chebyshev radius wihtin which an enemy makes RAISE_SHIELDS valid (0 = same cell only)
+    shield_proximity_radius: int = 0  # Chebyshev radius within which an enemy makes RAISE_SHIELDS valid (0 = same cell only)
 
 
 # ---------------------------------------------------------------------------

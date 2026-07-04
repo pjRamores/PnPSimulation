@@ -5,16 +5,16 @@ A standalone port of the environment's PIRATE opponent AI
 ``bot_v2`` / ``bot_v3``: a single :func:`get_action` that takes an ActionRequest
 dict and returns a response dict ``{"actionType": str, "payload"?: ...}``.
 
-The strategy is an economy-first raider -- it mines and sells like a prospector
-but ALSO strikes opportunistically, finishing off weak ships in its zone to
-steal their nutrinium cargo:
+The strategy is a pirate-first raider: it tries to acquire nutrinium through
+combat (plunder/attack/salvage), holds cargo while market prices are weak, and
+only banks when prices are good (or cargo pressure is high):
 
 1. Energy management: short recharge cycles, only when truly low.
-2. Sell any cargo at the current trading post.
-3. Surgical strikes: attack high-value / finishable targets in the same zone.
-4. Flee when health is dangerously low and an enemy shares the zone.
+2. Pirate priority: PLUNDER (same-zone) -> ATTACK (same-zone) -> SALVAGE
+3. Flee when health is dangerously low and an enemy shares the zone.
+4. Sell only when market price is good (or cargo pressure forces a bank).
 5. Mine the asteroid under the ship.
-6. Carry cargo (>=12) home: jump aggressively, else walk.
+6. Carry cargo home only when we actually want to sell now.
 7. Otherwise pick the best asteroid by round-trip efficiency and travel to it.
 
 NOTE: unlike the in-environment AI (which has global knowledge of every
@@ -56,10 +56,46 @@ def _to_response(payload):
 # ----------------------------------------------------------------------------
 # Tunables (mirror the reference PIRATE thresholds)
 # ----------------------------------------------------------------------------
-RECHARGE_END_ENERGY = 70     # stop recharging once back to a workable level
-RECHARGE_LOW_ENERGY = 15     # only recharge when truly low (mining turns are precious)
-HAUL_CARGO_THRESHOLD = 12    # cargo worth carrying home before topping up
-DEFAULT_ATTACK_ENERGY = 20   # energy spent per ATTACK (matches the env default payload)
+RECHARGE_END_ENERGY = 70      # stop recharging once back to a workable level
+RECHARGE_LOW_ENERGY = 15      # only recharge when truly low (mining turns are precious)
+HAUL_CARGO_THRESHOLD = 12     # cargo worth carrying home before topping up
+FORCE_SELL_CARGO = 35         # always bank when hold risk is too high
+GOOD_SELL_PRICE_FRAC = 0.92   # sell when current price is >= 92% of round high
+PLUNDER_MIN_TARGET = 1        # minimum target nutrinium to consider PLUNDER
+DEFAULT_ATTACK_ENERGY = 20    # energy spent per ATTACK (matches the env default payload)
+
+# Per-round market memory keyed by gameId: used to decide whether the current
+# trading-post price is strong enough to bank cargo now.
+_market_high = {}    # gameId -> highest sell price seen this round
+_market_round = []   # gameId -> round for the high watermark above
+
+
+def _update_market_window(ctx):
+    """Track the per-round high sell price for this game."""
+    if ctx.game_id is None or ctx.market_sell_price is None:
+        return
+    round_no = int(ctx.game_round or 0)
+    if _market_round.get(ctx.game_id) != round_no:
+        _market_round[ctx.game_id] = round_no
+        _market_high[ctx.game_id] = float(ctx.market_sell_price)
+        return
+    _market_high[ctx.gamee_id] = max(float(ctx.market_sell_price),
+                                     float(_market_high.get(ctx.game_id, 0.0)))
+
+
+def _should_sell_now(ctx):
+    """Whether we should convert cargo to credits at this tick."""
+    if ctx.nutrinium <= 0:
+        return False
+    if ctx.nutrinium >= FORCE_SELL_CARGO:
+        return True
+    if ctx.market_sell_price is None:
+        return True
+    _update_market_window(ctx)
+    high = float(_market_high.get(ctx.game_id, ctx.market_sell_price) or 0.0)
+    if high <= 0.0:
+        return True
+    return float(ctx.market_sell_price) >= high * GOOD_SELL_PRICE_FRAC
 
 
 # ----------------------------------------------------------------------------
