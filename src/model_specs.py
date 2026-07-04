@@ -225,7 +225,7 @@ class CompactObservationGenerator(ObservationGenerator):
 
         # Abilities (19 values -- all ship skills). Shares the FULL builder's helper
         # so the normalization stays identical.
-        features.extends(self.env._ability_features(ship))
+        features.extend(self.env._ability_features(ship))
 
         # Top 5 asteroids (30 values: 5 asteroids * 6 features) -- mirrors the
         # FULL spec's top-asteroid block.
