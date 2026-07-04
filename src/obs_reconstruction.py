@@ -61,12 +61,14 @@ _MARKET_SELL_REF = 200.0
 _MARKET_REPAIR_REF = 500.0
 _MARKET_SHIP_REF = 2000.0
 _ENERGY_REF = 200.0
-_JUMP_DIS_REF = 100.0
+_JUMP_DIST_REF = 100.0
 _RECHARGE_REF = 20.0
 _SALVAGE_COST_REF = 20.0
 _INSURANCE_REF = 20.0
 _ENERGY_COST_REF = 100.0
 _PAYOUT_MOD_SCALE = 10.0
+
+
 
 def _scaled_delta(d):
     """Scale a signed coordinate delta to [-1, 1] by a fixed reference length.
@@ -297,7 +299,7 @@ class _Context:
         self.asteroid_density = float(map_cfg.get("asteroidDensity", 0.11))
         self.nutrinium_min_percent = float(map_cfg.get("minNutriniumPercent", 0.08))
         self.nutrinium_max_percent = float(map_cfg.get("maxNutriniumPercent", 1.0))
-        self.trading_post_count = float(map_cfg.get("tradingPostCount", 0) or 0)
+        self.trading_post_count = int(map_cfg.get("tradingPostCount", 0) or 0)
         combat = metadata.get("combat", {}) or {}
         self.base_shield_capacity = float(combat.get("baseShieldCapacity", 100))
         self.base_hit_chance = float(combat.get("baseHitChance", 0.5))
@@ -306,20 +308,20 @@ class _Context:
         self.attack_shield_damage = float(combat.get("attackShieldDamage", 1.5))
         self.shield_recharge_rate = float(combat.get("shieldRechargeRate", 5))
         mining = metadata.get("mining", {}) or {}
-        self.payout_modifier = float(combat.get("payoutModifier", 0.01))
+        self.payout_modifier = float(mining.get("payoutModifier", 0.01))
         salvage = metadata.get("salvage", {}) or {}
         self.salvage_cost = int(salvage.get("energyCost", 5))
-        self.salvage_enabled = int(salvage.get("enabled", False))
-        self.salvage_wreckage_percent = int(salvage.get("wreckagePercent", 0.5))
+        self.salvage_enabled = bool(salvage.get("enabled", False))
+        self.salvage_wreckage_percent = float(salvage.get("wreckagePercent", 0.5))
         insurance = metadata.get("teamInsurance", {}) or {}
-        self.insurance_base_cost = int(salvage.get("baseCostPerMember", 5))
+        self.insurance_base_cost = float(insurance.get("baseCostPerMember", 5))
         market = metadata.get("market", {}) or {}
         sell_cfg = market.get("sell", {}) or {}
         buy_cfg = market.get("buy", {}) or {}
         price = sell_cfg.get("nutrinium")
         self.market_price = float(price) if price is not None else 0.0
-        self.market_repair = int(salvage.get("repair", 100))
-        self.market_ship = int(salvage.get("ship", 100))
+        self.market_repair = int(buy_cfg.get("repair", 100))
+        self.market_ship = int(buy_cfg.get("ship", 100))
         # Per-state action restrictions (allowedWhileRecharging / allowedWithShieldsUp).
         self.action_restrictions = metadata.get("actionRestrictions", {}) or {}
 
@@ -461,10 +463,102 @@ def _quadrant_norm(x, y, map_w, map_h):
     return (row * 3 + col) / 8.0
 
 
+def _abilities(ctx):
+    """19 normalized ship-skill values (all abilities).
+
+    Mirrors ``env_observation_mixin._ability_features``. The first 12 keep their
+    legacy divisors (/10, with /5 for the two multipliers and sensor_range scaled by
+    ctx.sensor_range); the final 7 were consolidated here from the old spec-fidelity
+    block. Shared by the FULL and COMPACT reconstruction builders.
+    """
+    sk = ctx.skills
+    return [
+        _ab(sk, "energy_max", 5) / 10.0,
+        _ab(sk, "recharge_energy", 0) / 10.0,
+        _ab(sk, "mine_accuracy", 0) / 10.0,
+        _ab(sk, "min_yield_multiplier", 1) / 5.0,
+        _ab(sk, "mine_cost", 2) / 10.0,
+        _ab(sk, "combat_salvage_multiplier", 0) / 5.0,
+        _ab(sk, "sensor_range", 1) / max(1, ctx.sensor_range),
+        _ab(sk, "attack_accuracy", 0) / 10.0,
+        _ab(sk, "attack_power", 0) / 10.0,
+        _ab(sk, "evade", 0) / 10.0,
+        _ab(sk, "shield_strength", 0) / 10.0,
+        _ab(sk, "jump_distance", 0) / 10.0,
+        _ab(sk, "shield_capacity", 0) / 10.0,
+        _ab(sk, "shield_efficiency", 0) / 10.0,
+        _ab(sk, "jump_cost", 0) / 10.0,
+        _ab(sk, "salvage_yield", 0) / 10.0,
+        _ab(sk, "negotiate_skill", 0) / 10.0,
+        _ab(sk, "negotiate_caution", 0) / 10.0,
+        _ab(sk, "negotiate_ambition", 0) / 10.0,
+    ]
+
+
+def _map_config(ctx):
+    """25 normalized per-round map/game-config values.
+
+    Mirrors ``env_observation_mixin._map_config_features`` exactly (same fields, order
+    and reference constants) for train/inference parity.
+    """
+    price = round(ctx.market_price or 0.0, 2)
+    o = []
+    # mapConfig (8)
+    o.append(min(1.0, ctx.asteroid_density))
+    o.append(min(1.0, ctx.map_w / _MAP_DIM_REF))
+    o.append(min(1.0, ctx.map_h / _MAP_DIM_REF))
+    o.append(min(1.0, ctx.asteroid_mass_min / _MASS_REF))
+    o.append(min(1.0, ctx.asteroid_mass_max / _MASS_REF))
+    o.append(min(1.0, ctx.nutrinium_min_percent))
+    o.append(min(1.0, ctx.nutrinium_max_percent))
+    o.append(min(1.0, ctx.trading_post_count / _TP_COUNT_REF))
+    # combat (6)
+    o.append(min(1.0, ctx.base_hit_chance))
+    o.append(min(1.0, ctx.base_shield_resistance))
+    o.append(min(1.0, ctx.recharge_penalty))
+    o.append(min(1.0, ctx.attack_shield_damage / _SHIELD_DMG_REF))
+    o.append(min(1.0, ctx.base_shield_capacity / _SHIELD_CAP_REF))
+    o.append(min(1.0, ctx.shield_recharge_rate / _SHIELD_RECHARGE_REF))
+    # mining (1)
+    o.append(min(1.0, ctx.payout_modifier * _PAYOUT_MOD_SCALE))
+    # market (3)
+    o.append(min(1.0, price / _MARKET_SELL_REF))
+    o.append(min(1.0, ctx.market_repair / _MARKET_REPAIR_REF))
+    o.append(min(1.0, ctx.market_ship / _MARKET_SHIP_REF))
+    # shipConfig energy (3)
+    o.append(min(1.0, ctx.max_energy / _ENERGY_REF))
+    o.append(min(1.0, ctx.max_jump_distance / _JUMP_DIST_REF))
+    o.append(min(1.0, ctx.per_recharge / _RECHARGE_REF))
+    # salvage (3)
+    o.append(1.0 if ctx.salvage_enabled else 0.0)
+    o.append(min(1.0, ctx.salvage_cost / _SALVAGE_COST_REF))
+    o.append(min(1.0, ctx.salvage_werckage_percent))
+    # teamInsurance (1)
+    o.append(min(1.0, ctx.insurance_base_cost / _INSURANCE_REF))
+    return o
+
+
+def _energy_costs(ctx):
+    """8 normalized per-action energy costs (each / _ENERGY_COST_REF).
+
+    Order: mine, move, jump, jumpMinCost, negotiate, plunder, sell, shieldMaintenance.
+    Mirrors ``envObservation_mixin._energy_cost_features``.
+    """
+    return [
+        min(1.0, ctx.mine_cost / _ENERGY_COST_REF),
+        min(1.0, ctx.move_cost / _ENERGY_COST_REF),
+        min(1.0, ctx.jump_unit_cost / _ENERGY_COST_REF),
+        min(1.0, ctx.jump_min_cost / _ENERGY_COST_REF),
+        min(1.0, ctx.negotiate_cost / _ENERGY_COST_REF),
+        min(1.0, ctx.plunder_cost / _ENERGY_COST_REF),
+        min(1.0, ctx.sell_cost / _ENERGY_COST_REF),
+        min(1.0, ctx.shield_maintenance_cost / _ENERGY_COST_REF),
+    ]
+
 def _build_observation(ctx, spec=None):
     """Dispatch to the observation builder matching ``spec``'s observation type.
 
-    Supports ``full`` (275-dim), ``full_no_grid`` (154-dim), ``compact`` (57-dim)
+    Supports ``full`` (291-dim), ``full_no_grid`` (170-dim), ``compact`` (93-dim)
     and ``sensor_only`` (6 + (2*sensor_range+1)^2). Anything else (or a missing
     spec) builds the full observation.
     """
@@ -486,15 +580,14 @@ def _build_observation(ctx, spec=None):
 def _build_full_observation(ctx, include_sensor_grid=True):
     """Reconstruct the env's full observation vector from the request.
 
-    With ``include_sensor_grid`` True (default) this yields the 275-dim FULL
-    layout; with it False it yields the 154-dim FULL_NO_GRID layout (the local
+    With ``include_sensor_grid`` True (default) this yields the 291-dim FULL
+    layout; with it False it yields the 170-dim FULL_NO_GRID layout (the local
     sensor-grid block is omitted), byte-identical to the env's
     ``_get_observation(include_sensor_grid=False)``.
     """
     o = []
-    sk = ctx.skills
 
-    # === ENHANCED SHIP STATE (24 values) ===
+    # === ENHANCED SHIP STATE (30 values) ===
     o.append(ctx.x / max(1, ctx.map_w))
     o.append(ctx.y / max(1, ctx.map_h))
     o.append(ctx.energy / max(1, ctx.max_energy))
@@ -506,19 +599,10 @@ def _build_full_observation(ctx, include_sensor_grid=True):
     o.append(1.0 if ctx.state == "READY" else 0.0)
     o.append(ctx.skill_points_total / max(1, ctx.max_skill_points))
     o.append(ctx.skill_points_spent / max(1, ctx.max_skill_points))
-    o.append(_ab(sk, "energy_max", 5) / 10.0)
-    o.append(_ab(sk, "recharge_energy", 0) / 10.0)
-    o.append(_ab(sk, "mine_accuracy", 0) / 10.0)
-    o.append(_ab(sk, "mine_yield_multiplier", 1) / 5.0)
-    o.append(_ab(sk, "mine_cost", 2) / 10.0)
-    o.append(_ab(sk, "combat_salvage_multiplier", 0) / 5.0)
-    o.append(_ab(sk, "sensor_range", 1) / max(1, ctx.sensor_range))
-    o.append(_ab(sk, "attack_accuracy", 0) / 10.0)
-    o.append(_ab(sk, "attack_power", 0) / 10.0)
-    o.append(_ab(sk, "evade", 0) / 10.0)
-    o.append(_ab(sk, "shield_strength", 0) / 10.0)
-    o.append(_ab(sk, "jump_distance", 0) / 10.0)
-    o.append(ctx.tick / max(1, ctx.max_steps))
+    # Abilities (19 values -- all ship skills). See _abilities(); the final 7 were
+    # consolidated here from the old spec-fidelity block and the obsolete
+    # action-counter feature (ctx.tick / max_steps) was removed.
+    o.extend(_abilities(ctx))
 
     # === STRATEGIC CONTEXT (8 values) ===
     ast_here = _entity_at(ctx.x, ctx.y, ctx.asteroids)
@@ -590,31 +674,13 @@ def _build_full_observation(ctx, include_sensor_grid=True):
     else:
         o.extend([0.0, 0.0, 0.0])
 
-    # === TWO ENEMY TYPES (16 values) ===
-    strongest, weakest = _extreme_enemies(ctx)
-    for enemy in (strongest, weakest):
-        if enemy:
-            o.append(enemy["x"] / max(1, ctx.map_w))
-            o.append(enemy["y"] / max(1, ctx.map_h))
-            o.append(enemy["energy"] / max(1, ctx.max_energy))
-            o.append(enemy["health"] / max(1, ctx.max_health))
-            o.append(min(enemy["nutrinium"], 100) / 100.0)
-            o.append(min(enemy["credits"], 1000) / 1000.0)
-            o.append(_combat_score(enemy))
-            enemy_team = enemy.get("teamId")
-            o.append(1.0 if (enemy_team is not None and int(enemy_team) == ctx.team_id) else 0.0)
-        else:
-            o.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    # === TWO ENEMY TYPES: REMOVED ===
+    # Nearby enemies are already represented in the local sensor grid (and the prey
+    # block), so the dedicated strongest/weakest enemy block was removed.
 
-    # === SPEC-FIDELITY FEATURES (24 values) ===
-    o.append(_ab(sk, "shield_capacity", 0) / 10.0)
-    o.append(_ab(sk, "shield_efficiency", 0) / 10.0)
-    o.append(_ab(sk, "jump_cost", 0) / 10.0)
-    o.append(_ab(sk, "salvage_yield", 0) / 10.0)
-    o.append(_ab(sk, "negotiate_skill", 0) / 10.0)
-    o.append(_ab(sk, "negotiate_caution", 0) / 10.0)
-    o.append(_ab(sk, "negotiate_ambition", 0) / 10.0)
-
+    # === SPEC-FIDELITY FEATURES (17 values) ===
+    # (The 7 extra skills that used to live here were consolidated into the
+    # 19-value abilities block above.)
     scap = ctx.shield_capacity
     sval = ctx.shield_value
     max_capacity = ctx.base_shield_capacity + 10 * 10  # base + max_abil shield_capacity*10
