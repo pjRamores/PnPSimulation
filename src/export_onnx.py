@@ -3,7 +3,7 @@
 The lambda (``bot_v6``) must run under a 250MB zip limit, which torch +
 stable_baselines3 blow past. This script runs in the training environment (which
 has torch + SB3) and emits a portable ``<model>.onnx`` plus a small
-`<model>.onnx.meta.json` sidecar describing the observation/action layout. The
+``<model>.onnx.meta.json`` sidecar describing the observation/action layout. The
 lambda then serves the policy with ``onnxruntime`` + ``numpy`` only.
 
 The exported graph takes the two observation-dict inputs the policy consumes --
