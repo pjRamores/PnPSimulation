@@ -10,7 +10,7 @@ combat (plunder/attack/salvage), holds cargo while market prices are weak, and
 only banks when prices are good (or cargo pressure is high):
 
 1. Energy management: short recharge cycles, only when truly low.
-2. Pirate priority: PLUNDER (same-zone) -> ATTACK (same-zone) -> SALVAGE
+2. Pirate priority: PLUNDER (same-zone) -> ATTACK (same-zone) -> SALVAGE.
 3. Flee when health is dangerously low and an enemy shares the zone.
 4. Sell only when market price is good (or cargo pressure forces a bank).
 5. Mine the asteroid under the ship.
@@ -62,12 +62,12 @@ HAUL_CARGO_THRESHOLD = 12     # cargo worth carrying home before topping up
 FORCE_SELL_CARGO = 35         # always bank when hold risk is too high
 GOOD_SELL_PRICE_FRAC = 0.92   # sell when current price is >= 92% of round high
 PLUNDER_MIN_TARGET = 1        # minimum target nutrinium to consider PLUNDER
-DEFAULT_ATTACK_ENERGY = 20    # energy spent per ATTACK (matches the env default payload)
+DEFAULT_ATTACK_ENERGY = 20    # energy spent per ATTACK (matches env default payload)
 
 # Per-round market memory keyed by gameId: used to decide whether the current
 # trading-post price is strong enough to bank cargo now.
 _market_high = {}    # gameId -> highest sell price seen this round
-_market_round = []   # gameId -> round for the high watermark above
+_market_round = {}   # gameId -> round for the high watermark above
 
 
 def _update_market_window(ctx):
@@ -79,8 +79,8 @@ def _update_market_window(ctx):
         _market_round[ctx.game_id] = round_no
         _market_high[ctx.game_id] = float(ctx.market_sell_price)
         return
-    _market_high[ctx.gamee_id] = max(float(ctx.market_sell_price),
-                                     float(_market_high.get(ctx.game_id, 0.0)))
+    _market_high[ctx.game_id] = max(float(ctx.market_sell_price),
+                                    float(_market_high.get(ctx.game_id, 0.0)))
 
 
 def _should_sell_now(ctx):
@@ -175,6 +175,7 @@ class _Context:
         # Split sensor contacts by type into flat {x, y, ...} dicts.
         self.asteroids = []
         self.trading_posts = []
+        self.wreckage = []
         self.ships = []
         for s in req.get("sensors", []) or []:
             s_loc = s.get("location", {}) or {}
@@ -188,6 +189,9 @@ class _Context:
                 entry["name"] = s.get("name")
                 entry["id"] = s.get("id")
                 self.trading_posts.append(entry)
+            elif s_type == "wreckage":
+                entry["nutrinium"] = int(s.get("nutrinium", 0))
+                self.wreckage.append(entry)
             elif s_type == "ship":
                 if str(s.get("state", "")).upper() == "DESTROYED":
                     continue
@@ -195,14 +199,20 @@ class _Context:
                 entry["energy"] = int(s.get("energy", 0))
                 entry["nutrinium"] = int(s.get("nutrinium", 0))
                 entry["playerId"] = s.get("playerId")
+                if entry["playerId"] == self.player_id:
+                    continue
                 self.ships.append(entry)
 
         # Jump / combat economics from round metadata.
-        metadata = (req.get("gameState", {}) or {}).get("metadata", {}) or {}
+        game_state = req.get("gameState", {}) or {}
+        self.game_id = game_state.get("gameId")
+        self.game_round = int(game_state.get("round", 0) or 0)
+        metadata = game_state.get("metadata", {}) or {}
         ship_cfg = metadata.get("shipConfig", {}) or {}
         costs = ship_cfg.get("energyCosts", {}) or {}
         self.mine_cost = int(costs.get("mine", 10))
         self.attack_cost = int(costs.get("attack", 1))
+        self.salvage_cost = int(costs.get("salvage", 999))
         self.jump_unit_cost = int(costs.get("jump", 1))
         self.jump_min_cost = int(costs.get("jumpMinCost", 75))
         # Extra fields the shared action-masker safety net validates against.
@@ -218,8 +228,21 @@ class _Context:
         map_cfg = metadata.get("mapConfig", {}) or {}
         self.map_w = int(map_cfg.get("width", 125))
         self.map_h = int(map_cfg.get("height", 125))
+        market = metadata.get("market", {}) or {}
+        sell_prices = market.get("sell", {}) or {}
+        raw_price = sell_prices.get("nutrinium")
+        self.market_sell_price = float(raw_price) if raw_price is not None else None
         # Per-state action restrictions (allowedWhileRecharging / allowedWithShieldsUp).
         self.action_restrictions = metadata.get("actionRestrictions", {}) or {}
+
+        # Last-action outcome: when PLUNDER/ATTACK fails (target moved away), back off
+        # so we don't waste ticks re-trying the same stale target.
+        last_result = req.get("actionResult", {}) or {}
+        self.last_action_type = str(last_result.get("actionType", "")).upper()
+        self.last_action_failed = str(last_result.get("outcome", "")).upper() == "FAILURE"
+        self.offence_target_lost = (
+            self.last_action_failed and self.last_action_type in ("PLUNDER", "ATTACK")
+        )
 
     def jump_energy_cost(self, distance):
         """Energy cost of a jump of the given distance (skill lowers the floor)."""
@@ -252,11 +275,19 @@ def _attack(target, energy):
             "payload": {"target": target.get("playerId"), "energy": int(energy)}}
 
 
+def _plunder(target):
+    return {"actionType": "PLUNDER", "payload": {"target": target.get("playerId")}}
+
+
+def _salvage():
+    return {"actionType": "SALVAGE"}
+
+
 # ----------------------------------------------------------------------------
 # Pirate decision (ported from ProspectorsPiratesEnv._ai_pirate)
 # ----------------------------------------------------------------------------
 def _pirate_action(ctx):
-    """Economy-first raider: mine/sell, but strike weak ships to steal cargo."""
+    """Pirate-first raider: plunder/attack/salvage first, sell on good price."""
     # === 1. ENERGY MANAGEMENT ===
     if ctx.recharging:
         if ctx.energy >= RECHARGE_END_ENERGY:
@@ -266,13 +297,22 @@ def _pirate_action(ctx):
     if ctx.energy < RECHARGE_LOW_ENERGY:
         return {"actionType": "RECHARGE"}
 
-    # === 2. ALWAYS SELL at trading post ===
-    if ctx.nutrinium > 0 and _entity_at(ctx.x, ctx.y, ctx.trading_posts):
-        return _sell(ctx.nutrinium)
+    _update_market_window(ctx)
+    op_post = _entity_at(ctx.x, ctx.y, ctx.trading_posts) is not None
 
-    # === 3. SURGICAL STRIKES: only attack high-value targets in the same zone ===
     same_zone_targets = _entities_at(ctx.x, ctx.y, ctx.ships)
-    if same_zone_targets and ctx.energy >= ctx.attack_cost:
+
+    # === 2. PIRATE PRIORITY: PLUNDER then ATTACK then SALVAGE ===
+    # Skip if last offence action failed (target moved out of zone).
+    if (same_zone_targets and ctx.energy >= ctx.plunder_cost
+            and not ctx.offence_target_lost):
+        richest = max(same_zone_targets, key=lambda t: t.get("nutrinium", 0))
+        if richest.get("nutrinium", 0) >= PLUNDER_MIN_TARGET and ctx.health > 25:
+            return _plunder(richest)
+
+    # Same-zone surgical strikes: finish weak ships or punish rich ones.
+    # Back off if last PLUNDER/ATTACK failed (target is stale).
+    if same_zone_targets and ctx.energy >= ctx.attack_cost and not ctx.offence_target_lost:
         # Find the most profitable target in zone.
         best_value = 0
         best_target = None
@@ -308,6 +348,10 @@ def _pirate_action(ctx):
         if best_value > 10 and best_target is not None and ctx.health > health_threshold:
             return _attack(best_target, min(DEFAULT_ATTACK_ENERGY, ctx.energy))
 
+    wreck_here = _entity_at(ctx.x, ctx.y, ctx.wreckage)
+    if wreck_here and wreck_here.get("nutrinium", 0) > 0 and ctx.energy >= ctx.salvage_cost:
+        return _salvage()
+
     # === 4. FLEE if health is low and enemies are nearby ===
     if ctx.health < 40 and same_zone_targets:
         threat = same_zone_targets[0]
@@ -325,13 +369,17 @@ def _pirate_action(ctx):
                 dx, dy = 1, 0  # default east
         return _move(_direction_towards(dx, dy, tie_horizontal=True))
 
-    # === 5. PRIMARY ECONOMY: mine the asteroid under the ship ===
+    # === 5. SELL only on strong market (or forced by cargo pressure) ===
+    if on_post and _should_sell_now(ctx):
+        return _sell(ctx.nutrinium)
+
+    # === 6. PRIMARY ECONOMY fallback: mine the asteroid under the ship ===
     asteroid = _entity_at(ctx.x, ctx.y, ctx.asteroids)
     if asteroid and asteroid["nutrinium"] > 0 and ctx.energy >= ctx.mine_cost:
         return {"actionType": "MINE"}
 
-    # === 6. HEAD TO TRADING POST when carrying cargo ===
-    if ctx.nutrinium >= HAUL_CARGO_THRESHOLD:
+    # === 7. HEAD TO TRADING POST only when we actually want to bank now ===
+    if ctx.nutrinium >= HAUL_CARGO_THRESHOLD and _should_sell_now(ctx):
         nearest_post = _nearest_entity(ctx.x, ctx.y, ctx.trading_posts)
         if nearest_post:
             dist = _distance(ctx.x, ctx.y, nearest_post["x"], nearest_post["y"])
@@ -341,7 +389,7 @@ def _pirate_action(ctx):
             return _move(_direction_towards(nearest_post["x"] - ctx.x,
                                             nearest_post["y"] - ctx.y))
 
-    # === 7. FIND BEST ASTEROID (prefer rich ones near trading posts) ===
+    # === 8. FIND BEST ASTEROID (prefer rich ones near trading posts) ===
     best_asteroid = None
     best_ast_score = -1.0
     for ast in ctx.asteroids:
@@ -435,13 +483,13 @@ def _build_mask_state(ctx, masker):
         enemies=ctx.ships,
         asteroids=ctx.asteroids,
         trading_posts=ctx.trading_posts,
-        wreckage=[],
+        wreckage=ctx.wreckage,
         map_width=ctx.map_w,
         map_height=ctx.map_h,
         max_energy=ctx.max_energy,
         max_health=ctx.max_health,
         energy_costs=energy_costs,
-        salvage_energy_cost=999,
+        salvage_energy_cost=ctx.salvage_cost,
         repair_cost=0,
         action_restrictions=ctx.action_restrictions,
         jump_min_cost=ctx.jump_min_cost,
@@ -462,6 +510,7 @@ def _action_name_to_id(masker, action, ctx):
         "SELL": masker.SELL,
         "ATTACK": masker.ATTACK,
         "PLUNDER": masker.PLUNDER,
+        "SALVAGE": masker.SALVAGE,
         "RESPAWN": masker.RESPAWN,
         "RAISE_SHIELDS": masker.RAISE_SHIELDS,
     }
@@ -518,6 +567,13 @@ def _masked_to_response(ctx, action_id, masker):
         if enemy is None:
             return {"actionType": "WAIT"}
         return _attack(enemy, min(DEFAULT_ATTACK_ENERGY, ctx.energy))
+    if action_id == masker.PLUNDER:
+        enemy = _richest_zone_enemy(ctx)
+        if enemy is None:
+            return {"actionType": "WAIT"}
+        return _plunder(enemy)
+    if action_id == masker.SALVAGE:
+        return _salvage()
     if action_id == masker.JUMP_TO_ASTEROID:
         ast = _nearest_entity(ctx.x, ctx.y, [a for a in ctx.asteroids if a["nutrinium"] > 0])
         return _jump(ast) if ast else {"actionType": "WAIT"}
