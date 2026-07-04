@@ -102,11 +102,11 @@ class ProspectorsPiratesEnv(
             game_config_ranges: Optional dict merged into the default randomization ranges
                 (same dotted-key format) to override/extend sampled ranges.
             player_model_spec: Optional ModelSpec selecting the PLAYER's observation
-                encoding. Defaults to DEFAULT_FULL_SPEC (275-dim, sensor window 5). When
+                encoding. Defaults to DEFAULT_FULL_SPEC (291-dim, sensor window 5). When
                 the spec's observation_spec.sensor_range is set, the env sizes its
                 observation_space from it AND (per game-mechanic coupling) overrides
                 config['sensor_range'] to match (e.g. WIDE_SENSOR_SPEC -> window 10,
-                595-dim, bots see range 10).
+                611-dim, bots see range 10).
             partial_observability: When True, the PLAYER's observation and action mask
                 are reconstructed from a sensor-limited ActionRequest (shared with
                 BOT_V6 inference via obs_reconstruction), giving exact train/inference
@@ -549,12 +549,15 @@ class ProspectorsPiratesEnv(
         # + Local sensor data (grid around ship)
         # + Top 5 asteroids (x, y, mass, nutrinium, distance, score) = 6 values each = 30 total
         # + Nearest trading post (x, y, distance) = 3 values
-        # + Two enemy types at player location:
-        #   - Strongest enemy (x, y, energy, health, nutrinium, credits, combat_score, same_team) = 8 values
-        #   - Weakest enemy (x, y, energy, health, nutrinium, credits, combat_score, same_team) = 8 values
-        # Total enemy info: 16 values
+        # + Map / round config block = 25 values (map dims, combat, mining, market,
+        #   shipConfig energy, salvage, insurance) so the policy can adapt to
+        #   randomized round configs.
+        # * Per-action energy costs = 8 values (mine, move, jump, jumpMinCost,
+        #   negotiate, plunder, sell, shieldMaintenance).
+        # (The obsolete per-enemy *two enemy types* block was removed -- enemies are
+        # already encoded by the local sensor grid and the prey block below.)
 
-        ship_state_size = 24  # Complete ship state (including action counter)
+        ship_state_size = 30  # Complete ship state (basics, flags, skill points, 19 abilities)
         strategic_context_size = 8  # High-signal strategic features
         sensor_grid_size = (2 * self.config['sensor_range'] + 1) ** 2
         # FULL_NO_GRID layout: identical to FULL but the local sensor-grid block is
@@ -564,12 +567,15 @@ class ProspectorsPiratesEnv(
             sensor_grid_size = 0
         top_asteroids_size = self.config['top_asteroids_count'] * 6  # 5 asteroids * 6 features each
         # Spec-fidelity features (appended so legacy offsets stay stable):
-        #   7 new skills + 5 shield-state + 3 modules + 3 team/economy
-        #   + 3 negotiate-objective + 3 nearest-wreckage
-        spec_fidelity_size = 24
+        #   5 shield-state + 3 modules + 3 team/economy + 3 negotiate-objective
+        #   + 3 nearest-wreckage. (The 7 raw skills that used to live here were
+        #   consolidated into the 19-value abilities block in ship state.)
+        spec_fidelity_size = 17
 
         trading_post_size = 3   # Nearest trading post (x, y, distance)
-        enemy_info_size = 16    # Strongest + weakest enemy at player location (8 each, incl. same_team)
+        enemy_info_size = 0     # Removed: enemies covered by sensor grid + prey block
+        map_config_size = 25    # Map / round config block
+        energy_costs_size = 8   # Per-action energy costs
 
         # Action-restriction matrix (appended last): 2 flags per action id
         # (allowedWhileRecharging, allowedWithShieldsUp) so the policy can adapt to
@@ -598,7 +604,9 @@ class ProspectorsPiratesEnv(
             spec_fidelity_size +
             action_restriction_size +
             temporal_spatial_size +
-            prey_info_size
+            prey_info_size +
+            map_config_size +
+            energy_costs_size
         )
 
         # The block sum above describes the FULL observation family (FULL,
@@ -611,9 +619,13 @@ class ProspectorsPiratesEnv(
         # there are no magic numbers and the sensor-window coupling is preserved.
         _player_obs_type = self.player_model_spec.observation_spec.observation_type
         if _player_obs_type == 'compact':
-            # CompactObservationGenerator: 8 ship essentials + top-asteroids block
-            # + nearest trading post (3) + strongest/weakest enemy block.
-            obs_size = 8 + top_asteroids_size + trading_post_size + enemy_info_size
+            # CompactObservationGenerator: 8 ship essentials + 19 abilities
+            # + top-asteroids block + nearest trading post (3)
+            # + map/round config (25) + per-action energy costs (8).
+            obs_size = (
+                    8 + 19 + top_asteroids_size + trading_post_size
+                    + map_config_size + energy_costs_size
+            )
         elif _player_obs_type == 'sensor_only':
             # SensorOnlyObservationGenerator: 6 ship essentials + local sensor grid.
             obs_size = 6 + (2 * self.config['sensor_range'] + 1) ** 2
