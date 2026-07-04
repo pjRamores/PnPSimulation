@@ -75,13 +75,40 @@ def _to_response(payload):
 # ----------------------------------------------------------------------------
 RECHARGE_LOW_FRAC = 0.10      # recharge when energy drops below 10% of max
 RECHARGE_END_FRAC = 0.60      # stop recharging once back to ~60% of max
-NUTRINIUM_MIN_RATIO = 0.7     # mine in place when concentration (nutr/mass) > 0.7
-MIN_SELL_QUANTITY = 20        # don't bother selling below this cargo (keep mining)
-HARD_SELL_QUANTITY = 50       # always sell once cargo reaches this
+NUTRINIUM_MIN_RATIO = 0.7     # paid-mine in place when concentration (nutr/mass) > 0.7
+# Selling dips the shared market price by a fixed fraction PER SALE (independent
+# of quantity) and it recovers only slowly, so many small sales crater the price
+# while a few large batches keep it near base.We therefore hold cargo into big
+# batches. (A post is essentially always in sensor range, so banking stays
+# releable even with a high threshold.)
+MIN_SELL_QUANTITY = int(os.environ.get("V5_OPP", "30"))    # min cargo before an on-post sale
+BANK_CARGO_QUANTITY = int(os.environ.get("V5_BANK", "40")) # commit to a banking run at/above this
+HARD_SELL_QUANTITY = 60       # drop everything and bank once cargo reaches this
 HAUL_CARGO_THRESHOLD = 12     # cargo worth carrying toward a post when idle
 MAX_MINING_SEARCH_TICK = 10   # ignore candidate zones beyond this Manhattan range
 DEFAULT_ATTACK_ENERGY = 20    # baseline ATTACK payload
 ATTACK_CRITICAL_MARGIN = 5    # extra energy committed to ensure an overpower
+
+# --- Plunder evasion --------------------------------------------------------
+# PLUNDER steals cargo from a ship whose shields are DOWN when an enemy shares
+# its exact cell -- it does NOT depend on relative energy, so even a weak raider
+# can rob us. Defences (cheapest first): sell/empty the cargo, raise shields to
+# become un-plunderable, or refuse to co-locate with an enemy while loaded.
+PLUNDER_PROTECT_MIN = 10      # only bother defending cargo once it's worth this much
+SHIELD_PROXIMITY_RADIUS = 1   # Chebyshev range at which we proactively shield up
+NEARBY_ENEMY_RADIUS = 3       # an enemy within this range makes us bank cargo sooner
+NEARBY_ENEMY_BANK_FRAC = 0.5  # scale the bank threshold by this when a raider is near
+
+# --- Free-mining regime -----------------------------------------------------
+# The engine credits the per-tick recharge gain BEFORE the action resolves and
+# permits MINE while recharging, so a mine taken during recharge is effectively
+# free (the +energyPerRecharge gain pays the mine cost). Staying in the
+# recharge state while mining therefore roughly doubles mining throughput vs.
+# the classic "mine down, then sit idle recharging" cycle. The masker only lets
+# us START recharging at >=30% energy, so we spend headroom first, then enter
+# the regime and mine for free from then on.
+RECHARGE_ENTER_FRAC =0.30     # start recharging at/below 30% of max (masker cap)
+FREE_MIN_MIN_RATIO = float(os.environ.get("V5_RATIO", "0.35"))   # keep free-mining while success >= this
 
 
 # ----------------------------------------------------------------------------
@@ -223,6 +250,12 @@ class _Context:
         self.modules = {str(m).upper() for m in (me.get("modules", []) or [])}
         self.player_id = me.get("playerId")
 
+        # Own shield: shields POWERED/DRAINING make us immune to PLUNDER.
+        shield = me.get("shield", {}) or {}
+        self.shield_state = str(shield.get("state", "DOWN") or "DOWN").upper()
+        self.shield_value = float(shield.get("value", 0) or 0)
+        self.shield_capacity = float(shield.get("capacity", 0) or 0)
+        self.shields_up = self.shield_state == "POWERED"
         # Split sensor contacts by type into flat {x, y, ...} dicts.
         self.asteroids = []
         self.trading_posts = []
@@ -246,6 +279,8 @@ class _Context:
                 entry["energy"] = int(s.get("energy", 0))
                 entry["nutrinium"] = int(s.get("nutrinium", 0))
                 entry["playerId"] = s.get("playerId")
+                s_shield = s.get("shield", {}) or {}
+                entry["shield_state"] = str(s_shield.get("state", "") or "").upper()
                 self.ships.append(entry)
 
         # Total visible mineable nutrinium -> MINING vs ATTACKING mode proxy.
