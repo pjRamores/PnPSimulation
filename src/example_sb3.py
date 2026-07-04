@@ -242,12 +242,12 @@ class MaskableActionMaskWrapper(gym.Wrapper):
         self._capture_mask(obs)
         return obs, info
 
-    def ste(self, action):
+    def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
         self._capture_mask(obs)
         return obs, reward, terminated, truncated, info
 
-    def _captue_mask(self, obs):
+    def _capture_mask(self, obs):
         if isinstance(obs, dict) and 'action_mask' in obs:
             self._last_action_mask = np.asarray(obs['action_mask']).astype(bool)
 
@@ -843,8 +843,8 @@ def _test_model_performance(model_path, algorithm, num_episodes=100,
             map_height=map_height,
             max_steps=max_steps,
             # Size the eval env's observation_space to the SAME spec the model was
-            # trained on (e.g. COMPACT/57-dim). Without this the simulator defaults to
-            # DEFAULT_FULL_SPEC (275-dim) and falls back to the obs-truncation wrapper,
+            # trained on (e.g. COMPACT/93-dim). Without this the simulator defaults to
+            # DEFAULT_FULL_SPEC (291-dim) and falls back to the obs-truncation wrapper,
             # feeding the policy a mismatched observation layout.
             player_model_spec=player_model_spec,
         )
@@ -1103,7 +1103,8 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
                    use_composite=True, composite_components: Optional[List[object]] = None,
                    efficiency_mode=False, num_threads=None, n_envs=1,
                    randomize_game_config=False, player_model_spec=None,
-                   partial_observability=False, module_grant_mode='all'):
+                   partial_observability=False, module_grant_mode='all',
+                   use_masked_ppo=False):
     """
     Train agent using Stable Baselines3 with optional transfer learning
 
@@ -1151,12 +1152,28 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
             likely) to train module-gated behaviour; 'none' installs nothing. All
             ships share the same set. Does not change the observation layout, so existing models
             stay loadable (but training with 'random' is needed to actually learn gated behaviour).
+        use_masked_ppo: PPO-only A/B switch. When True (and sb3-contrib is installed), train with
+            sb3-contrib MaskablePPO using TRUE action masking (invalid action-type logits are
+            zeroed before sampling via MaskableActionMaskWrapper.action_masks()) instead of the
+            default penalty-based ActionMaskWrapper. Phase-1 masks only the action-type
+            sub-dimension. Default False keeps the existing vanilla-compatible with vanilla PPO, so
+            transfer_from must reference a MaskablePPO model (otherwise training starts fresh).
     """
 
     if not SB3_AVAILABLE:
         print("Please install stable-baselines3 first:")
         print("pip install stable-baselines3[extra]")
         return None
+
+    # Resolve the MaskablePPO A/B switch. Masking only applies to PPO and needs
+    # sb3-contrib; degrade gracefully to the vanilla PPO path otherwise.
+    if use_masked_ppo and algorithm != 'PPO':
+        print(f"WARNING: --use-masked-ppo is PPO-only; ignoring for algorithm '{algorithm}'.")
+        use_masked_ppo = False
+    if use_masked_ppo and not SB3_CONTRIB_AVAILABLE:
+        print("WARNING: sb3-contrib not installed; cannot use MaskabledPPO. "
+              "Falling back to standard PPO. Install with: pip install sb3-contrib")
+        use_masked_ppo = False
 
     is_transfer = transfer_from is not None
 
