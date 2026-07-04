@@ -1156,7 +1156,8 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
             sb3-contrib MaskablePPO using TRUE action masking (invalid action-type logits are
             zeroed before sampling via MaskableActionMaskWrapper.action_masks()) instead of the
             default penalty-based ActionMaskWrapper. Phase-1 masks only the action-type
-            sub-dimension. Default False keeps the existing vanilla-compatible with vanilla PPO, so
+            sub-dimension. Default False keeps the existing vanilla-PPO path byte-for-byte.
+            NOTE: MaskablePPO checkpoints are NOT weight-compatible with vanilla PPO, so
             transfer_from must reference a MaskablePPO model (otherwise training starts fresh).
     """
 
@@ -1171,7 +1172,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         print(f"WARNING: --use-masked-ppo is PPO-only; ignoring for algorithm '{algorithm}'.")
         use_masked_ppo = False
     if use_masked_ppo and not SB3_CONTRIB_AVAILABLE:
-        print("WARNING: sb3-contrib not installed; cannot use MaskabledPPO. "
+        print("WARNING: sb3-contrib not installed; cannot use MaskablePPO. "
               "Falling back to standard PPO. Install with: pip install sb3-contrib")
         use_masked_ppo = False
 
@@ -1232,6 +1233,10 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
     # single-process env path byte-for-byte unchanged.
     use_vec_env = (algorithm == 'PPO' and n_envs is not None and n_envs > 1)
 
+    # Choose the per-env factory: masked (MaskableActionMaskWrapper, exposes
+    # action_masks()) vs default (penalty-based ActionMaskWrapper).
+    _env_factory = _make_masked_env_fn if use_masked_ppo else _make_env_fn
+
     env_kwargs = dict(
         map_width=map_width,
         map_height=map_height,
@@ -1258,6 +1263,10 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         os.environ.setdefault('OMP_NUM_THREADS', '1')
         os.environ.setdefault('MKL_NUM_THREADS', '1')
 
+        if use_masked_ppo:
+            print(f"  Action masking: MaskablePPO true masking (action-type)")
+        else:
+            print(f"  Action masking: penalty-based enforcement")
         print(f"  Action masking: penalty-based enforcement")
         print(f"  Parallel envs: {n_envs} (SubprocVecEnv)")
 
@@ -1265,7 +1274,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         # (running check_env on a SubprocVecEnv is not supported / meaningful).
         print("\nChecking environment compatibility...")
         try:
-            _probe_env = _make_env_fn(
+            _probe_env = _env_factory(
                 0, env_kwargs, min_opponents, max_opponents, use_dynamic_opponents)()
             check_env(_probe_env, warn=True)
             _probe_env.close()
@@ -1275,7 +1284,7 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
             return None
 
         env = SubprocVecEnv(
-            [_make_env_fn(i, env_kwargs, min_opponents, max_opponents, use_dynamic_opponents)
+            [_env_factory(i, env_kwargs, min_opponents, max_opponents, use_dynamic_opponents)
              for i in range(n_envs)],
             start_method='spawn'
         )
@@ -1286,11 +1295,16 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
         if use_dynamic_opponents:
             env = DynamicOpponentsWrapper(env, min_opponents, max_opponents)
 
-        # Apply action mask wrapper for standard PPO.
-        # This intercepts invalid actions, replaces them with a random valid action,
-        # and applies a penalty so the model learns to respect the mask.
-        env = ActionMaskWrapper(env)
-        print("  Action masking: penalty-based enforcement")
+        if use_masked_ppo:
+            # MaskablePPO: expose action_masks() for true masking (no penalty).
+            env = MaskableActionMaskWrapper(env)
+            print("  Action masking: MaskablePPO true masking (action-type)")
+        else:
+            # Apply action mask wrapper for standard PPO.
+            # This intercepts invalid actions, replaces them with a random valid action,
+            # and applies a penalty so the model learns to respect the mask.
+            env = ActionMaskWrapper(env)
+            print("  Action masking: penalty-based enforcement")
 
         # Wrap environment with Monitor for logging
         env = Monitor(env)
@@ -1330,6 +1344,11 @@ def train_with_sb3(algorithm='PPO', total_timesteps=100000, save_path='models/',
             try:
                 print(f"  Loading from: {model_path_with_zip}")
 
+                if algorithm == 'PPO' and use_masked_ppo:
+                    # MaskablePPO checkpoint. Cannot load a vanilla-ppo model here
+                    # (incompatible policy); load failure falls back to fresh below.
+                    model = MaskablePPO.load(transfer_from, env=env)
+                    print("   ✓ Loaded as MaskablePPO")
                 if algorithm == 'PPO':
                     # Load as regular PPO.
                     # The env uses a Dict obs space ({'observation', 'action_mask'}).
