@@ -1,0 +1,17 @@
+{
+  "obs_size": 291,
+  "mask_size": 19,
+  "num_actions": 35,
+  "is_multidiscrete": true,
+  "nvec": [
+    19,
+    5,
+    11
+  ],
+  "input_names": [
+    "observation",
+    "action_mask"
+  ],
+  "output_name": "action",
+  "opset": 17
+}
