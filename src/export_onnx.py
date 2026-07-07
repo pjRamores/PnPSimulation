@@ -22,6 +22,8 @@ written next to the input model.
 """
 
 from __future__ import annotations
+from torch.distributions import Distribution
+Distribution.set_default_validate_args(False)
 
 import argparse
 import json
@@ -33,19 +35,25 @@ from stable_baselines3 import PPO
 
 
 class _OnnxPolicy(torch.nn.Module):
-    """Wrap an SB3 policy so ONNX sees plain tensors, not an obs dict.
-
-    Rebuilds the ``{"observation", "action_mask"}`` dict the policy expects and
-    returns the deterministic action (the policy's distribution mode).
-    """
-
-    def __init__(self, policy: torch.nn.Module):
+    def __init__(self, policy: torch.nn.Module, action_dims: list[int]):
         super().__init__()
         self.policy = policy
+        self.action_dims = action_dims
 
     def forward(self, observation: torch.Tensor, action_mask: torch.Tensor):
         obs = {"observation": observation, "action_mask": action_mask}
-        return self.policy._predict(obs, deterministic=True)
+
+        features = self.policy.extract_features(obs)
+        latent_pi, _ = self.policy.mlp_extractor(features)
+        logits = self.policy.action_net(latent_pi)
+
+        if len(self.action_dims) == 1:
+            return torch.argmax(logits, dim=1)
+
+        splits = torch.split(logits, self.action_dims, dim=1)
+        actions = [torch.argmax(split, dim=1, keepdim=True) for split in splits]
+        return torch.cat(actions, dim=1)
+
 
 
 def _resolve_model_path(model_arg: str) -> str:
@@ -84,14 +92,33 @@ def export(model_arg: str, opset: int = 17) -> str:
     act_space = model.action_space
     is_md = hasattr(act_space, "nvec")
     nvec = [int(v) for v in act_space.nvec] if is_md else None
-    num_actions = int(nvec[0]) if is_md else int(act_space.n)
+    # num_actions = int(nvec[0]) if is_md else int(act_space.n)
+    num_actions = int(sum(nvec)) if is_md else int(act_space.n)
 
     print(
         f">>>> obs_size={obs_size} mask_size={mask_size} "
         f"is_md={is_md} nvec={nvec} num_actions={num_actions}"
     )
 
-    wrapper = _OnnxPolicy(model.policy).eval()
+    print("policy:", type(model.policy))
+    print("action_space:", model.action_space)
+    print("observation_space:", model.observation_space)
+    print("action_net:", model.policy.action_net)
+
+    with torch.no_grad():
+        tmp_obs = {
+            "observation": torch.zeros(1, obs_size, dtype=torch.float32),
+            "action_mask": torch.ones(1, mask_size, dtype=torch.float32),
+        }
+        features = model.policy.extract_features(tmp_obs)
+        latent_pi, _ = model.policy.mlp_extractor(features)
+        logits = model.policy.action_net(latent_pi)
+        print("logits shape:", tuple(logits.shape))
+
+    # wrapper = _OnnxPolicy(model.policy).eval()
+    action_dims = nvec if is_md else [num_actions]
+    wrapper = _OnnxPolicy(model.policy, action_dims).eval()
+
 
     example_obs = torch.zeros(1, obs_size, dtype=torch.float32)
     example_mask = torch.ones(1, mask_size, dtype=torch.float32)
